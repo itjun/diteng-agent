@@ -332,10 +332,7 @@ if (!shell) {
 await shell.waitForSelector('[data-testid="tabstrip"]', { timeout: 30_000 });
 console.log('主窗壳就绪');
 
-// 2. 归一化：left 布局（rail 是采样对象）+ 浅色主题（材质浅色外观，基线确定）
-if ((await shell.locator('[data-testid="shell-rail"]').count()) === 0) {
-  await shell.click('[data-testid="layout-toggle"]');
-}
+// 2. 归一化：浅色主题（材质浅色外观，基线确定）；等 rail 布局稳定后再采样
 for (let i = 0; i < 20; i++) {
   const box = await shell.locator('[data-testid="tabstrip"]').boundingBox();
   if (box && box.width >= 200 && box.width <= 250) break;

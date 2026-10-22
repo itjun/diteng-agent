@@ -6,9 +6,6 @@
 /** 主题设置：默认跟随系统，手动切换后存入 config.theme */
 export type ThemeSetting = 'system' | 'light' | 'dark';
 
-/** 主窗标签栏布局：'left' 左侧竖向标签栏（默认），'top' 顶部横向标签条 */
-export type TabLayout = 'left' | 'top';
-
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
   /** 后端 diteng-im-server 地址，默认 http://127.0.0.1:8101 */
@@ -25,8 +22,6 @@ export interface AppConfig {
    */
   savedPassword: string;
   theme: ThemeSetting;
-  /** 主窗标签栏布局，默认 'left'（左侧竖向标签栏） */
-  tabLayout: TabLayout;
   /** 上次关闭时的主窗大小；null = 从未记录（首启用主屏工作区 80% 作默认）。仅主进程读写 */
   windowBounds: WindowBounds | null;
   /** 左侧标签栏宽度；0 = 未自定义（用默认 300，对齐 Cursor/VS Code 侧栏默认宽度）。仅渲染层使用 */
@@ -47,7 +42,7 @@ export interface WindowBounds {
 export type AppConfigPatch = Partial<
   Pick<
     AppConfig,
-    'serverBase' | 'aiBase' | 'savedLoginId' | 'savedPassword' | 'theme' | 'tabLayout' | 'railWidth' | 'rememberPassword' | 'autoLogin'
+    'serverBase' | 'aiBase' | 'savedLoginId' | 'savedPassword' | 'theme' | 'railWidth' | 'rememberPassword' | 'autoLogin'
   >
 >;
 

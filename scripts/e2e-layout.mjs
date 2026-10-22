@@ -1,9 +1,9 @@
 import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
 /**
- * 真机验证：主窗壳 left/top 双布局切换（rail 侧栏 ↔ 顶部 tab 条）。
- * 布局切换入口改造后：left→top 走「右键 rail 空白区 → 点菜单项」，top→left 仍点顶部 tab 条布局钮。
- * 附带断言：用户卡片（打开/账套列表/当前账套打勾）、设置页（打开/返回，标签不丢；
- * Cursor 式左右布局：分类导航切换、搜索过滤与无匹配空态、主题/布局控件 testid）。
+ * 真机验证：主窗壳左侧竖向标签栏（rail，唯一布局）。
+ * 断言：rail 根容器与竖向形态、侧栏拖宽/双击复位、双标签打开与激活、
+ * 用户卡片（打开/账套列表/当前账套打勾）、设置页（打开/返回，标签不丢；
+ * Cursor 式左右布局：分类导航切换、搜索过滤与无匹配空态、主题控件 testid）。
  * 注意：ERP 标签是渲染层 <webview>（guest target type=webview），playwright-core 1.64 只把
  * type=page 收进 pages()，ERP 页对 playwright 不可见——第二标签的 window.open 改走原生 CDP。
  * 前置：vite(5173) 和 electron(--remote-debugging-port=9223) 已运行。
@@ -145,8 +145,6 @@ if (!shell) {
     console.log('CHECK 登录窗: FAIL（未见 5173 登录页，请先启动 vite 和 electron --remote-debugging-port=9223）');
     process.exit(1);
   }
-  // 约束验证：登录页不得出现布局切换元素
-  check('登录页无布局切换元素', (await login.locator('[data-testid="layout-toggle"]').count()) === 0);
   // 自动登录闸门：短等 #/main（自动登录成功→按已登录继续）；仍处自动登录态则点「手动登录」转表单
   shell = await resolveAutoLoginGate(allPages, login);
   async function submitLogin(base) {
@@ -199,35 +197,17 @@ if (!shell) {
 }
 await shell.waitForSelector('[data-testid="tabstrip"]', { timeout: 30_000 });
 
-// 2. 归一化起始布局为 left：tabLayout 持久化，上次运行可能残留 top。
-//    标签状态在渲染层（<webview>），不能整页 reload（会销毁全部标签），改点布局切换钮归一
+// 2. rail 形态断言：根容器存在，tabstrip 宽度=记忆值或默认 300（Cursor/VS Code 同款默认）
 async function tabstripBox() {
   return shell.locator('[data-testid="tabstrip"]').boundingBox();
 }
 
-async function waitForRailWidth(timeoutMs = 5000) {
-  let box = null;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    box = await tabstripBox();
-    if (box && box.width >= 200 && box.width <= 250) return box;
-    await shell.waitForTimeout(250);
-  }
-  return box;
-}
-
-if ((await shell.locator('[data-testid="shell-rail"]').count()) === 0) {
-  await shell.click('[data-testid="layout-toggle"]');
-  await waitForRailWidth();
-}
-
-// 3. left 布局断言：rail 根存在，tabstrip 宽度=记忆值或默认 300（Cursor/VS Code 同款默认）
-check('left 根容器 shell-rail', (await shell.locator('[data-testid="shell-rail"]').count()) === 1);
+check('根容器 shell-rail', (await shell.locator('[data-testid="shell-rail"]').count()) === 1);
 const railConfig = await shell.evaluate(() => window.diteng.getConfig());
 const expectedRailWidth = (railConfig.railWidth >= 200 && railConfig.railWidth <= 480) ? railConfig.railWidth : 300;
-let box = await tabstripBox();
+const box = await tabstripBox();
 check(
-  'left tabstrip 竖向侧栏',
+  'rail tabstrip 竖向侧栏',
   Boolean(box) && Math.abs(box.width - expectedRailWidth) <= 5 && box.height >= 300 && box.x < 10,
   `期望宽=${expectedRailWidth} 实际 x=${box?.x} y=${box?.y} w=${box?.width} h=${box?.height}`,
 );
@@ -331,7 +311,7 @@ check('settings-page 打开（齿轮入口）', (await shell.locator('[data-test
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('设置页打开时标签保留', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6a. Cursor 式左右布局：搜索框 + 4 个分类导航；默认外观页主题/布局控件齐全
+// 6a. Cursor 式左右布局：搜索框 + 4 个分类导航；默认外观页主题控件齐全
 check('设置搜索框存在', (await shell.locator('[data-testid="settings-search"]').count()) === 1);
 const navCount = await shell.locator('[data-testid^="settings-nav-"]').count();
 check('设置导航 4 分类', navCount === 4, `nav=${navCount}`);
@@ -343,8 +323,6 @@ for (const testid of [
   'settings-theme-system',
   'settings-theme-light',
   'settings-theme-dark',
-  'settings-layout-left',
-  'settings-layout-top',
 ]) {
   check(`外观页控件 ${testid}`, (await shell.locator(`[data-testid="${testid}"]`).count()) === 1);
 }
@@ -360,7 +338,6 @@ check('切页后主题控件移除', (await shell.locator('[data-testid="setting
 await shell.fill('[data-testid="settings-search"]', '主题');
 await shell.waitForTimeout(300);
 check('搜索后主题行保留', (await shell.locator('[data-testid="settings-theme-system"]').count()) === 1);
-check('搜索后布局行过滤', (await shell.locator('[data-testid="settings-layout-left"]').count()) === 0);
 check('搜索后导航过滤', (await shell.locator('[data-testid="settings-nav-account"]').count()) === 0);
 check('搜索后外观分类保留', (await shell.locator('[data-testid="settings-nav-appearance"]').count()) === 1);
 await shell.fill('[data-testid="settings-search"]', 'zzz-no-match');
@@ -376,48 +353,7 @@ check('设置页返回', (await shell.locator('[data-testid="settings-page"]').c
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('返回后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 7. 右键 rail 空白区 → 自绘布局菜单出现且两项 → 点「水平标签页」切到 top
-await shell.click('[data-testid="rail-tabs"]', { button: 'right' });
-await shell.waitForSelector('[data-testid="rail-context-menu"]', { timeout: 5_000 });
-check('右键菜单出现', (await shell.locator('[data-testid="rail-context-menu"]').count()) === 1);
-check(
-  '菜单两项齐全',
-  (await shell.locator('[data-testid="rail-menu-left"]').count()) === 1 &&
-    (await shell.locator('[data-testid="rail-menu-top"]').count()) === 1,
-);
-check(
-  '当前项（垂直标签页）打勾',
-  (await shell.locator('[data-testid="rail-menu-left"]').getAttribute('aria-checked')) === 'true',
-);
-await shell.click('[data-testid="rail-menu-top"]');
-for (let i = 0; i < 20; i++) {
-  box = await tabstripBox();
-  if (box && box.height < 60) break;
-  await shell.waitForTimeout(250);
-}
-check('top tabstrip 顶部横条', Boolean(box) && box.height < 60 && box.y < 10, `y=${box?.y} h=${box?.height}`);
-check('top 后 shell-rail 移除', (await shell.locator('[data-testid="shell-rail"]').count()) === 0);
-check('右键菜单关闭', (await shell.locator('[data-testid="rail-context-menu"]').count()) === 0);
-await shell.screenshot({ path: '/tmp/diteng-layout-top.png' });
-state = await shell.evaluate(() => window.__ditengTabsList());
-check('top 后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
-
-// 8. 切回 left：rail 恢复（宽度 300、高度铺满），标签与激活态保持（top 布局仍用 tab 条布局钮）
-await shell.click('[data-testid="layout-toggle"]');
-for (let i = 0; i < 20; i++) {
-  box = await tabstripBox();
-  if (box && Math.abs(box.width - 300) <= 5) break;
-  await shell.waitForTimeout(250);
-}
-check(
-  '切回 left rail 恢复',
-  Boolean(box) && Math.abs(box.width - 300) <= 5 && box.height >= 300 && box.x < 10,
-  `x=${box?.x} y=${box?.y} w=${box?.width} h=${box?.height}`,
-);
-state = await shell.evaluate(() => window.__ditengTabsList());
-check('切回后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
-
-// 9. 关闭一个标签（rail 项 hover 显关闭 ×，click 会先 hover 再点）
+// 7. 关闭一个标签（rail 项 hover 显关闭 ×，click 会先 hover 再点）
 const firstTabId = state.tabs[0].id;
 await shell.click(`[data-testid="tab-close-${firstTabId}"]`);
 await shell.waitForTimeout(1000);
@@ -429,7 +365,7 @@ check(
 );
 
 await shell.screenshot({ path: '/tmp/diteng-layout-rail.png' });
-console.log('截图: /tmp/diteng-layout-top.png /tmp/diteng-layout-rail.png');
+console.log('截图: /tmp/diteng-layout-rail.png');
 if (usedMockFallback) console.log('RESULT: MOCK_FALLBACK（生产登录失败，已退回 mock 自测）');
 mock?.server.close();
 await browser.close();

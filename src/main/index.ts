@@ -17,7 +17,7 @@ const THEME_LIGHT_BACKGROUND = '#ffffff';
 const MAC_TRANSPARENT_BACKGROUND = '#00000000';
 // 主窗壳路由 hash：与登录窗共用同一入口页，仅 hash 区分（App.tsx 判定 #/main，需带斜杠）
 const MAIN_WINDOW_HASH = '/main';
-// Windows 标题栏高度与壳 tab 条（40px）对齐，参考 dsh apps/desktop windows-layout.ts
+// Windows 标题栏高度与壳 rail 顶部让位（40px，shellRailWin padding-top）对齐，参考 dsh apps/desktop windows-layout.ts
 const WINDOWS_TITLEBAR_HEIGHT = 40;
 
 let loginWindow: BrowserWindow | null = null;

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import type { AppConfig, AppConfigPatch, TabLayout, ThemeSetting, WindowBounds } from '../shared/types';
+import type { AppConfig, AppConfigPatch, ThemeSetting, WindowBounds } from '../shared/types';
 
 /** 本地 diteng-im-server 默认地址（本地 8101 未启动属预期，登录时按网络错误提示） */
 const DEFAULT_SERVER_BASE = 'http://127.0.0.1:8101';
@@ -22,7 +22,7 @@ function configFile(): string {
 
 function createDefault(): AppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', tabLayout: 'left', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true };
+  return { serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -45,8 +45,6 @@ function normalize(input: Partial<AppConfig> | null): AppConfig {
       : base.serverBase;
   const theme: ThemeSetting =
     input?.theme === 'light' || input?.theme === 'dark' ? input.theme : 'system';
-  // 布局仅认 'left'/'top'，其余（含旧 config 缺字段）回落默认 left
-  const tabLayout: TabLayout = input?.tabLayout === 'top' ? 'top' : 'left';
   const windowBounds = normalizeWindowBounds(input?.windowBounds);
   // 侧栏宽度：0=未自定义（渲染层用默认 300）；自定义值限 200~480 整数，越界视为未记录
   const railWidthRaw = (input as { railWidth?: unknown } | undefined)?.railWidth;
@@ -74,7 +72,6 @@ function normalize(input: Partial<AppConfig> | null): AppConfig {
     // 密码密文（safeStorage base64），仅原样保留，不做格式推断
     savedPassword: typeof input?.savedPassword === 'string' ? input.savedPassword.trim() : '',
     theme,
-    tabLayout,
     windowBounds,
     railWidth,
     rememberPassword,
@@ -129,7 +126,6 @@ export function updateConfig(patch: AppConfigPatch): AppConfig {
   if (typeof patch.savedPassword === 'string') config.savedPassword = patch.savedPassword.trim();
   if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
     config.theme = patch.theme;
-  if (patch.tabLayout === 'left' || patch.tabLayout === 'top') config.tabLayout = patch.tabLayout;
   // railWidth：0（恢复默认）或 200~480 整数
   if (patch.railWidth === 0) config.railWidth = 0;
   else if (

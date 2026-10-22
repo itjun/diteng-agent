@@ -1,71 +1,5 @@
 /* 主窗壳样式：颜色一律走 --dsw-* token，深色由 body[data-ds-dark-theme] 自动切换 */
 
-/* tab 条高度 40px：与 Windows titleBarOverlay 高度一致 */
-.tabbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  box-sizing: border-box;
-  height: 40px;
-  padding: 0 12px 0 78px; /* 左侧让位 macOS 红绿灯（trafficLightPosition 16,18） */
-  background: var(--dsw-alias-bg-base);
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
-  /* 自绘标题栏：整条可拖动窗口，交互元素单独 no-drag */
-  -webkit-app-region: drag;
-  user-select: none;
-  flex: none;
-}
-
-.tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  overflow: hidden;
-  -webkit-app-region: no-drag;
-}
-
-.tab,
-.tabActive {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  box-sizing: border-box;
-  max-width: 200px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 8px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.tab:hover,
-.tabActive:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.tabActive {
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
-}
-
-.tabTitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.favicon {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-
 /* 加载中小转圈：细边框旋转，颜色随 label token */
 .spinner {
   width: 10px;
@@ -82,68 +16,6 @@
   to {
     transform: rotate(360deg);
   }
-}
-
-.tabClose {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-radius: var(--dsw-radius-xs);
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.tabClose:hover {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.newTab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.newTab:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.tabbarRight {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-  -webkit-app-region: no-drag;
-}
-
-.themeToggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.themeToggle:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 .body {
@@ -284,7 +156,7 @@
   background: var(--dsw-alias-bg-base);
 }
 
-/* ============ left 布局：左侧竖向标签栏（rail） ============ */
+/* ============ 左侧竖向标签栏（rail） ============ */
 
 /* rail 布局根：横向排列；宽度 224px 与主进程 RAIL_FALLBACK_WIDTH 一致 */
 .shellRail {
@@ -393,7 +265,7 @@
   }
 }
 
-/* rail 与内容区的分隔线改由不透明内容区左缘承担（top 布局无 rail，不吃这条） */
+/* rail 与内容区的分隔线改由不透明内容区左缘承担 */
 :global(html[data-platform='darwin']) .shellRail .body {
   border-left: 0.5px solid var(--dsw-alias-border-l2);
 }
@@ -619,8 +491,8 @@
 
 /*
  * 用户卡片（Cursor 式浮动卡片）：近实色底（menu token，macOS 有不透明兜底）、
- * 圆角 14、柔和多层阴影；rail 内从用户行上缘向上弹出，宽度超出 rail 覆盖内容区，
- * z-index 盖过页内合成 webview；top 布局向下弹（userCardUp 仅改弹出方向）。
+ * 圆角 14、柔和多层阴影；从用户行上缘向上弹出，宽度超出 rail 覆盖内容区，
+ * z-index 盖过页内合成 webview。
  */
 .userCard {
   position: absolute;
@@ -774,50 +646,4 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
-}
-
-/* ============ rail 空白区右键布局菜单 ============ */
-
-.railContextMenu {
-  position: fixed;
-  box-sizing: border-box;
-  min-width: 150px;
-  padding: 4px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-specific-menu);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.1),
-    0 8px 24px rgba(0, 0, 0, 0.12);
-  z-index: 320;
-  user-select: none;
-}
-
-.railContextItem {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: 100%;
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--dsw-radius-xs);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.railContextItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.railContextCheck {
-  display: inline-flex;
-  align-items: center;
-  color: var(--dsw-alias-state-business-primary);
 }

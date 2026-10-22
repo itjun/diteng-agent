@@ -171,18 +171,7 @@ if (!shell) {
 
 await shell.waitForSelector('[data-testid="tabstrip"]', { timeout: 30_000 });
 
-// 3. 归一化到 left 布局（rail 是 vibrancy 断言对象；tabLayout 持久化，避免残留 top）。
-//    标签状态在渲染层（<webview>），不能整页 reload（会销毁全部标签），改点布局切换钮归一
-if ((await shell.locator('[data-testid="shell-rail"]').count()) === 0) {
-  await shell.click('[data-testid="layout-toggle"]');
-  for (let i = 0; i < 20; i++) {
-    const box = await shell.locator('[data-testid="tabstrip"]').boundingBox();
-    if (box && box.width >= 200 && box.width <= 250) break;
-    await shell.waitForTimeout(250);
-  }
-}
-
-// 4. 主窗样式断言：平台分支（macOS 半透明 / Windows 实心）
+// 3. 主窗样式断言：平台分支（macOS 半透明 / Windows 实心）
 const info = await shell.evaluate(() => {
   const rail = document.querySelector('[data-testid="tabstrip"]');
   const shellRoot = document.querySelector('[data-testid="shell-rail"]');
@@ -217,7 +206,7 @@ if (info.isMac) {
   check('rail 保持实心', parseAlpha(info.railBg) === 1, `backgroundColor=${info.railBg}`);
 }
 
-// 5. 用户卡片浮层盖住 webview 内容区：卡片从 rail 底部行向上弹出、横向超出 rail 右缘，
+// 4. 用户卡片浮层盖住 webview 内容区：卡片从 rail 底部行向上弹出、横向超出 rail 右缘，
 //    矩形与内容区（webview 所在 viewport）相交（页内合成 webview 之上），DOM 断言 + 截图留档
 {
   await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 10_000 });
@@ -263,11 +252,11 @@ if (info.isMac) {
   check('卡片 ESC 收起', (await shell.locator('[data-testid="user-card"]').count()) === 0);
 }
 
-// 6. 截图存档（毛玻璃透桌面效果由人工肉眼把关）
+// 5. 截图存档（毛玻璃透桌面效果由人工肉眼把关）
 await shell.screenshot({ path: '/tmp/diteng-vibrancy-rail.png' });
 console.log('截图: /tmp/diteng-vibrancy-login.png /tmp/diteng-vibrancy-rail.png /tmp/diteng-vibrancy-card.png');
 
-// 7. 主进程日志无未捕获报错
+// 6. 主进程日志无未捕获报错
 if (existsSync(ELECTRON_LOG)) {
   const lines = readFileSync(ELECTRON_LOG, 'utf8').split('\n');
   const fatal = lines.filter((line) => /Uncaught|TypeError|ReferenceError|SyntaxError/.test(line));

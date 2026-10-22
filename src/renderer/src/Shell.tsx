@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FormEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type { FormEvent } from 'react';
 import type {
   CorpAccount,
   SessionSummary,
   TabInfo,
   TabsResolveRequest,
   TabsResolveResult,
-  TabLayout,
 } from '../../shared/types';
 import type { WebviewDomEvent, WebviewElement } from './env';
 import {
@@ -17,9 +16,7 @@ import {
   PlusIcon,
   SettingsIcon,
   SignOutIcon,
-  SidebarLayoutIcon,
   SunIcon,
-  TopbarLayoutIcon,
 } from './theme-icons';
 import { SettingsPage } from './Settings';
 import { useThemeSetting } from './use-theme';
@@ -29,25 +26,21 @@ import styles from './Shell.module.css';
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
 
 /**
- * 主窗壳：tab 栏 + 内容区都在渲染层，每 tab 一个 <webview>（页内合成，与 macOS 整窗 vibrancy 兼容）。
+ * 主窗壳：左侧竖向标签栏（rail）+ 内容区都在渲染层，每 tab 一个 <webview>（页内合成，与 macOS 整窗 vibrancy 兼容）。
  * 标签状态（id/url/title/favicon/corpNo/isLoading）归渲染层，标题/favicon/loading 由 webview 元素事件维护；
  * URL 策略（分类 + 同域补 sid）归主进程：任何开标签入口先经 tabs:resolve 拿最终 URL 再建 webview。
- * 布局双形态（config.tabLayout）：left 左侧竖向标签栏（默认），top 顶部横向 tab 条。
- * 壳内另有「设置页」视图：内容区整体替换为设置页（webview 隐藏不销毁），rail/tab 条保留，ESC/返回回标签视图。
+ * 壳内另有「设置页」视图：内容区整体替换为设置页（webview 隐藏不销毁），rail 保留，ESC/返回回标签视图。
  * 关闭到 0 个 tab 时内容区被新建标签页覆盖，窗口不销毁。
  */
 export function Shell() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [activeTabId, setActiveTabId] = useState('');
   const [session, setSession] = useState<SessionSummary | null>(null);
-  const [tabLayout, setTabLayout] = useState<TabLayout>('left');
   // 侧栏宽度：默认 300 对齐 Cursor/VS Code 侧栏默认宽度；0=未自定义（双击手柄复位时写 0）
   const [railWidth, setRailWidth] = useState(300);
   const [savedLoginId, setSavedLoginId] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [railMenuAt, setRailMenuAt] = useState<{ x: number; y: number } | null>(null);
   const [isRailDrag, setIsRailDrag] = useState(false);
-  const { resolvedTheme, toggleTheme } = useThemeSetting();
   const nextIdRef = useRef(1);
 
   /** 开新标签（URL 必须经主进程 resolve 拿到的最终值），并激活 */
@@ -80,11 +73,10 @@ export function Shell() {
     setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
   }, []);
 
-  // 挂载：会话/布局拉取、首个标签（登录落点）、guest 开标签请求、账套切换广播
+  // 挂载：会话/配置拉取、首个标签（登录落点）、guest 开标签请求、账套切换广播
   useEffect(() => {
     void window.diteng.getSession().then(setSession);
     void window.diteng.getConfig().then((config) => {
-      setTabLayout(config.tabLayout);
       setSavedLoginId(config.savedLoginId);
       if (config.railWidth >= 200 && config.railWidth <= 480) setRailWidth(config.railWidth);
     });
@@ -132,54 +124,6 @@ export function Shell() {
       delete window.__ditengTabsList;
     };
   }, [tabs, activeTabId]);
-
-  /** 布局切换（右键菜单/设置页/顶部布局钮共用）：本地即时生效 + config 持久化 */
-  const applyTabLayout = useCallback((next: TabLayout) => {
-    setTabLayout(next);
-    void window.diteng.setConfig({ tabLayout: next });
-  }, []);
-
-  function toggleTabLayout() {
-    applyTabLayout(tabLayout === 'left' ? 'top' : 'left');
-  }
-
-  /**
-   * rail 空白区右键弹自绘布局菜单（macOS ctrl+click 同走 contextmenu）：
-   * 标签项/关闭按钮/新建按钮/底部用户行与用户卡片放行默认菜单；菜单自身右键吞掉不重建。
-   */
-  function handleRailContextMenu(event: ReactMouseEvent<HTMLElement>) {
-    const target = event.target as HTMLElement;
-    if (target.closest('[data-testid="rail-context-menu"]')) {
-      event.preventDefault();
-      return;
-    }
-    if (
-      target.closest(
-        '[data-testid^="tab-"], [data-testid="new-tab"], [data-testid="user-chip"], [data-testid="user-card"]',
-      )
-    ) {
-      return;
-    }
-    event.preventDefault();
-    setRailMenuAt({ x: event.clientX, y: event.clientY });
-  }
-
-  // 右键菜单展开时：点外/ESC 收起
-  useEffect(() => {
-    if (!railMenuAt) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!(event.target as HTMLElement).closest('[data-testid="rail-context-menu"]')) setRailMenuAt(null);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setRailMenuAt(null);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [railMenuAt]);
 
   /** 进设置页（rail 齿轮 / 卡片「设置…」共用） */
   const openSettings = useCallback(() => {
@@ -249,27 +193,10 @@ export function Shell() {
   // 底部用户行显示名：会话用户名优先，主进程未取到时回落记住的账号
   const userDisplayName = session?.userName || savedLoginId || '未登录';
 
-  const isRail = tabLayout === 'left';
-  // 右键菜单打勾态：先取布尔再进 JSX，避免 ternary 分支内 tabLayout 被 TS 窄化成 'left'
-  const isLeftLayoutActive = tabLayout === 'left';
-  const isTopLayoutActive = tabLayout === 'top';
-  const layoutToggleTitle = isRail ? '切换到顶部标签栏布局' : '切换到左侧标签栏布局';
-  const layoutToggleIcon = isRail ? <TopbarLayoutIcon /> : <SidebarLayoutIcon />;
-  const shellClass = isRail
-    ? `${styles.shell} ${styles.shellRail}${isMacPlatform ? '' : ` ${styles.shellRailWin}`}`
-    : styles.shell;
-
-  // 右键菜单定位：fixed 于光标处，贴窗口边缘时回退避免溢出
-  const railMenuStyle =
-    railMenuAt === null
-      ? undefined
-      : {
-          left: Math.min(railMenuAt.x, window.innerWidth - 170),
-          top: Math.min(railMenuAt.y, window.innerHeight - 96),
-        };
+  const shellClass = `${styles.shell} ${styles.shellRail}${isMacPlatform ? '' : ` ${styles.shellRailWin}`}`;
 
   return (
-    <div className={shellClass} data-testid={isRail ? 'shell-rail' : undefined}>
+    <div className={shellClass} data-testid="shell-rail">
       {/* 拖宽期间的全窗事件盾牌：挡住 webview/guest 输入路由，保证宿主页持续收到 move/up */}
       {isRailDrag && (
         <div
@@ -280,158 +207,37 @@ export function Shell() {
           onContextMenu={(event) => event.preventDefault()}
         />
       )}
-      {isRail ? (
-        <aside
-          className={styles.rail}
-          data-testid="tabstrip"
-          style={{ width: railWidth }}
-          onContextMenu={handleRailContextMenu}
+      <aside className={styles.rail} data-testid="tabstrip" style={{ width: railWidth }}>
+        {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 300 */}
+        <div
+          className={styles.railResizeHandle}
+          data-testid="rail-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整标签栏宽度（双击恢复默认）"
+          onPointerDown={handleRailResizeStart}
+        />
+        {/* 顶部让位：macOS 红绿灯拖拽区；Windows 由 shellRailWin 根 padding 让出 overlay，此占位不渲染 */}
+        <div className={styles.railTop} aria-hidden="true" />
+        <button
+          type="button"
+          data-testid="new-tab"
+          className={styles.railNewTab}
+          title="新建标签页（打开 ERP 首页）"
+          onClick={() => void resolveAndOpen({ home: true })}
         >
-          {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 300 */}
-          <div
-            className={styles.railResizeHandle}
-            data-testid="rail-resize-handle"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="调整标签栏宽度（双击恢复默认）"
-            onPointerDown={handleRailResizeStart}
-          />
-          {/* 顶部让位：macOS 红绿灯拖拽区；Windows 由 shellRailWin 根 padding 让出 overlay，此占位不渲染 */}
-          <div className={styles.railTop} aria-hidden="true" />
-          <button
-            type="button"
-            data-testid="new-tab"
-            className={styles.railNewTab}
-            title="新建标签页（打开 ERP 首页）"
-            onClick={() => void resolveAndOpen({ home: true })}
-          >
-            <PlusIcon />
-            <span>新建标签</span>
-          </button>
-          <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="ERP 标签页">
-            {tabs.map((tab) => (
-              <RailTab key={tab.id} tab={tab} isActive={tab.id === activeTabId} onClose={closeTab} onActivate={activateTab} />
-            ))}
-          </div>
-          <div className={styles.railFooter}>
-            <UserChip
-              session={session}
-              displayName={userDisplayName}
-              isRail
-              onOpenSettings={openSettings}
-            />
-          </div>
-          {railMenuAt && (
-            <div
-              className={styles.railContextMenu}
-              data-testid="rail-context-menu"
-              style={railMenuStyle}
-              onContextMenu={(event) => event.preventDefault()}
-              role="menu"
-              aria-label="标签栏布局"
-            >
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={isLeftLayoutActive}
-                data-testid="rail-menu-left"
-                className={styles.railContextItem}
-                onClick={() => {
-                  applyTabLayout('left');
-                  setRailMenuAt(null);
-                }}
-              >
-                垂直标签页
-                {isLeftLayoutActive && (
-                  <span className={styles.railContextCheck}>
-                    <CheckIcon />
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={isTopLayoutActive}
-                data-testid="rail-menu-top"
-                className={styles.railContextItem}
-                onClick={() => {
-                  applyTabLayout('top');
-                  setRailMenuAt(null);
-                }}
-              >
-                水平标签页
-                {isTopLayoutActive && (
-                  <span className={styles.railContextCheck}>
-                    <CheckIcon />
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
-        </aside>
-      ) : (
-        <header className={styles.tabbar} data-testid="tabstrip">
-          <div className={styles.tabs} role="tablist" aria-label="ERP 标签页">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={tab.id === activeTabId}
-                data-testid={`tab-${tab.id}`}
-                className={tab.id === activeTabId ? styles.tabActive : styles.tab}
-                onClick={() => activateTab(tab.id)}
-                title={tab.url}
-              >
-                {tab.isLoading && <span className={styles.spinner} aria-hidden="true" />}
-                {tab.favicon && <img src={tab.favicon} alt="" className={styles.favicon} />}
-                <span className={styles.tabTitle}>{tab.title || tab.url}</span>
-                <span
-                  role="button"
-                  aria-label="关闭标签页"
-                  data-testid={`tab-close-${tab.id}`}
-                  className={styles.tabClose}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                >
-                  <CloseIcon />
-                </span>
-              </button>
-            ))}
-            <button
-              type="button"
-              data-testid="new-tab"
-              className={styles.newTab}
-              title="新建标签页（打开 ERP 首页）"
-              onClick={() => void resolveAndOpen({ home: true })}
-            >
-              <PlusIcon />
-            </button>
-          </div>
-          <div className={styles.tabbarRight}>
-            <UserChip session={session} displayName={userDisplayName} onOpenSettings={openSettings} />
-            <button
-              type="button"
-              className={styles.themeToggle}
-              onClick={toggleTheme}
-              title={resolvedTheme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-            >
-              {resolvedTheme === 'dark' ? <SunIcon /> : <MoonIcon />}
-            </button>
-            <button
-              type="button"
-              className={styles.themeToggle}
-              data-testid="layout-toggle"
-              onClick={toggleTabLayout}
-              title={layoutToggleTitle}
-            >
-              {layoutToggleIcon}
-            </button>
-          </div>
-        </header>
-      )}
+          <PlusIcon />
+          <span>新建标签</span>
+        </button>
+        <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="ERP 标签页">
+          {tabs.map((tab) => (
+            <RailTab key={tab.id} tab={tab} isActive={tab.id === activeTabId} onClose={closeTab} onActivate={activateTab} />
+          ))}
+        </div>
+        <div className={styles.railFooter}>
+          <UserChip session={session} displayName={userDisplayName} onOpenSettings={openSettings} />
+        </div>
+      </aside>
 
       <main className={styles.body}>
         {/* webview 宿主：非激活标签 display:none 隐藏（保留 DOM，guest 不销毁不重载）；
@@ -443,13 +249,7 @@ export function Shell() {
         </div>
         {!isSettingsOpen && tabs.length === 0 && <NewTabPage session={session} openViaMain={resolveAndOpen} />}
         {isSettingsOpen && (
-          <SettingsPage
-            session={session}
-            userDisplayName={userDisplayName}
-            tabLayout={tabLayout}
-            onTabLayoutChange={applyTabLayout}
-            onBack={closeSettings}
-          />
+          <SettingsPage session={session} userDisplayName={userDisplayName} onBack={closeSettings} />
         )}
       </main>
     </div>
@@ -566,17 +366,14 @@ function RailTab({
 /**
  * 底部用户行（Cursor 式）：圆形头像（用户名首字符，账套无关）+ 用户名单行省略 + 右端齿轮，
  * 扁平融入侧栏无边框；点击整行向上弹出用户卡片，齿轮单独点击直达设置页。
- * isRail 时在侧栏底部（卡片向上弹、左缘可超出 rail 覆盖内容区）；top 布局在 tab 条右侧（卡片向下弹）。
  */
 function UserChip({
   session,
   displayName,
-  isRail = false,
   onOpenSettings,
 }: {
   session: SessionSummary | null;
   displayName: string;
-  isRail?: boolean;
   onOpenSettings: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -646,7 +443,7 @@ function UserChip({
     <div className={styles.userChipWrap} ref={wrapRef}>
       <button
         type="button"
-        className={isRail ? `${styles.userChip} ${styles.userChipRail}` : styles.userChip}
+        className={`${styles.userChip} ${styles.userChipRail}`}
         data-testid="user-chip"
         data-switching={isSwitching ? 'true' : 'false'}
         onClick={toggleOpen}
@@ -674,12 +471,7 @@ function UserChip({
         </span>
       </button>
       {isOpen && (
-        <div
-          className={isRail ? `${styles.userCard} ${styles.userCardUp}` : styles.userCard}
-          data-testid="user-card"
-          role="menu"
-          aria-label="用户菜单"
-        >
+        <div className={`${styles.userCard} ${styles.userCardUp}`} data-testid="user-card" role="menu" aria-label="用户菜单">
           <div className={styles.userCardLabel}>账套</div>
           <div className={styles.userCardCorps} role="listbox" aria-label="可用账套">
             {isListLoading && corps.length === 0 && <div className={styles.userCardHint}>加载中…</div>}

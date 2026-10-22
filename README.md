@@ -21,7 +21,7 @@ pnpm dist:mac       # 打 mac arm64 dmg（release/）；dist:win 为 Windows nsi
 ```bash
 cp scripts/e2e-secrets.example.mjs scripts/e2e-secrets.mjs   # 填入测试账号（已 gitignore）
 (pnpm exec vite &) && (pnpm exec electron . --remote-debugging-port=9223 &)
-node scripts/e2e-layout.mjs        # 布局/标签/拖宽/设置页；E2E_MOCK=1 走本地 mock
+node scripts/e2e-layout.mjs        # rail 标签栏/拖宽/标签/设置页；E2E_MOCK=1 走本地 mock
 node scripts/e2e-autologin.mjs     # 记住密码/自动登录全链路（含杀进程重启）
 node scripts/e2e-switch.mjs        # 账套切换（关旧账套标签）+ AI 跳转
 node scripts/e2e-notify.mjs        # MQTT 通知 + 置顶弹窗

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, SessionSummary, TabLayout } from '../../shared/types';
+import type { AppConfig, SessionSummary } from '../../shared/types';
 import { ArrowLeftIcon, SignOutIcon } from './theme-icons';
 import { useThemeSetting } from './use-theme';
 import styles from './Settings.module.css';
@@ -28,7 +28,7 @@ interface CategoryDef {
 /** 导航顺序即展示顺序：账号 / 外观 / 连接 / 关于 */
 const CATEGORIES: CategoryDef[] = [
   { key: 'account', name: '账号', desc: '登录身份与凭据' },
-  { key: 'appearance', name: '外观', desc: '主题与标签布局' },
+  { key: 'appearance', name: '外观', desc: '主题外观' },
   { key: 'connection', name: '连接', desc: '服务器与 AI 站点' },
   { key: 'about', name: '关于', desc: '版本与更新' },
 ];
@@ -179,19 +179,15 @@ function ProfileCard({ userDisplayName, userCode }: { userDisplayName: string; u
  * 设置独立页面（壳内视图，替换内容区；rail/tab 条保留，ESC/返回回标签视图）——Cursor 式左右布局：
  * 左栏 200px（返回入口 + 标题「设置」+ 搜索框 + 分类导航，当前分类品牌蓝竖条高亮），
  * 右栏滚动区（分类大标题 + 副标题 + 行式设置项）；搜索同时过滤导航分类与右侧设置行，无匹配出空态。
- * v1 内容：账号（大卡片 + 设备码/账套）、外观（主题/标签布局）、连接（只读，变更入口统一在登录页）、关于。
+ * v1 内容：账号（大卡片 + 设备码/账套）、外观（主题）、连接（只读，变更入口统一在登录页）、关于。
  */
 export function SettingsPage({
   session,
   userDisplayName,
-  tabLayout,
-  onTabLayoutChange,
   onBack,
 }: {
   session: SessionSummary | null;
   userDisplayName: string;
-  tabLayout: TabLayout;
-  onTabLayoutChange: (next: TabLayout) => void;
   onBack: () => void;
 }) {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -241,21 +237,6 @@ export function SettingsPage({
             { value: 'system', label: '跟随系统', testid: 'settings-theme-system', onSelect: () => setTheme('system') },
             { value: 'light', label: '浅色', testid: 'settings-theme-light', onSelect: () => setTheme('light') },
             { value: 'dark', label: '深色', testid: 'settings-theme-dark', onSelect: () => setTheme('dark') },
-          ],
-        },
-      },
-      {
-        key: 'tab-layout',
-        title: '标签布局',
-        desc: '标签栏显示在左侧竖栏还是顶部横条',
-        keywords: '标签栏 左侧 顶部 竖栏 横条',
-        control: {
-          kind: 'segmented',
-          ariaLabel: '标签布局',
-          value: tabLayout,
-          options: [
-            { value: 'left', label: '左侧', testid: 'settings-layout-left', onSelect: () => onTabLayoutChange('left') },
-            { value: 'top', label: '顶部', testid: 'settings-layout-top', onSelect: () => onTabLayoutChange('top') },
           ],
         },
       },
