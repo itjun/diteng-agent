@@ -1,0 +1,8 @@
+# pnpm 12 的依赖构建脚本白名单：electron 需 postinstall 下载二进制，esbuild 需安装平台二进制
+allowBuilds:
+  electron: true
+  electron-winstaller: set this to true or false
+  esbuild: true
+# pnpm 安装时自动写入：允许安装 44.9.3（minimumReleaseAge 供给链保护的新包豁免）
+minimumReleaseAgeExclude:
+  - electron@44.9.3

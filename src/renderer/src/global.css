@@ -1,0 +1,17 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--dsw-font-family);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* macOS 主窗：Shell 挂载后标记 html[data-platform='darwin']（见 Shell.tsx），
+   body 转透明让窗口 vibrancy 材质透出；登录/通知窗不挂 Shell，永不标记，保持实心底色 */
+html[data-platform='darwin'] body {
+  background-color: transparent;
+}

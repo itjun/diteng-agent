@@ -1,0 +1,36 @@
+# electron-builder 配置（appId 采用倒序域名：后端 Java 命名空间 site.diteng.*（如 site.diteng.im）+
+# 站点域名 diteng.vip / cdcp.site，客户端归属同一体系，故取 site.diteng.agent）
+appId: site.diteng.agent
+productName: diteng agent
+directories:
+  output: release
+  buildResources: build
+# 运行时产物：主/preload/renderer 编译输出 + 托盘图标 + package.json（main=dist/main/index.js）；
+# 生产依赖（mqtt/react 等）由 electron-builder 自动按 pnpm-lock 收敛打入
+files:
+  - dist/**
+  - assets/**
+  - package.json
+asar: true
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  category: public.app-category.business
+  # 占位图标（scripts/make-icons.mjs 生成），正式品牌图标到位后覆盖 build/icon.png 即可
+  icon: build/icon.png
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+# electron-updater 预留（依赖已装、不实装）：接入自动更新时——
+# 1) 打开下方 publish feed（或按渠道配置）；2) 主进程引入 autoUpdater 并处理 update-downloaded 提示
+# publish:
+#   provider: generic
+#   url: https://dl.diteng.vip/diteng-agent/

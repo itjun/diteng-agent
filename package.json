@@ -1,0 +1,33 @@
+{
+  "name": "diteng-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "帝擎 ERP Electron 桌面壳客户端",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,green \"vite\" \"wait-on http-get://127.0.0.1:5173 && tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && electron .\"",
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
+    "dist:mac": "pnpm build && electron-builder --mac --arm64",
+    "dist:win": "pnpm build && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "mqtt": "^5.16.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^5.2.0",
+    "concurrently": "^10.0.6",
+    "electron": "^44.9.3",
+    "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
+    "playwright-core": "^1.64.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "wait-on": "^9.5.1"
+  }
+}

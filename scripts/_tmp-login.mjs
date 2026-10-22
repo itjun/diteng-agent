@@ -1,0 +1,14 @@
+import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
+import { chromium } from 'playwright-core';
+import { resolveAutoLoginGate } from './e2e-login-gate.mjs';
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9223');
+const allPages = () => browser.contexts().flatMap((c) => c.pages());
+const login = allPages().find((p) => p.url().includes('127.0.0.1:5173') && !/#\/(main|notify-popup)/.test(p.url()));
+await resolveAutoLoginGate(allPages, login);
+await login.fill('#server-base', SERVER_BASE);
+await login.fill('#login-id', LOGIN_ID);
+await login.fill('#password', PASSWORD);
+await login.click('button[type=submit]');
+await new Promise((r) => setTimeout(r, 8000));
+console.log('after login:', allPages().map((p) => p.url()));
+await browser.close();

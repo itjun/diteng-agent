@@ -1,0 +1,390 @@
+/* 设置独立页面：Cursor 式左右布局——左栏（返回/标题/搜索/分类导航）+ 右栏（分类页行式设置项）。
+   颜色一律走 --dsw-* token，深色由 body[data-ds-dark-theme] 自动切换。 */
+
+/* 铺满内容区（webview 区域整体替换）：与新建标签页同款实底覆盖 */
+.page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  background: var(--dsw-alias-bg-base);
+  min-width: 0;
+}
+
+/* ============ 左栏：分类导航（与 rail 同款侧栏底色，发丝边框分隔） ============ */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 200px;
+  box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill);
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  user-select: none;
+}
+
+/* 标题行：返回入口 + 「设置」，左右内边距避免贴边 */
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 16px 12px 8px 16px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.back:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 搜索框：圆角、发丝边框、聚焦品牌描边 */
+.searchWrap {
+  flex: none;
+  padding: 2px 12px 6px;
+}
+
+.searchBox {
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px 0 30px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.searchInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* 分类列表：分类名 + 次级描述；当前分类浅底 + 左侧 2px 品牌蓝竖条 */
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 6px 10px 12px;
+  overflow-y: auto;
+}
+
+.navItem,
+.navItemActive {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.navItem:hover,
+.navItemActive:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.navItemActive {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+}
+
+/* 当前分类强调条（Cursor 式）：品牌蓝 rgb(65,118,230) 由 state-business-primary 承担 */
+.navItemActive::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.navName {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.navItem:hover .navName,
+.navItemActive .navName {
+  color: var(--dsw-alias-label-primary);
+}
+
+.navDesc {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ============ 右栏：分类内容（滚动区） ============ */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* 内容列限宽左对齐，宽窗不摊大 */
+.mainInner {
+  max-width: 620px;
+  box-sizing: border-box;
+  padding: 28px 36px 48px;
+}
+
+/* 分类页大标题 + 副标题：字号明显大于行名（Cursor 层级） */
+.pageHead {
+  margin: 0 0 8px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.pageDesc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 搜索结果分组 */
+.sectionTitle {
+  margin: 16px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.section:first-child .sectionTitle {
+  margin-top: 0;
+}
+
+/* 行式设置项：左名称+描述、右控件，留白疏朗、弱分隔线 */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 13px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+/* 末行去分隔线 */
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowMain {
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowDesc {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowValue {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ============ 账号页顶部大卡片 ============ */
+
+.profileCard {
+  box-sizing: border-box;
+  margin-top: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.profileMain {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+/* 圆形头像：品牌蓝底 + 首字符（与底部用户行同语言，放大一号） */
+.profileAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.profileMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profileName {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.profileCode {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 卡片底部：退出登录红色文字链接 */
+.profileFooter {
+  padding: 2px 18px 6px;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.logoutLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.logoutLink:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+/* 搜索无匹配空态 */
+.empty {
+  padding: 56px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ============ 控件 ============ */
+
+/* 分段选择器：胶囊容器 + 选中填充 */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  flex: none;
+  padding: 2px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.segment,
+.segmentActive {
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segment:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.segmentActive {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 占位禁用按钮（检查更新） */
+.disabledButton {
+  flex: none;
+  height: 26px;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-dimmed);
+  font-size: 12px;
+  cursor: not-allowed;
+}

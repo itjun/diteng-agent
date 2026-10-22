@@ -1,0 +1,823 @@
+/* 主窗壳样式：颜色一律走 --dsw-* token，深色由 body[data-ds-dark-theme] 自动切换 */
+
+/* tab 条高度 40px：与 Windows titleBarOverlay 高度一致 */
+.tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px 0 78px; /* 左侧让位 macOS 红绿灯（trafficLightPosition 16,18） */
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  /* 自绘标题栏：整条可拖动窗口，交互元素单独 no-drag */
+  -webkit-app-region: drag;
+  user-select: none;
+  flex: none;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.tab,
+.tabActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 200px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab:hover,
+.tabActive:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tabActive {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.favicon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* 加载中小转圈：细边框旋转，颜色随 label token */
+.spinner {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--dsw-alias-border-l3);
+  border-top-color: var(--dsw-alias-label-tertiary);
+  border-radius: 50%;
+  animation: tab-spin 0.8s linear infinite;
+}
+
+@keyframes tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tabClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.newTab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.newTab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabbarRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+
+.themeToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.themeToggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* webview 宿主：CSS 布局自管（webview 铺满本容器，无需主进程摆 bounds） */
+.viewport {
+  position: absolute;
+  inset: 0;
+}
+
+/* ERP 标签页：<webview> absolute 铺满 viewport；非激活由组件内联 display:none 隐藏 */
+.tabWebview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* 新建标签页：0 个 tab 时覆盖内容区 */
+.newTabPage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12vh;
+  background: var(--dsw-alias-bg-base);
+}
+
+.addressForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(480px, 80%);
+}
+
+.addressWrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  height: 36px;
+  padding: 0 10px;
+  background: var(--dsw-specific-login-input);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+}
+
+.addressWrap:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.addressInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.addressInput::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.addressGo {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.addressGo:hover {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.newTabHint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.quicklinks {
+  display: flex;
+  gap: 16px;
+  margin-top: 36px;
+}
+
+.quicklink {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 148px;
+  padding: 18px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+}
+
+.quicklink:hover:not(:disabled) {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.quicklink:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.quicklinkTitle {
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.quicklinkDesc {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* ============ left 布局：左侧竖向标签栏（rail） ============ */
+
+/* rail 布局根：横向排列；宽度 224px 与主进程 RAIL_FALLBACK_WIDTH 一致 */
+.shellRail {
+  flex-direction: row;
+}
+
+/* Windows：titleBarOverlay 压整窗顶部一行（高 40，与主进程 WINDOWS_OVERLAY_FALLBACK_HEIGHT 一致），
+   rail 与内容区统一下移；macOS 红绿灯只压 rail 内部让位区，根无需 padding */
+.shellRailWin {
+  padding-top: 40px;
+}
+
+.rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  /* 宽度由 Shell 按拖拽状态 inline 设置（默认 300，对齐 Cursor/VS Code 侧栏默认宽度） */
+  box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill);
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  user-select: none;
+}
+
+/* 宽度拖拽手柄：贴右缘压在边框上，命中区 7px（外伸 3px 内含 4px），hover/拖拽显示强调色细条 */
+.railResizeHandle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  z-index: 5;
+  cursor: col-resize;
+}
+
+.railResizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1.5px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.railResizeHandle:hover::after {
+  background: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+/* 拖宽期间的全窗事件盾牌：透明，仅接管指针事件（cursor 由内联样式锁定 col-resize） */
+.railDragShield {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* ============ macOS vibrancy（html[data-platform='darwin'] 由 Shell 挂载时标记） ============ */
+
+/* 壳根透明让整窗 vibrancy 材质透出，内容区自己铺实底保持不透明（对齐 dsh AppFrame centerCol 做法） */
+:global(html[data-platform='darwin']) .shell {
+  background: transparent;
+}
+
+:global(html[data-platform='darwin']) .body {
+  background: var(--dsw-alias-bg-base);
+}
+
+/* rail 半透明 tint：沿用 dsh AppFrame.module.css darwin sidebarCol 原值——顶部蓝洗 + 底部蓝紫洗
+   两层渐变，叠 sidebar-fill 轻 tint（与 transparent 混 40%），各层全透明让毛玻璃透出；
+   分隔线上移出 rail：半透明底上的 alpha 边框会与壁纸混成暗缝（dsh 把线移到不透明 center 同理） */
+:global(html[data-platform='darwin']) .rail {
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(122 155 240 / 0.1),
+      rgb(122 155 240 / 0) 35%,
+      rgb(143 137 184 / 0) 68%,
+      rgb(143 137 184 / 0.09)
+    ),
+    color-mix(in srgb, color-mix(in srgb, var(--dsw-specific-sidebar-fill) 97%, rgb(122 155 240)) 40%, transparent);
+  border-right: none;
+}
+
+/* 深色：去掉蓝染（浅色蓝洗在深底上发紫）并把 tint 减到 50% 让壁纸多透（dsh 原值） */
+:global(html[data-platform='darwin'] body[data-ds-dark-theme]) .rail {
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(122 155 240 / 0.08),
+      rgb(122 155 240 / 0) 35%,
+      rgb(143 137 184 / 0) 68%,
+      rgb(143 137 184 / 0.07)
+    ),
+    color-mix(in srgb, var(--dsw-specific-sidebar-fill) 50%, transparent);
+}
+
+/* macOS「减少透明度」：系统把 vibrancy 压成灰底，薄 tint 会发灰，
+   两主题统一换成 90% 不透明填充（dsh 同款兜底；深色选择器重复出现以盖过上面的薄 tint） */
+@media (prefers-reduced-transparency: reduce) {
+  :global(html[data-platform='darwin']) .rail,
+  :global(html[data-platform='darwin'] body[data-ds-dark-theme]) .rail {
+    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
+  }
+}
+
+/* rail 与内容区的分隔线改由不透明内容区左缘承担（top 布局无 rail，不吃这条） */
+:global(html[data-platform='darwin']) .shellRail .body {
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+/* macOS 红绿灯让位（trafficLightPosition 16,18）：52px 拖拽区；Windows 走根 padding 让位，不渲染 */
+.railTop {
+  flex: none;
+  height: 52px;
+  -webkit-app-region: drag;
+}
+
+.shellRailWin .railTop {
+  display: none;
+}
+
+/* 新建标签：dsh 侧栏"新会话"按钮语言——通栏、radius 8、hover 高亮 */
+.railNewTab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  align-self: stretch;
+  flex: none;
+  height: 34px;
+  margin: 0 12px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.railNewTab:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 标签列表：纵向滚动（细滚动条走全局 scrollbar.css token） */
+.railTabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 0 8px;
+  overflow-y: auto;
+}
+
+.railTab,
+.railTabActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  flex: none;
+  height: 32px;
+  padding: 0 6px 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.railTab:hover,
+.railTabActive:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 激活项：dsh 侧栏导航选中填充（比左侧强调条更贴既有设计语言） */
+.railTabActive {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.railFavicon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* 无 favicon 时的首字符圆点 */
+.railTabDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.railTabTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* 关闭 ×：hover 才显（opacity 而非 visibility，保证 e2e 点击可定位） */
+.railTabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.railTabClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.railTab:hover .railTabClose,
+.railTabActive:hover .railTabClose {
+  opacity: 1;
+}
+
+/* rail 底部：用户行（Cursor 式，扁平无边框，点击弹用户卡片） */
+.railFooter {
+  flex: none;
+  padding: 8px 12px 12px;
+}
+
+/* ============ 底部用户行 + 用户卡片 ============ */
+
+.userChipWrap {
+  position: relative;
+}
+
+.userChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 34px;
+  max-width: 220px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.userChip:hover:not(:disabled) {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.userChip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* rail 内通栏 */
+.userChipRail {
+  width: 100%;
+  max-width: none;
+}
+
+/* 圆形头像：品牌蓝底（--dsw-static-deepseek-500 = rgb(65,118,230)）+ 首字符，账套无关 */
+.userAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.userChipName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.userGear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.userGear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * 用户卡片（Cursor 式浮动卡片）：近实色底（menu token，macOS 有不透明兜底）、
+ * 圆角 14、柔和多层阴影；rail 内从用户行上缘向上弹出，宽度超出 rail 覆盖内容区，
+ * z-index 盖过页内合成 webview；top 布局向下弹（userCardUp 仅改弹出方向）。
+ */
+.userCard {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  padding: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-specific-menu);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    0 12px 32px rgba(0, 0, 0, 0.14);
+  z-index: 300;
+}
+
+.userCardUp {
+  top: auto;
+  right: auto;
+  left: 0;
+  bottom: calc(100% + 8px);
+}
+
+.userCardLabel {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 账套组内滚动 */
+.userCardCorps {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.userCardRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.userCardRow:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.userCardRow:disabled {
+  cursor: default;
+}
+
+/* 当前账套行：品牌色强调 */
+.userCardRowCurrent {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.userCardRowText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 账套行首字符小圆点 */
+.userCardCorpDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.userCardCorpText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.userCardCorpName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.userCardCorpNo {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.userCardCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* 设置行右侧浅灰快捷键提示 */
+.userCardKbd {
+  flex: none;
+  color: var(--dsw-alias-label-dimmed);
+  font-size: 11px;
+}
+
+/* 退出登录：destructive 语义色，仅文字/图标着色不铺底 */
+.userCardRowDanger {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.userCardRowDanger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.userCardDivider {
+  height: 0.5px;
+  margin: 6px 10px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.userCardHint {
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ============ rail 空白区右键布局菜单 ============ */
+
+.railContextMenu {
+  position: fixed;
+  box-sizing: border-box;
+  min-width: 150px;
+  padding: 4px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-specific-menu);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 320;
+  user-select: none;
+}
+
+.railContextItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.railContextItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.railContextCheck {
+  display: inline-flex;
+  align-items: center;
+  color: var(--dsw-alias-state-business-primary);
+}
