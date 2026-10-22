@@ -44,8 +44,6 @@ console.log('OUTCOME:', outcome);
 
 if (outcome === 'SMS_MODE') {
   const errorText = await page.locator('.error, p').allTextContents();
-  const checkCode = await page.inputValue('#check-code');
-  console.log('图形码(后端回填):', checkCode);
   console.log('页面提示:', errorText.filter((t) => t && t.length < 60).join(' | '));
   // 点击发送验证码（真实短信发到用户手机）
   await page.click('button:has-text("发送验证码")');

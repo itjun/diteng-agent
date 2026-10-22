@@ -31,21 +31,40 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 本地 mock 后端：登录/账套列表/getTokenInfo 成功、MQTT 配置失败（仅告警）、其余路径给极简 ERP 页 */
 function startMockServer() {
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const send = (status, body, type) => {
       res.writeHead(status, { 'content-type': type });
       res.end(body);
     };
-    if (req.method === 'POST' && url.pathname === '/center/UserServer/loginByPassword') {
+    // 网页版同款登录：POST /services/SvrUserLogin.getToken，form 编码单字段 dataIn（宽松解析，不校验凭据）
+    if (req.method === 'POST' && url.pathname === '/services/SvrUserLogin.getToken') {
+      const body = await new Promise((resolve) => {
+        let data = '';
+        req.on('data', (chunk) => { data += chunk; });
+        req.on('end', () => resolve(data));
+      });
+      let head = {};
+      try {
+        head = JSON.parse(new URLSearchParams(body).get('dataIn') ?? '{}').head ?? {};
+      } catch { /* 宽松解析 */ }
+      if (head.verifyCode === '??????') {
+        send(200, JSON.stringify({ state: 1, message: '验证码已发送' }), 'application/json');
+        return;
+      }
       send(200, JSON.stringify({
-        token: `mock-token-autologin-e2e-${Date.now()}`,
-        forceRedirect: false,
-        redirectUrl: '',
-        corpNo: '250008',
-        homeForm: 'FrmDefault',
-        userId: 'mock-user',
-        machineCode: 'mock-machine',
+        state: 1,
+        message: '登录成功',
+        head: {
+          status: 1,
+          token: `mock-token-autologin-e2e-${Date.now()}`,
+          user_code: '01',
+          startPage: '250008/FrmDefault',
+          corpNo: '250008',
+          homeForm: 'FrmDefault',
+          forceRedirect: false,
+          redirectUrl: '',
+        },
       }), 'application/json');
       return;
     }

@@ -47,7 +47,7 @@ export type AppConfigPatch = Partial<
 >;
 
 /**
- * 后端 UserServer/loginByPassword、getTokenBySms 的成功响应（对应 LoginResult.java）。
+ * 登录成功响应（网页版同款 SvrUserLogin.getToken 的 head 出参映射；userId 不随登录返回，由主进程 getTokenInfo 回填）。
  * 外围应用须按 forceRedirect + redirectUrl 处理跳转，主窗壳在下一步使用。
  */
 export interface LoginResult {
@@ -76,27 +76,26 @@ export interface ApiFailure {
 /** UserServerController ApiErrorCode.DEVICE_UNCHECKED：HTTP 400 + {"code":-8,"message":"..."} */
 export const DEVICE_UNCHECKED_CODE = -8;
 
-/** auth:login 请求参数；serverBase 为表单当前值，避免 config 旧值把请求打到错误服务器 */
+/**
+ * auth:login 请求参数；serverBase 为表单当前值，避免 config 旧值把请求打到错误服务器。
+ * verifyCode 为 6 位短信验证码（密码登录返回 -8 设备未验证后携带，同接口完成验证并登录）。
+ */
 export interface LoginRequest {
   serverBase: string;
   loginId: string;
   password: string;
   /** 「记住密码」勾选状态：成功后主进程据此加密保存/清除 config.savedPassword */
   rememberPassword: boolean;
+  /** 短信验证码（设备验证登录）；密码登录不传 */
+  verifyCode?: string;
 }
 
-/** auth:sms-send 请求参数（sendVerifyCode：机器码图形码校验通过后下发短信） */
-export interface SmsSendRequest {
+/** auth:login-send-code 请求参数：同登录接口 verifyCode="??????" 指令发送短信（服务端 5 分钟冷却） */
+export interface LoginSendCodeRequest {
   serverBase: string;
   loginId: string;
-  checkCode: string;
-}
-
-/** auth:sms-login 请求参数（getTokenBySms：短信验证码完成设备验证并换取 token） */
-export interface SmsLoginRequest {
-  serverBase: string;
-  loginId: string;
-  verifyCode: string;
+  /** 发码须先通过密码校验，与服务端 SvrUserLogin.getToken 流程一致 */
+  password: string;
 }
 
 /**
@@ -241,15 +240,14 @@ export interface DitengApi {
   getConfig(): Promise<AppConfig>;
   setConfig(patch: AppConfigPatch): Promise<AppConfig>;
   login(request: LoginRequest): Promise<ApiCallResult<LoginResult>>;
-  /** 获取图形验证码，dev 环境固定返回 "0000"，生产返回 4 位随机码 */
-  getCheckCode(serverBase: string): Promise<ApiCallResult<string>>;
-  /** 发送短信验证码，dev 环境响应体直接回显验证码，生产返回 "true" */
-  smsSend(request: SmsSendRequest): Promise<ApiCallResult<string>>;
-  /** 短信验证码登录接口（getTokenBySms：短信验证码完成设备验证并换取 token） */
-  smsLogin(request: SmsLoginRequest): Promise<ApiCallResult<LoginResult>>;
+  /**
+   * 发送登录短信验证码（SvrUserLogin.getToken verifyCode 指令，服务端 5 分钟冷却）。
+   * data 为服务端提示文案。
+   */
+  loginSendCode(request: LoginSendCodeRequest): Promise<ApiCallResult<string>>;
   /**
    * 自动登录：主进程用 config 保存的 savedLoginId + savedPassword（safeStorage 解密）
-   * 走 loginByPassword；成功复用 keepSession 单一路径开主窗。凭据缺失/解密失败/登录失败
+   * 走 SvrUserLogin.getToken；成功复用 keepSession 单一路径开主窗。凭据缺失/解密失败/登录失败
    * 返回 ApiFailure，渲染层转普通登录表单。
    */
   autoLogin(): Promise<ApiCallResult<LoginResult>>;

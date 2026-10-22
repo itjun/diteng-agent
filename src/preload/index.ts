@@ -13,9 +13,7 @@ const diteng: DitengApi = {
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   login: (request) => ipcRenderer.invoke('auth:login', request),
-  getCheckCode: (serverBase) => ipcRenderer.invoke('auth:check-code', { serverBase }),
-  smsSend: (request) => ipcRenderer.invoke('auth:sms-send', request),
-  smsLogin: (request) => ipcRenderer.invoke('auth:sms-login', request),
+  loginSendCode: (request) => ipcRenderer.invoke('auth:login-send-code', request),
   autoLogin: () => ipcRenderer.invoke('auth:auto-login'),
   // 记住密码✓且自动登录✗时，登录页预填账号与密码用（本机 Keychain 解密）
   getSavedCredential: () => ipcRenderer.invoke('auth:get-saved-credential'),

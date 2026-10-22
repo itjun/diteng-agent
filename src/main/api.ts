@@ -50,83 +50,113 @@ function networkFailure(error: unknown): ApiFailure {
   return { ok: false, code: -1, message: `无法连接服务器：${detail}${causeDetail}` };
 }
 
-/** 密码登录；设备未验证时后端返回 HTTP 400 + code -8 */
-export async function loginByPassword(
+/**
+ * 网页版同款登录服务（POST /services/SvrUserLogin.getToken，DataSet 协议，GUEST 免鉴权）：
+ * form 编码单字段 dataIn，无 query、无 sid（对齐 im-client auth-api/api.ts callUserLoginService）。
+ * 服务端对跳转拼装有 try/catch 兜底（REST /center/UserServer/loginByPassword 无此保护，缓存 NPE 会 500），
+ * 设备未验证时 head.status=-8。verifyCode 约定："??????" 为发送短信指令，6 位码为设备验证登录。
+ */
+const LOGIN_VERIFY_COMMAND = '??????';
+
+/** DataSet 响应的 state 归一：boolean true / 数字 >0 视为成功 */
+function dataSetState(raw: DataSetResult): number {
+  if (raw.state === true) return 1;
+  return typeof raw.state === 'number' ? raw.state : 0;
+}
+
+/** SvrUserLogin.getToken 的 head 出参（startPage 如 "250008/FrmDefault"） */
+async function postSvrUserLogin(
   serverBase: string,
-  machineCode: string,
-  loginId: string,
-  password: string,
-): Promise<ApiCallResult<LoginResult>> {
+  head: Record<string, string>,
+): Promise<{ ok: true; state: number; message: string; headOut: Record<string, unknown> } | ApiFailure> {
+  const url = `${serverBase.replace(/\/+$/, '')}/services/SvrUserLogin.getToken`;
   try {
-    const response = await postJson(endpoint(serverBase, 'loginByPassword'), {
-      machineCode,
-      loginId,
-      password,
-      device: 'pc',
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ dataIn: JSON.stringify({ head, body: [[]] }) }).toString(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return toFailure(response);
-    return { ok: true, data: (await response.json()) as LoginResult };
+    const raw = (await response.json()) as DataSetResult;
+    return {
+      ok: true,
+      state: dataSetState(raw),
+      message: typeof raw.message === 'string' ? raw.message : '',
+      headOut: readDataSetHead(raw),
+    };
   } catch (error) {
     return networkFailure(error);
   }
 }
 
-/** 获取图形验证码；TEXT_PLAIN 响应即码值本身（dev 固定 "0000"），5 分钟内有效 */
-export async function getCheckCode(
-  serverBase: string,
-  machineCode: string,
-): Promise<ApiCallResult<string>> {
-  try {
-    const response = await postJson(endpoint(serverBase, 'getCheckCode'), { machineCode });
-    if (!response.ok) return toFailure(response);
-    return { ok: true, data: (await response.text()).trim() };
-  } catch (error) {
-    return networkFailure(error);
-  }
+/** Svr 登录 head 出参 → 现有 LoginResult；userId 服务端不返回，由 keepSession 经 getTokenInfo 回填 */
+function toLoginResult(headOut: Record<string, unknown>, token: string, machineCode: string): LoginResult {
+  const forceRedirectRaw = headOut.forceRedirect;
+  const redirectUrl = readStringField(headOut, 'redirectUrl');
+  // forceRedirect 序列化形态兼容 true/"true"/1/"1"（对齐 im-client parseUserLoginDataset）
+  const isForceRedirect =
+    forceRedirectRaw === true || forceRedirectRaw === 'true' || forceRedirectRaw === 1 || forceRedirectRaw === '1';
+  // corpNo/homeForm 优先取强跳解析结果，缺失时从 startPage（{corpNo}/{homeForm}）拆解
+  const startPage = readStringField(headOut, 'startPage');
+  const startMatch = startPage.match(/(\d{5,8})\/([^/?#]+)/);
+  return {
+    token,
+    forceRedirect: isForceRedirect && /^https?:\/\//i.test(redirectUrl),
+    redirectUrl,
+    corpNo: readStringField(headOut, 'corpNo') || startMatch?.[1] || '',
+    homeForm: readStringField(headOut, 'homeForm') || startMatch?.[2] || 'FrmDefault',
+    userId: '',
+    machineCode,
+  };
 }
 
 /**
- * 发送短信验证码（先校验图形码）；
- * dev 环境响应体直接回显短信验证码便于联调，生产返回 "true"。
+ * 密码登录 / 短信验证码登录（同接口）：verifyCode 为 6 位码时先完成设备验证再登录。
+ * 设备未验证返回 code=-8（head.status），与旧 REST 约定一致，渲染层判定不变。
  */
-export async function sendVerifyCode(
+export async function svrUserLogin(
   serverBase: string,
   machineCode: string,
-  loginId: string,
-  checkCode: string,
-): Promise<ApiCallResult<string>> {
-  try {
-    const response = await postJson(endpoint(serverBase, 'sendVerifyCode'), {
-      machineCode,
-      loginId,
-      checkCode,
-    });
-    if (!response.ok) return toFailure(response);
-    return { ok: true, data: (await response.text()).trim() };
-  } catch (error) {
-    return networkFailure(error);
+  userCode: string,
+  password: string,
+  verifyCode?: string,
+): Promise<ApiCallResult<LoginResult>> {
+  const head: Record<string, string> = { clientId: machineCode, userCode, password, device: 'pc', loginType: 'password' };
+  if (verifyCode) head.verifyCode = verifyCode;
+  const result = await postSvrUserLogin(serverBase, head);
+  if (!result.ok) return result;
+  const token = readStringField(result.headOut, 'token');
+  if (result.state <= 0 || !token) {
+    // code 优先取业务状态 head.status（-8 未验证 / -9 发码失败 / -10 验码失败 / -12 设备禁用）
+    const status = Number(result.headOut.status);
+    const message = result.message || '登录失败';
+    return { ok: false, code: Number.isFinite(status) && status !== 0 ? status : -1, message };
   }
+  return { ok: true, data: toLoginResult(result.headOut, token, machineCode) };
 }
 
-/** 短信验证码登录：完成设备验证并换取 token，成功返回 LoginResult */
-export async function getTokenBySms(
+/** 发送登录短信验证码（同接口 verifyCode="??????" 指令）：state>0 即成功，message 为提示文案 */
+export async function svrSendLoginVerifyCode(
   serverBase: string,
   machineCode: string,
-  loginId: string,
-  verifyCode: string,
-): Promise<ApiCallResult<LoginResult>> {
-  try {
-    const response = await postJson(endpoint(serverBase, 'getTokenBySms'), {
-      machineCode,
-      loginId,
-      verifyCode,
-      device: 'pc',
-    });
-    if (!response.ok) return toFailure(response);
-    return { ok: true, data: (await response.json()) as LoginResult };
-  } catch (error) {
-    return networkFailure(error);
+  userCode: string,
+  password: string,
+): Promise<ApiCallResult<string>> {
+  const result = await postSvrUserLogin(serverBase, {
+    clientId: machineCode,
+    userCode,
+    password,
+    device: 'pc',
+    loginType: 'password',
+    verifyCode: LOGIN_VERIFY_COMMAND,
+  });
+  if (!result.ok) return result;
+  if (result.state <= 0) {
+    const status = Number(result.headOut.status);
+    return { ok: false, code: Number.isFinite(status) && status !== 0 ? status : -1, message: result.message || '验证码发送失败' };
   }
+  return { ok: true, data: result.message || '验证码已发送' };
 }
 
 /** getTokenInfo 返回的 TokenInfo（UserServerController.getTokenInfo → TokenInfo.java，仅取展示字段） */

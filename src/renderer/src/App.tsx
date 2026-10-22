@@ -20,8 +20,8 @@ type AutoLoginPhase = 'checking' | 'waiting' | 'manual';
 /** 服务器地址下拉预设，datalist 允许自由手输任意地址 */
 const SERVER_PRESETS = ['http://127.0.0.1:8101'];
 
-/** 短信验证码重发冷却秒数 */
-const SMS_RESEND_SECONDS = 60;
+/** 短信验证码重发冷却秒数（服务端 5 分钟冷却，对齐 im-client 登录页） */
+const SMS_RESEND_SECONDS = 300;
 
 /**
  * 登录窗与主窗壳共用同一入口页，仅 hash 区分（主进程创建主窗时加载 #/main）。
@@ -46,8 +46,6 @@ function LoginPanel() {
   const [isAutoLogin, setIsAutoLogin] = useState(true);
   const [autoLoginPhase, setAutoLoginPhase] = useState<AutoLoginPhase>('checking');
   const [mode, setMode] = useState<LoginMode>('password');
-  const [checkCode, setCheckCode] = useState('');
-  const [isFetchingCheckCode, setIsFetchingCheckCode] = useState(false);
   const [smsCode, setSmsCode] = useState('');
   const [smsHint, setSmsHint] = useState('');
   const [countdown, setCountdown] = useState(0);
@@ -62,8 +60,6 @@ function LoginPanel() {
 
   // 防重守卫：提交/发送处理中，回车与连点共用同一同步闸门
   const isBusyRef = useRef(false);
-  // 图形码只在进入短信子表单时拉取一次，避免 StrictMode 双执行触发两次 getCheckCode
-  const isCheckCodeLoadedRef = useRef(false);
   // 自动登录只发起一次（StrictMode 双执行防重）
   const isAutoLoginStartedRef = useRef(false);
   // 自动登录阶段同步 ref：迟到结果据此判断用户是否已点「手动登录」（避免闭包旧值）
@@ -138,20 +134,6 @@ function LoginPanel() {
     void window.diteng.setConfig({ autoLogin: isEffective, rememberPassword: isEffective ? true : isRememberPassword });
   }
 
-  async function fetchCheckCode() {
-    isCheckCodeLoadedRef.current = true;
-    setIsFetchingCheckCode(true);
-    const result = await window.diteng.getCheckCode(serverBase.trim());
-    setIsFetchingCheckCode(false);
-    if (result.ok) setCheckCode(result.data);
-    else setErrorMsg(result.message);
-  }
-
-  // 进入短信子表单时自动取图形码并回填（后端 TEXT_PLAIN 直接返回码值，dev 固定 0000，可手改）
-  useEffect(() => {
-    if (mode === 'sms' && !isCheckCodeLoadedRef.current) void fetchCheckCode();
-  }, [mode]);
-
   useEffect(() => {
     if (countdown <= 0) return;
     const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
@@ -178,15 +160,14 @@ function LoginPanel() {
     setIsSubmitting(true);
     setErrorMsg('');
     try {
-      const result =
-        mode === 'password'
-          ? await window.diteng.login({
-              serverBase: server,
-              loginId: id,
-              password: effectivePassword,
-              rememberPassword: isRememberPassword,
-            })
-          : await window.diteng.smsLogin({ serverBase: server, loginId: id, verifyCode: smsCode.trim() });
+      // 密码登录与设备验证登录共用 auth:login（SvrUserLogin.getToken 同接口，verifyCode 区分）
+      const result = await window.diteng.login({
+        serverBase: server,
+        loginId: id,
+        password: effectivePassword,
+        rememberPassword: isRememberPassword,
+        verifyCode: mode === 'sms' ? smsCode.trim() : undefined,
+      });
       if (result.ok) {
         void window.diteng.setConfig({
           serverBase: server,
@@ -200,7 +181,7 @@ function LoginPanel() {
         setMode('sms');
         setSmsCode('');
         setSmsHint('');
-        setErrorMsg('当前设备未验证，请用短信验证码完成登录');
+        setErrorMsg('当前设备未验证，请获取短信验证码完成登录');
         return;
       }
       setErrorMsg(result.message);
@@ -210,35 +191,27 @@ function LoginPanel() {
     }
   }
 
+  // 发送短信验证码（SvrUserLogin.getToken verifyCode 指令；发码须先通过密码校验，同网页版）
   async function handleSendSms() {
     if (isBusyRef.current || countdown > 0 || isSendingSms) return;
+    const server = serverBase.trim();
     const id = loginId.trim();
-    const code = checkCode.trim();
-    if (!id) {
-      setErrorMsg('请填写账号');
-      return;
-    }
-    if (!code) {
-      setErrorMsg('请填写图形验证码');
+    if (!server || !id) {
+      setErrorMsg('请填写服务器地址和账号');
       return;
     }
     isBusyRef.current = true;
     setIsSendingSms(true);
     setErrorMsg('');
     try {
-      const result = await window.diteng.smsSend({
-        serverBase: serverBase.trim(),
+      const result = await window.diteng.loginSendCode({
+        serverBase: server,
         loginId: id,
-        checkCode: code,
+        password: password || '123456',
       });
       if (result.ok) {
         setCountdown(SMS_RESEND_SECONDS);
-        // dev 环境后端直接回显短信验证码，生产恒返回 "true"
-        setSmsHint(
-          result.data === 'true'
-            ? '验证码已发送，请查收短信'
-            : `验证码已发送（开发环境回显：${result.data}）`,
-        );
+        setSmsHint(`${result.data}，请查收短信`);
       } else {
         setSmsHint('');
         setErrorMsg(result.message);
@@ -251,12 +224,10 @@ function LoginPanel() {
 
   function handleBackToPassword() {
     setMode('password');
-    setCheckCode('');
     setSmsCode('');
     setSmsHint('');
     setCountdown(0);
     setErrorMsg('');
-    isCheckCodeLoadedRef.current = false;
   }
 
   return (
@@ -375,32 +346,6 @@ function LoginPanel() {
 
             {mode === 'sms' && (
               <>
-                <label className={styles.fieldLabel} htmlFor="check-code">
-                  图形验证码
-                </label>
-                <div className={styles.codeRow}>
-                  <div className={styles.inputWrap}>
-                    <input
-                      id="check-code"
-                      className={styles.input}
-                      value={checkCode}
-                      onChange={(event) => setCheckCode(event.target.value)}
-                      placeholder="4 位图形码"
-                      maxLength={8}
-                      spellCheck={false}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.outlineButton}
-                    onClick={() => void fetchCheckCode()}
-                    disabled={isFetchingCheckCode}
-                  >
-                    {isFetchingCheckCode ? '获取中…' : '刷新'}
-                  </button>
-                </div>
-
                 <label className={styles.fieldLabel} htmlFor="sms-code">
                   短信验证码
                 </label>
@@ -411,8 +356,8 @@ function LoginPanel() {
                       className={styles.input}
                       value={smsCode}
                       onChange={(event) => setSmsCode(event.target.value)}
-                      placeholder="短信验证码"
-                      maxLength={8}
+                      placeholder="6 位短信验证码"
+                      maxLength={6}
                       inputMode="numeric"
                       autoComplete="one-time-code"
                     />
@@ -423,7 +368,7 @@ function LoginPanel() {
                     onClick={() => void handleSendSms()}
                     disabled={countdown > 0 || isSendingSms}
                   >
-                    {countdown > 0 ? `${countdown}s` : isSendingSms ? '发送中…' : '发送验证码'}
+                    {countdown > 0 ? `${Math.ceil(countdown / 60)}分${countdown % 60}秒` : isSendingSms ? '发送中…' : '发送验证码'}
                   </button>
                 </div>
                 {smsHint && <p className={styles.hint}>{smsHint}</p>}

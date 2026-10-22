@@ -311,8 +311,12 @@ function applyWindowTheme(): void {
   }
 }
 
-/** 登录成功：会话入库（token 只留主进程内存）并打开主窗 */
-function keepSession(serverBase: string, result: LoginResult): void {
+/**
+ * 登录成功：会话入库（token 只留主进程内存）并打开主窗。
+ * SvrUserLogin.getToken 不返回 userId（MQTT 未读 topic 依赖它）：先经 getTokenInfo 补齐
+ * userId/用户名再开窗、连 MQTT；失败不阻断登录（userId 空时未读通知降级，resolveUserDisplay 兜底重试）。
+ */
+async function keepSession(serverBase: string, result: LoginResult): Promise<void> {
   const config = getConfig();
   const session: SessionInfo = {
     serverBase,
@@ -326,12 +330,20 @@ function keepSession(serverBase: string, result: LoginResult): void {
     userName: '',
     userCode: '',
   };
-  saveSession(session);
-  saveCorpList([]);
   // 日志只留 token 前 8 位，避免完整凭据落进控制台
   console.log(
     `[auth] 登录成功，token=${result.token.slice(0, 8)}… corpNo=${result.corpNo} homeForm=${result.homeForm}`,
   );
+  const info = await serverApi.getTokenInfo(serverBase, session.machineCode, result.token);
+  if (info.ok) {
+    session.userId = info.data.userId || result.userId;
+    session.userName = info.data.userName || info.data.userCode;
+    session.userCode = info.data.userCode;
+  } else {
+    console.warn(`[auth] 登录后 getTokenInfo 失败（userId 未就绪，MQTT 未读降级）：${info.message}`);
+  }
+  saveSession(session);
+  saveCorpList([]);
   // forceRedirect + 绝对 URL（服务端显式指定落点）优先；否则开当前账套首页表单
   const forcedUrl =
     result.forceRedirect && /^https?:\/\//i.test(result.redirectUrl) ? result.redirectUrl : '';
@@ -339,8 +351,8 @@ function keepSession(serverBase: string, result: LoginResult): void {
   // 登录成功进入托盘常驻 + MQTT 未读通知（mqttConfig 失败仅告警，不阻断主流程）
   trayService.create();
   void mqttService.start(session);
-  // 用户显示名后台补齐（不阻塞开窗），就绪后推送会话摘要刷新底部用户行
-  void resolveUserDisplay(session);
+  // getTokenInfo 失败时后台兜底补齐用户显示名（含 userId，补齐后 MQTT 可经 refreshUnread 恢复）
+  if (!info.ok) void resolveUserDisplay(session);
 }
 
 /**
@@ -352,6 +364,7 @@ function keepSession(serverBase: string, result: LoginResult): void {
 async function resolveUserDisplay(session: SessionInfo): Promise<void> {
   const info = await serverApi.getTokenInfo(session.serverBase, session.machineCode, session.token);
   if (info.ok) {
+    if (info.data.userId && !session.userId) session.userId = info.data.userId;
     session.userName = info.data.userName || info.data.userCode;
     session.userCode = info.data.userCode;
     saveSession(session);
@@ -447,50 +460,35 @@ function registerIpcHandlers(): void {
   ipcMain.handle('auth:login', async (_event, request: unknown) => {
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
     const password = readString((request as { password?: unknown } | null)?.password);
+    // 设备验证登录（-8 后）携带 6 位短信验证码，同接口完成验证并登录
+    const verifyCode = readString((request as { verifyCode?: unknown } | null)?.verifyCode).trim();
     if (!loginId || !password) return invalid('账号和密码不能为空');
     const serverBase = readServerBase(request);
     const isRememberPassword = (request as { rememberPassword?: unknown } | null)?.rememberPassword === true;
-    const result = await serverApi.loginByPassword(serverBase, getConfig().machineCode, loginId, password);
+    const result = await serverApi.svrUserLogin(
+      serverBase,
+      getConfig().machineCode,
+      loginId,
+      password,
+      verifyCode || undefined,
+    );
     if (result.ok) {
       // 「记住密码」按本次登录勾选落盘（取消勾选即清除已存密码）；
       // 无条件执行：竞态下自动登录可能先成功并关掉登录窗，迟到的手动登录结果送不回渲染层，
       // 清除偏好不能依赖渲染层的 setConfig 补写
       persistSavedPassword(isRememberPassword, password);
       // 竞态守卫：等待期间可能已有会话（如自动登录先成功开窗），迟到的成功不再开第二扇主窗
-      if (!getSession()) keepSession(serverBase, result.data);
+      if (!getSession()) await keepSession(serverBase, result.data);
     }
     return result;
   });
 
-  ipcMain.handle('auth:check-code', (_event, request: unknown) => {
-    const config = getConfig();
-    return serverApi.getCheckCode(readServerBase(request), config.machineCode);
-  });
-
-  ipcMain.handle('auth:sms-send', async (_event, request: unknown) => {
+  // 发送登录短信验证码（SvrUserLogin.getToken verifyCode 指令；服务端 5 分钟冷却）
+  ipcMain.handle('auth:login-send-code', async (_event, request: unknown) => {
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
-    const checkCode = readString((request as { checkCode?: unknown } | null)?.checkCode).trim();
-    if (!loginId || !checkCode) return invalid('账号和图形验证码不能为空');
-    const config = getConfig();
-    return serverApi.sendVerifyCode(
-      readServerBase(request),
-      config.machineCode,
-      loginId,
-      checkCode,
-    );
-  });
-
-  ipcMain.handle('auth:sms-login', async (_event, request: unknown) => {
-    const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
-    const verifyCode = readString((request as { verifyCode?: unknown } | null)?.verifyCode).trim();
-    if (!loginId || !verifyCode) return invalid('账号和短信验证码不能为空');
-    const serverBase = readServerBase(request);
-    const result = await serverApi.getTokenBySms(serverBase, getConfig().machineCode, loginId, verifyCode);
-    if (result.ok && !getSession()) {
-      // 短信登录无密码可存，不写 savedPassword（已有密文保持原样，供下次冷启动自动登录）
-      keepSession(serverBase, result.data);
-    }
-    return result;
+    const password = readString((request as { password?: unknown } | null)?.password);
+    if (!loginId || !password) return invalid('账号和密码不能为空');
+    return serverApi.svrSendLoginVerifyCode(readServerBase(request), getConfig().machineCode, loginId, password);
   });
 
   // 登录窗自绘 × 关闭按钮（macOS 隐藏原生红绿灯后唯一的关闭入口）
@@ -498,7 +496,7 @@ function registerIpcHandlers(): void {
     loginWindow?.close();
   });
 
-  // 自动登录：config 保存的账号 + safeStorage 密文密码走 loginByPassword，成功复用 keepSession 开窗
+  // 自动登录：config 保存的账号 + safeStorage 密文密码走 SvrUserLogin.getToken，成功复用 keepSession 开窗
   ipcMain.handle('auth:auto-login', async () => {
     const config = getConfig();
     if (!config.autoLogin) {
@@ -515,9 +513,14 @@ function registerIpcHandlers(): void {
       return { ok: false as const, code: 0, message: '已保存的密码无法解密，请手动登录' };
     }
     if (!savedPlain) return { ok: false as const, code: 0, message: '已保存的密码为空，请手动登录' };
-    const result = await serverApi.loginByPassword(config.serverBase, config.machineCode, config.savedLoginId, savedPlain);
+    const result = await serverApi.svrUserLogin(
+      config.serverBase,
+      config.machineCode,
+      config.savedLoginId,
+      savedPlain,
+    );
     // 竞态守卫：等待期间用户可能已手动登录成功（会话已建立），迟到的成功忽略，避免开出第二扇主窗
-    if (result.ok && !getSession()) keepSession(config.serverBase, result.data);
+    if (result.ok && !getSession()) await keepSession(config.serverBase, result.data);
     return result;
   });
 
