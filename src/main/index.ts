@@ -26,7 +26,7 @@ import {
 } from './saved-accounts';
 import * as serverApi from './api';
 import { clearSession, getCorpList, getSession, getSessionSummary, saveCorpList, saveSession } from './session-store';
-import { buildAiUrl, buildErpUrl, classifyUrl, readErpCorpNo, withSessionParams } from './url-policy';
+import { buildAiUrl, buildErpUrl, classifyUrl, isErpLogoutUrl, readErpCorpNo, withSessionParams } from './url-policy';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
@@ -1116,13 +1116,23 @@ app.whenReady().then(() => {
 
 /**
  * webview guest（ERP/AI 标签页）统一拦截，规则与壳导航锁同一 URL 策略：
+ * - 网页版退出入口（{corpNo}/TFrmLogout 及其 .exit 动作）：不加载网页版退出页，
+ *   改走壳退出（performLogout）回壳登录窗，避免壳退出与网页版退出两套流程并存；
  * - window.open / target=_blank：ERP 站点家族与 AI 站转壳新标签（tabs:open-request，
  *   壳经 tabs:resolve 补参后建 <webview>），外域走系统浏览器，应用内一律不开新窗；
  * - 页内导航/重定向：ERP 站点家族与 AI 站放行（正常业务跳转），外域拦下转系统浏览器。
  */
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
+  /** 网页版退出入口统一映射到壳退出；返回是否已受理（受理后不再按普通导航处理） */
+  const handleWebLogout = (url: string): boolean => {
+    if (!isErpLogoutUrl(url, getSession(), currentAiBase())) return false;
+    console.log(`[auth] 捕获网页版退出入口，改走外壳退出：${url}`);
+    performLogout();
+    return true;
+  };
   contents.setWindowOpenHandler(({ url }) => {
+    if (handleWebLogout(url)) return { action: 'deny' };
     const kind = classifyUrl(url, getSession(), currentAiBase());
     if (kind === 'same-server' || kind === 'ai-site') {
       sendToShell('tabs:open-request', { url });
@@ -1132,6 +1142,10 @@ app.on('web-contents-created', (_event, contents) => {
     return { action: 'deny' };
   });
   const guardNavigation = (event: Electron.Event, url: string) => {
+    if (handleWebLogout(url)) {
+      event.preventDefault();
+      return;
+    }
     const kind = classifyUrl(url, getSession(), currentAiBase());
     if (kind === 'same-server' || kind === 'ai-site') return;
     event.preventDefault();
@@ -1140,12 +1154,16 @@ app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', guardNavigation);
   contents.on('will-redirect', guardNavigation);
   // 整页/页内导航后的账套同步（网页版切换账套检测，见 syncSessionCorpFromNavigation）；
-  // 页内导航仅主框架参与（SPA pushState 切账套发生在主框架）
+  // 页内导航仅主框架参与（SPA pushState 切账套发生在主框架）；
+  // 退出入口若绕过 will-navigate（如 SPA pushState），在导航落定后同样改走壳退出。
   contents.on('did-navigate', (_event, url) => {
+    if (handleWebLogout(url)) return;
     void syncSessionCorpFromNavigation(url);
   });
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (isMainFrame) void syncSessionCorpFromNavigation(url);
+    if (!isMainFrame) return;
+    if (handleWebLogout(url)) return;
+    void syncSessionCorpFromNavigation(url);
   });
 });
 

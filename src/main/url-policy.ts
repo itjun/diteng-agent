@@ -96,6 +96,25 @@ export function withSessionParams(rawUrl: string, session: SessionInfo | null, a
 }
 
 /**
+ * 网页版退出入口 URL：ERP 站点家族内的退出系统确认页 {corpNo}/TFrmLogout
+ * 与确认退出动作 {corpNo}/TFrmLogout.exit（summer 表单方法跳转，见 myapp.js appLogout）。
+ * 外壳内这类导航不加载网页版退出页，改走壳退出回登录窗（main/index.ts performLogout）。
+ */
+const ERP_LOGOUT_LAST_SEGMENT = /^(?:T)?FrmLogout(?:\.exit)?$/i;
+
+export function isErpLogoutUrl(rawUrl: string, session: SessionInfo | null, aiBase: string): boolean {
+  if (classifyUrl(rawUrl, session, aiBase) !== 'same-server') return false;
+  let segments: string[];
+  try {
+    segments = new URL(rawUrl).pathname.split('/').filter(Boolean);
+  } catch {
+    return false;
+  }
+  const last = segments[segments.length - 1] ?? '';
+  return ERP_LOGOUT_LAST_SEGMENT.test(last);
+}
+
+/**
  * ERP 页 URL 首段路径的账套号（{serverBase}/{corpNo}/{form}…）：
  * 仅识别 5~8 位数字形态的首段（与 buildAiUrl 判定一致），其余返回空串。
  * AI 站路径同为 /{corpNo}/ 前缀，调用方须先经 classifyUrl 排除再取账套号。
