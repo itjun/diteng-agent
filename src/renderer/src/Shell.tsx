@@ -58,6 +58,20 @@ function navigationStateOf(webview: WebviewElement | undefined): NavigationState
 }
 
 /**
+ * 标签归属账套重记账：ERP/AI 页路径首段为账套号（/{corpNo}/…）。guest 内部切换账套
+ * （网页版右上角账套卡片）后标签实际账套已变，仅按此修正归属——它是切换账套时关旧账套
+ * 标签的依据；非 /{corpNo}/ 形态返回空串表示维持原值。URL 放行/补参策略仍归主进程。
+ */
+function corpNoOfUrl(url: string): string {
+  try {
+    const first = new URL(url).pathname.split('/').filter(Boolean)[0] ?? '';
+    return /^\d{5,8}$/.test(first) ? first : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * 主窗壳：左侧竖向标签栏（rail）+ 内容区都在渲染层，每 tab 一个 <webview>（页内合成，与 macOS 整窗 vibrancy 兼容）。
  * 标签状态（id/url/title/favicon/corpNo/isLoading）归渲染层，标题/favicon/loading 由 webview 元素事件维护；
  * URL 策略（分类 + 同域补 sid）归主进程：任何开标签入口先经 tabs:resolve 拿最终 URL 再建 webview。
@@ -113,10 +127,13 @@ export function Shell() {
     setActiveTabId(id);
   }, []);
 
-  /** webview 事件回写标签元数据（title/favicon/loading/url） */
-  const updateTab = useCallback((id: string, patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading'>>) => {
-    setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
-  }, []);
+  /** webview 事件回写标签元数据（title/favicon/loading/url，导航跨账套时重记 corpNo） */
+  const updateTab = useCallback(
+    (id: string, patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading' | 'corpNo'>>) => {
+      setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
+    },
+    [],
+  );
 
   /** 注册 webview 元素：工具栏经该表直接操作当前标签的历史/刷新/主页导航 */
   const registerWebview = useCallback((id: string, webview: WebviewElement | null) => {
@@ -457,7 +474,7 @@ function TabWebview({
 }: {
   tab: TabInfo;
   isActive: boolean;
-  onMeta: (id: string, patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading'>>) => void;
+  onMeta: (id: string, patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading' | 'corpNo'>>) => void;
   onRegister: (id: string, webview: WebviewElement | null) => void;
   onNavigationState: (id: string, state: NavigationState) => void;
 }) {
@@ -468,7 +485,8 @@ function TabWebview({
   useEffect(() => {
     const element = elementRef.current;
     if (!element) return;
-    const meta = (patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading'>>) => onMeta(tab.id, patch);
+    const meta = (patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading' | 'corpNo'>>) =>
+      onMeta(tab.id, patch);
     const syncNavigation = () => onNavigationState(tab.id, navigationStateOf(element));
     const onTitle = (event: WebviewDomEvent) => meta({ title: event.title ?? '' });
     const onFavicon = (event: WebviewDomEvent) => {
@@ -483,11 +501,15 @@ function TabWebview({
       syncNavigation();
     };
     const onNavigate = (event: WebviewDomEvent) => {
-      meta({ url: event.url ?? element.getURL() });
+      const url = event.url ?? element.getURL();
+      const corpNo = corpNoOfUrl(url);
+      meta(corpNo ? { url, corpNo } : { url });
       syncNavigation();
     };
     const onDomReady = () => {
-      meta({ url: element.getURL() });
+      const url = element.getURL();
+      const corpNo = corpNoOfUrl(url);
+      meta(corpNo ? { url, corpNo } : { url });
       syncNavigation();
     };
     onRegister(tab.id, element);
@@ -649,6 +671,9 @@ function UserChip({
   }
 
   const avatarChar = displayName.charAt(0).toUpperCase();
+  // tooltip：当前账套「名称（代码）」，名称未下发时只显示代码；服务器随会话展示
+  const corpLabel = session?.corpName ? `${session.corpName}（${session.corpNo}）` : (session?.corpNo ?? '');
+  const chipTitle = session ? `当前账套 ${corpLabel} / 服务器 ${session.serverBase}` : '未登录';
 
   return (
     <div className={styles.userChipWrap} ref={wrapRef}>
@@ -659,7 +684,7 @@ function UserChip({
         data-switching={isSwitching ? 'true' : 'false'}
         onClick={toggleOpen}
         disabled={!session || isSwitching}
-        title={session ? `当前账套 ${session.corpNo}（服务器 ${session.serverBase}）` : '未登录'}
+        title={chipTitle}
       >
         {isSwitching && <span className={styles.spinner} aria-hidden="true" />}
         <span className={styles.userAvatar} aria-hidden="true">

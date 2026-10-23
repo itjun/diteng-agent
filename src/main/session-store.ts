@@ -23,6 +23,7 @@ export function getSessionSummary(): SessionSummary | null {
     serverBase: currentSession.serverBase,
     userId: currentSession.userId,
     corpNo: currentSession.corpNo,
+    corpName: currentSession.corpName,
     homeForm: currentSession.homeForm,
     userName: currentSession.userName,
     userCode: currentSession.userCode,

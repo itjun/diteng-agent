@@ -96,6 +96,22 @@ export function withSessionParams(rawUrl: string, session: SessionInfo | null, a
 }
 
 /**
+ * ERP 页 URL 首段路径的账套号（{serverBase}/{corpNo}/{form}…）：
+ * 仅识别 5~8 位数字形态的首段（与 buildAiUrl 判定一致），其余返回空串。
+ * AI 站路径同为 /{corpNo}/ 前缀，调用方须先经 classifyUrl 排除再取账套号。
+ */
+export function readErpCorpNo(rawUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return '';
+  }
+  const first = url.pathname.split('/').filter(Boolean)[0] ?? '';
+  return /^\d{5,8}$/.test(first) ? first : '';
+}
+
+/**
  * ERP 页 URL：{serverBase}/{corpNo}/{form}?sid={token}&CLIENTID={machineCode}&device=pc。
  * 参数名依据 summer ISession.java（TOKEN="sid"、CLIENT_ID="CLIENTID"、CLIENT_DEVICE="device"），
  * 形态依据 diteng-im-server TFrmChooseAccount.buildImDefaultHomeUrl：{entry}/{corpNo}/FrmDefault + 三参数。

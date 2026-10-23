@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { getConfig, resolveAiBase, saveWindowBounds, updateConfig } from './config';
 import * as serverApi from './api';
 import { clearSession, getCorpList, getSession, getSessionSummary, saveCorpList, saveSession } from './session-store';
-import { buildAiUrl, buildErpUrl, classifyUrl, withSessionParams } from './url-policy';
+import { buildAiUrl, buildErpUrl, classifyUrl, readErpCorpNo, withSessionParams } from './url-policy';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
@@ -20,6 +20,7 @@ import type {
   AppConfig,
   AppConfigPatch,
   ApiFailure,
+  CorpAccount,
   LoginResult,
   MqttState,
   SessionInfo,
@@ -376,8 +377,9 @@ function applyWindowTheme(): void {
 
 /**
  * 登录成功：会话入库（token 只留主进程内存）并打开主窗。
- * SvrUserLogin.getToken 不返回 userId（MQTT 未读 topic 依赖它）：先经 getTokenInfo 补齐
- * userId/用户名再开窗、连 MQTT；失败不阻断登录（userId 空时未读通知降级，resolveUserDisplay 兜底重试）。
+ * SvrUserLogin.getToken 不返回 userId（MQTT 未读 topic 依赖它）：开窗前并行经 getTokenInfo 补齐
+ * userId/用户名/子账号、经 listMyLivingUsers 取账套名称并暖账套列表缓存；失败不阻断登录
+ * （userId 空时未读通知降级，resolveUserDisplay 兜底重试；corpName 空时渲染层回落账套号）。
  */
 async function keepSession(serverBase: string, result: LoginResult): Promise<void> {
   const config = getConfig();
@@ -388,6 +390,7 @@ async function keepSession(serverBase: string, result: LoginResult): Promise<voi
     rootToken: result.token,
     userId: result.userId,
     corpNo: result.corpNo,
+    corpName: '',
     homeForm: result.homeForm,
     machineCode: config.machineCode,
     userName: '',
@@ -397,16 +400,33 @@ async function keepSession(serverBase: string, result: LoginResult): Promise<voi
   console.log(
     `[auth] 登录成功，token=${result.token.slice(0, 8)}… corpNo=${result.corpNo} homeForm=${result.homeForm}`,
   );
-  const info = await serverApi.getTokenInfo(serverBase, session.machineCode, result.token);
+  // getTokenInfo（userId/用户名/子账号）与账套列表（账套名称 + 暖缓存）互不依赖，并行拉取；
+  // 账套列表失败不影响登录，仅 corpName 留空（后续切换账套/打开账套列表时再补）
+  const [info, corps] = await Promise.all([
+    serverApi.getTokenInfo(serverBase, session.machineCode, result.token),
+    serverApi.listMyLivingUsers(serverBase, result.token, session.machineCode),
+  ]);
+  saveCorpList(corps.ok ? corps.data : []);
+  if (!corps.ok) console.warn(`[auth] 登录后拉取账套列表失败（账套名称暂缺）：${corps.message}`);
   if (info.ok) {
     session.userId = info.data.userId || result.userId;
     session.userName = info.data.userName || info.data.userCode;
     session.userCode = info.data.userCode;
+    // 账套号以 token 绑定账套为准（与登录响应 startPage 同源，异常时也能保证 URL 与 token 一致）
+    if (info.data.corpNo) {
+      if (result.corpNo && info.data.corpNo !== result.corpNo) {
+        console.warn(
+          `[auth] 登录落点账套 ${result.corpNo} 与 token 绑定账套 ${info.data.corpNo} 不一致，按 token 绑定账套处理`,
+        );
+      }
+      session.corpNo = info.data.corpNo;
+    }
   } else {
     console.warn(`[auth] 登录后 getTokenInfo 失败（userId 未就绪，MQTT 未读降级）：${info.message}`);
   }
+  // 账套名称只依赖账套列表：即使 getTokenInfo 失败也尽量补上
+  session.corpName = resolveCorpName(session.corpNo, getCorpList());
   saveSession(session);
-  saveCorpList([]);
   // forceRedirect + 绝对 URL（服务端显式指定落点）优先；否则开当前账套首页表单
   const forcedUrl =
     result.forceRedirect && /^https?:\/\//i.test(result.redirectUrl) ? result.redirectUrl : '';
@@ -419,29 +439,28 @@ async function keepSession(serverBase: string, result: LoginResult): Promise<voi
 }
 
 /**
- * 补齐会话的用户显示名与代码：
+ * 补齐会话的用户显示名、子账号代码与账套名称：
  * 首选 getTokenInfo（userName 为账号级名称、与账套无关；依据 UserCenterService.getTokenInfo），
- * 失败时回落 listMyLivingUsers 匹配当前账套的 Code_/Name_（顺路暖缓存）。两者都拿不到时保持空串，
- * 渲染层自行回落 savedLoginId 展示。
+ * 失败时回落账套列表匹配当前账套的 Code_/Name_（顺路暖缓存）。两者都拿不到时保持空串。
  */
 async function resolveUserDisplay(session: SessionInfo): Promise<void> {
-  const info = await serverApi.getTokenInfo(session.serverBase, session.machineCode, session.token);
-  if (info.ok) {
-    if (info.data.userId && !session.userId) session.userId = info.data.userId;
-    session.userName = info.data.userName || info.data.userCode;
-    session.userCode = info.data.userCode;
+  const patch = await resolveTokenSessionPatch(session, session.token, session.corpNo);
+  // 等待网络期间会话可能已被替换（登出/重新登录），旧会话对象不得再写回 store
+  if (getSession() !== session) return;
+  if (patch) {
+    applyTokenSessionPatch(session, patch);
     saveSession(session);
     pushSessionChanged();
     return;
   }
-  console.warn(`[auth] getTokenInfo 失败，回落账套列表取用户名：${info.message}`);
-  const list = await serverApi.listMyLivingUsers(session.serverBase, session.token, session.machineCode);
-  if (!list.ok) return;
-  saveCorpList(list.data);
-  const match = list.data.find((corp) => corp.corpNo === session.corpNo);
+  // getTokenInfo 失败时回落账套列表：按当前账套的子账号 Code_/Name_ 取展示名
+  const corpList = await ensureCorpList(session.serverBase, session.token, session.machineCode);
+  if (getSession() !== session) return;
+  const match = corpList.find((corp) => corp.corpNo === session.corpNo);
   if (!match) return;
   session.userName = match.name || match.code;
   session.userCode = match.code;
+  session.corpName = resolveCorpName(session.corpNo, corpList);
   saveSession(session);
   pushSessionChanged();
 }
@@ -477,6 +496,221 @@ function pushSessionChanged(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('session:changed', getSessionSummary());
   }
+}
+
+// 账套列表拉取的在途请求：登录/切账套/页内导航可能同时触发，共用同一次只读查询，避免重复请求与后写覆盖
+let corpListFetch: Promise<CorpAccount[]> | null = null;
+
+/** 账套显示名：账套简称 ShortName_ 优先，其次子账号名称 Name_；不在列表内返回空串（未知） */
+function resolveCorpName(corpNo: string, corpList: CorpAccount[]): string {
+  const match = corpList.find((corp) => corp.corpNo === corpNo);
+  return match?.shortName || match?.name || '';
+}
+
+/**
+ * 用账套列表补齐会话的账套名称：登录时列表拉取失败会让 corpName 留空，打开账套列表时顺路补上，
+ * 变化后推送会话摘要（壳/设置页不必重新拉取会话）。已有名称时不覆盖。
+ */
+function backfillCorpName(session: SessionInfo, corpList: CorpAccount[]): void {
+  if (session.corpName) return;
+  const corpName = resolveCorpName(session.corpNo, corpList);
+  if (!corpName) return;
+  session.corpName = corpName;
+  saveSession(session);
+  pushSessionChanged();
+}
+
+/**
+ * 取当前主账号可用账套列表：主进程缓存优先，缓存为空时只读拉取一次并写缓存。
+ * 拉取失败只告警并返回空数组——账套名称缺失不应阻断登录/会话同步，后续入口会重试。
+ */
+async function ensureCorpList(serverBase: string, token: string, machineCode: string): Promise<CorpAccount[]> {
+  const cached = getCorpList();
+  if (cached.length > 0) return cached;
+  if (corpListFetch) return corpListFetch;
+  corpListFetch = serverApi
+    .listMyLivingUsers(serverBase, token, machineCode)
+    .then((result) => {
+      if (!result.ok) {
+        console.warn(`[auth] 拉取账套列表失败（账套名称暂缺）：${result.message}`);
+        return [] as CorpAccount[];
+      }
+      saveCorpList(result.data);
+      return result.data;
+    })
+    .finally(() => {
+      corpListFetch = null;
+    });
+  return corpListFetch;
+}
+
+/** getTokenInfo 解析出的会话补丁：网络等待期间不落库，由调用方确认无更新的导航后再提交 */
+interface TokenSessionPatch {
+  corpNo: string;
+  corpName: string;
+  userCode: string;
+  userName: string;
+  userId: string;
+}
+
+/**
+ * 按 token 查权威会话信息（/center/UserServer/getTokenInfo）并解析账套名称：
+ * corpNo 为 token 绑定的账套（缺失时回落 fallbackCorpNo），userCode 为 token 绑定的子账号代码，
+ * userName 为账号级用户名。依据 UserCenterService.getTokenInfo：三字段均按 token 的
+ * CurrentUserEntity 返回，与 URL 无关；账套名称取自账套列表（ShortName_ 优先）。查询失败返回 null。
+ */
+async function resolveTokenSessionPatch(
+  session: SessionInfo,
+  token: string,
+  fallbackCorpNo: string,
+): Promise<TokenSessionPatch | null> {
+  // 两个只读查询互不依赖，并行拉取；账套列表失败只影响 corpName（留空）
+  const [info, corpList] = await Promise.all([
+    serverApi.getTokenInfo(session.serverBase, session.machineCode, token),
+    ensureCorpList(session.serverBase, token, session.machineCode),
+  ]);
+  if (!info.ok) {
+    console.warn(`[auth] getTokenInfo 查询失败（token=${token.slice(0, 8)}…）：${info.message}`);
+    return null;
+  }
+  const corpNo = info.data.corpNo || fallbackCorpNo || session.corpNo;
+  return {
+    corpNo,
+    corpName: resolveCorpName(corpNo, corpList),
+    userCode: info.data.userCode,
+    userName: info.data.userName || info.data.userCode,
+    userId: info.data.userId,
+  };
+}
+
+/**
+ * 提交 token 会话补丁：账套号以 token 绑定值为准；账套名称/子账号代码只随账套号一起更新——
+ * 同一账套取不到时保留旧值，换账套时必须用新值或空串，避免把旧账套的名称/子账号挂到新账套号上。
+ * 用户名与 userId 是账号级信息、与账套无关，缺失时保留已取值。
+ */
+function applyTokenSessionPatch(session: SessionInfo, patch: TokenSessionPatch): void {
+  const isSameCorp = patch.corpNo === session.corpNo;
+  session.corpNo = patch.corpNo;
+  session.corpName = patch.corpName || (isSameCorp ? session.corpName : '');
+  session.userCode = patch.userCode || (isSameCorp ? session.userCode : '');
+  if (patch.userName) session.userName = patch.userName;
+  if (patch.userId) session.userId = patch.userId;
+}
+
+/** 切换/登录流程表单页不作为账套同步依据：TFrmChooseAccount 本身挂在 000000 下，浏览切换页不等于已切换 */
+const CORP_SYNC_SKIP_FORMS = /(TFrmChooseAccount|FrmLogin|TFrmLogin|FrmLogout|TFrmLogout|FrmVerifyClient)/;
+
+// 页内导航账套同步的并发控制：pendingNavKey 记录在途同步的去重键（sid 或账套号），
+// 同一键的连续事件只处理一次；navSyncSeq 保证「后发起的导航优先」——快速连续切账套时，
+// 先发起但慢返回的结果若已不是最新序号则丢弃，避免旧账套覆盖新账套。
+let pendingNavKey = '';
+let navSyncSeq = 0;
+
+/** 开始一次导航同步：同一去重键在途时返回 false（跳过重复事件），否则占用该键并推进序号 */
+function beginNavSync(key: string): boolean {
+  if (key === pendingNavKey) return false;
+  pendingNavKey = key;
+  navSyncSeq += 1;
+  return true;
+}
+
+/** 结束导航同步：只有该键仍归本次同步时才释放（已被更新导航接管则保留，避免破坏后来者去重） */
+function finishNavSync(key: string): void {
+  if (pendingNavKey === key) pendingNavKey = '';
+}
+
+/** 导航同步成功后收尾：落库 + 日志 + 重拉未读（凭证已换） + 推送会话摘要（壳/设置页刷新账套与子账号） */
+function commitNavigationSession(session: SessionInfo, source: string): void {
+  saveSession(session);
+  console.log(
+    `[auth] 同步网页切换账套 corpNo=${session.corpNo} corpName=${session.corpName || '(未知)'} ` +
+      `userCode=${session.userCode || '(未知)'} token=${session.token.slice(0, 8)}… 来源=${source}`,
+  );
+  // MQTT topic 按主账号订阅与账套无关，无需重连；凭证已换，重拉未读刷新角标
+  void mqttService.refreshUnread();
+  pushSessionChanged();
+}
+
+/**
+ * ERP 页内账套同步：网页版切换账套（页头账套卡片 TFrmChooseAccount.switchUser，按目标
+ * 子账号代码切换）发生在 webview 内部，主进程会话不随之更新，壳与设置页的账套号、账套名称、
+ * 子账号会滞后。以 getTokenInfo 为权威来源分两条路径同步：
+ * - URL 带 sid：直接用该 sid 查 getTokenInfo。经典页切账套只刷新同一 token 的会话选项
+ *   （refreshUser 不换 token）再整页跳转，所以「同 sid + 新账套号」也必须重新确认；
+ * - URL 不带 sid（SPA 切账套剥掉 URL 凭证）：用 rootToken 免密换票（与壳内
+ *   session:switch-corp 同一链路），再对新 token 查 getTokenInfo。
+ * 账套号/子账号/用户名一律取 getTokenInfo 返回值（corpNo 缺失时回落 URL 首段账套号，两者一致）；
+ * 账套名称按账套列表解析。成功后经 session:changed 下发，AI 站页面不参与同步。
+ */
+async function syncSessionCorpFromNavigation(rawUrl: string): Promise<void> {
+  const session = getSession();
+  if (!session) return;
+  if (classifyUrl(rawUrl, session, currentAiBase()) !== 'same-server') return;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return;
+  }
+  if (CORP_SYNC_SKIP_FORMS.test(parsed.pathname)) return;
+  const urlCorpNo = readErpCorpNo(rawUrl);
+  const sid = parsed.searchParams.get('sid') || '';
+
+  if (sid) {
+    // ① URL 带 sid：以该 token 的 getTokenInfo 为权威。同一凭证且 URL 账套未变 = 普通导航
+    // （同账套换表单）无需同步；同一凭证但 URL 账套变了必须同步——经典页切账套走的就是这条路。
+    if (sid === session.token && (!urlCorpNo || urlCorpNo === session.corpNo)) return;
+    const key = `sid:${sid}`;
+    if (!beginNavSync(key)) return;
+    const seq = navSyncSeq;
+    let patch: TokenSessionPatch | null = null;
+    try {
+      patch = await resolveTokenSessionPatch(session, sid, urlCorpNo);
+    } finally {
+      finishNavSync(key); // 异常路径同样释放去重键，避免后续导航被永久跳过
+    }
+    // await 期间会话被替换（登出/重新登录）或有更新的导航时放弃本次写入
+    if (seq !== navSyncSeq || getSession() !== session || !patch) return;
+    applyTokenSessionPatch(session, patch);
+    session.token = sid;
+    // 切账套固定进 FrmDefault，不走喜好页（对齐 TFrmChooseAccount 切换语义）
+    session.homeForm = 'FrmDefault';
+    commitNavigationSession(session, 'sid');
+    return;
+  }
+
+  // ② 无 sid（SPA 切账套被剥掉 URL 凭证）：仅当首段账套号与当前会话不同才换票
+  if (!urlCorpNo || urlCorpNo === session.corpNo) return;
+  const key = `corp:${urlCorpNo}`;
+  if (!beginNavSync(key)) return;
+  const seq = navSyncSeq;
+  let nextToken = '';
+  let patch: TokenSessionPatch | null = null;
+  try {
+    const exchanged = await serverApi.getNuewToken(
+      session.serverBase,
+      session.token,
+      session.rootToken || session.token,
+      session.machineCode,
+      urlCorpNo,
+    );
+    // 换票失败只告警、不写会话：页面可能还没切完，留待下一次导航重试
+    if (!exchanged.ok) {
+      console.warn(
+        `[auth] 网页切换账套 ${session.corpNo}->${urlCorpNo} 换票失败，会话保持不变：${exchanged.message}`,
+      );
+      return;
+    }
+    nextToken = exchanged.data;
+    patch = await resolveTokenSessionPatch(session, nextToken, urlCorpNo);
+  } finally {
+    finishNavSync(key);
+  }
+  if (seq !== navSyncSeq || getSession() !== session || !patch) return;
+  applyTokenSessionPatch(session, patch);
+  session.token = nextToken;
+  session.homeForm = 'FrmDefault';
+  commitNavigationSession(session, 'exchange');
 }
 
 /** IPC 入参做最小类型校验，非法输入按失败返回而不是让 handler 抛异常 */
@@ -653,13 +887,21 @@ function registerTabsIpcHandlers(): void {
     const session = getSession();
     if (!session) return invalid('尚未登录');
     const cached = getCorpList();
-    if (cached.length > 0) return { ok: true as const, data: cached };
+    if (cached.length > 0) {
+      backfillCorpName(session, cached);
+      return { ok: true as const, data: cached };
+    }
     const result = await serverApi.listMyLivingUsers(session.serverBase, session.token, session.machineCode);
-    if (result.ok) saveCorpList(result.data);
+    if (result.ok) {
+      saveCorpList(result.data);
+      // 登录时账套列表拉取失败会让 corpName 留空，这里顺路补齐（不覆盖已有名称）
+      if (getSession() === session) backfillCorpName(session, result.data);
+    }
     return result;
   });
 
-  // 账套切换：getNuewToken 免密换票 → 广播 corp:switched，壳（标签状态在渲染层）关旧账套标签并开新首页
+  // 账套切换：getNuewToken 免密换票 → getTokenInfo 取权威会话信息 → 广播 corp:switched，
+  // 壳（标签状态在渲染层）关旧账套标签并开新首页
   ipcMain.handle('session:switch-corp', async (_event, request: unknown) => {
     const corpNo = readString((request as { corpNo?: unknown } | null)?.corpNo).trim();
     const session = getSession();
@@ -679,21 +921,39 @@ function registerTabsIpcHandlers(): void {
       corpNo,
     );
     if (!result.ok) return result;
+    // 竞态：等待换票期间会话可能已被替换（登出/并发切换），新 token 不再写入旧会话
+    if (getSession() !== session) return invalid('会话已失效，请重新登录');
+    // 新 token 绑定的账套号/子账号/用户名以 getTokenInfo 为准（网页版切账套后 token 已换成目标账套）；
+    // 查询失败不阻断切换：凭证已换，退化为账套列表缓存的子账号信息
+    const patch = await resolveTokenSessionPatch(session, result.data, corpNo);
+    if (getSession() !== session) return invalid('会话已失效，请重新登录');
     // 旧 token 不调 logout：浏览器端可能仍在使用，此处仅本地替换；rootToken 保留供下次切换
     session.token = result.data;
-    session.corpNo = corpNo;
+    if (patch) {
+      // 账套名称由补丁按账套列表（ShortName_ → Name_）解析
+      applyTokenSessionPatch(session, patch);
+      if (patch.corpNo !== corpNo) {
+        console.warn(`[auth] 切换账套请求 ${corpNo} 与 token 绑定账套 ${patch.corpNo} 不一致，按 token 绑定账套处理`);
+      }
+    } else {
+      session.corpNo = corpNo;
+      // 用户代码随账套更新为该账套子账号代码；账号级用户名与账套无关，仅空时借账套名补一次
+      session.userCode = target.code;
+      if (!session.userName) session.userName = target.name || target.code;
+      session.corpName = resolveCorpName(corpNo, getCorpList());
+    }
     // 切账套固定进 FrmDefault，不走喜好页（对齐 TFrmChooseAccount 切换语义）
     session.homeForm = 'FrmDefault';
-    // 用户代码随账套更新为该账套子账号代码；账号级用户名与账套无关，仅空时借账套名补一次
-    session.userCode = target.code;
-    if (!session.userName) session.userName = target.name || target.code;
     saveSession(session);
-    console.log(`[auth] 切换账套成功，corpNo=${corpNo} token=${result.data.slice(0, 8)}…`);
+    console.log(
+      `[auth] 切换账套成功，corpNo=${session.corpNo} corpName=${session.corpName || '(未知)'} ` +
+        `token=${result.data.slice(0, 8)}…`,
+    );
     // MQTT topic 按主账号订阅与账套无关，无需重连；仅用新 token 重拉未读刷新角标
     void mqttService.refreshUnread();
     pushSessionChanged();
     // 旧账套页在新 token 下已无访问权：让壳关掉旧账套全部标签（含按账套记账的 AI 标签）并开新首页
-    sendToShell('corp:switched', { corpNo, entryUrl: buildErpUrl(session, session.homeForm) });
+    sendToShell('corp:switched', { corpNo: session.corpNo, entryUrl: buildErpUrl(session, session.homeForm) });
     return { ok: true as const, data: getSessionSummary() };
   });
 
@@ -782,6 +1042,14 @@ app.on('web-contents-created', (_event, contents) => {
   };
   contents.on('will-navigate', guardNavigation);
   contents.on('will-redirect', guardNavigation);
+  // 整页/页内导航后的账套同步（网页版切换账套检测，见 syncSessionCorpFromNavigation）；
+  // 页内导航仅主框架参与（SPA pushState 切账套发生在主框架）
+  contents.on('did-navigate', (_event, url) => {
+    void syncSessionCorpFromNavigation(url);
+  });
+  contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) void syncSessionCorpFromNavigation(url);
+  });
 });
 
 // 真正退出前统一收尾：断开 MQTT、关置顶弹窗、销毁托盘

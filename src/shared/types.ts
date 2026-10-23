@@ -116,11 +116,13 @@ export interface SessionInfo {
   rootToken: string;
   userId: string;
   corpNo: string;
+  /** 当前账套名称：listMyLivingUsers 的 ShortName_ 优先、否则 Name_；空串表示尚未取到 */
+  corpName: string;
   homeForm: string;
   machineCode: string;
   /** 用户显示名（账号级、账套无关）：登录后 getTokenInfo 回填，空表示尚未取到 */
   userName: string;
-  /** 当前账套子账号代码：登录后 getTokenInfo 回填，切账套时按账套列表更新 */
+  /** 当前子账号代码（当前 token 绑定的子账号）：登录/切账套后 getTokenInfo 回填 */
   userCode: string;
 }
 
@@ -129,10 +131,12 @@ export interface SessionSummary {
   serverBase: string;
   userId: string;
   corpNo: string;
+  /** 当前账套名称（账套列表 ShortName_ 优先、否则 Name_）；空串表示未知，渲染层可回落 corpNo */
+  corpName: string;
   homeForm: string;
-  /** 用户显示名；空串表示主进程尚未取到（渲染层自行回落 savedLoginId） */
+  /** 用户显示名（账号级、账套无关）；空串表示主进程尚未取到。壳内身份展示用 corpName，此字段保留供会话展示 */
   userName: string;
-  /** 当前账套子账号代码；空串表示未知 */
+  /** 当前子账号代码（当前 token 绑定的子账号）；空串表示未知 */
   userCode: string;
 }
 
