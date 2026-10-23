@@ -234,6 +234,12 @@ export interface TabsOpenRequestPayload {
 }
 
 /**
+ * 应用级快捷键动作（主进程 before-input-event 统一接管主窗与 webview guest 焦点，
+ * 壳收到后执行对应 UI 动作）：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 打开设置页。
+ */
+export type ShortcutAction = 'toggle-rail' | 'open-settings';
+
+/**
  * feedback:capture-screenshot 返回：整窗截图已写入系统剪贴板。
  * width/height 为截图尺寸（DIP，与窗口内容区一致；PNG 实际像素按设备缩放比为 1x/2x）。
  */
@@ -335,4 +341,6 @@ export interface DitengApi {
    * 写入系统剪贴板，壳据此提示用户直接粘贴给客服。
    */
   captureFeedbackScreenshot(): Promise<FeedbackScreenshotResult>;
+  /** 订阅应用快捷键动作（⌘/Ctrl+B 侧栏、⌘/Ctrl+, 设置），返回取消订阅函数 */
+  onShortcut(listener: (action: ShortcutAction) => void): () => void;
 }

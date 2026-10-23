@@ -4,6 +4,7 @@ import {
   ClipboardItem,
   clipboard,
   ipcMain,
+  Menu,
   nativeTheme,
   safeStorage,
   screen,
@@ -29,6 +30,7 @@ import {
 import * as serverApi from './api';
 import { clearSession, getCorpList, getSession, getSessionSummary, saveCorpList, saveSession } from './session-store';
 import { buildAiUrl, buildErpUrl, classifyUrl, isErpLogoutUrl, readErpCorpNo, withSessionParams } from './url-policy';
+import { installErpMenuNewTabPatch } from './erp-menu-newtab';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
@@ -42,6 +44,7 @@ import type {
   MqttState,
   SavedAccountKey,
   SessionInfo,
+  ShortcutAction,
   TabsResolveRequest,
   ThemeState,
 } from '../shared/types';
@@ -86,6 +89,121 @@ function currentAiBase(): string {
 /** 主进程 → 主窗壳单向推送；壳未开/已销毁时静默丢弃（壳挂载后自会经 resolve 重新拿到状态） */
 function sendToShell(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+/**
+ * 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 打开设置页。
+ * 焦点可能在主窗壳（工具栏/rail/设置页）或 webview guest（ERP 页面）里，
+ * 两处 webContents 都挂 before-input-event，统一拦下默认行为后推给壳执行。
+ * macOS 另外补回编辑类快捷键（剪贴板/撤销/重做）与常用窗口快捷键：
+ * 应用菜单已被清空（见 app.whenReady），这些系统快捷键原本挂在菜单上，不补会失效。
+ */
+function handleAppShortcut(event: Electron.Event, input: Electron.Input, contents: Electron.WebContents): void {
+  if (input.type !== 'keyDown' || input.isAutoRepeat || input.isComposing) return;
+  const isMac = process.platform === 'darwin';
+  const isModifierPressed = isMac ? input.meta : input.control;
+  if (!isModifierPressed || input.alt) return;
+  const key = input.key.toLowerCase();
+  if (!input.shift) {
+    let action: ShortcutAction | null = null;
+    if (key === 'b') action = 'toggle-rail';
+    else if (key === ',') action = 'open-settings';
+    if (action) {
+      event.preventDefault();
+      sendToShell('shortcut:action', action);
+      return;
+    }
+  }
+  // Windows/Linux 的编辑快捷键由 Chromium 在 WebContents 内自行处理，无需接管
+  if (!isMac) return;
+  if (input.shift) {
+    // ⌘⇧Z 重做（同样来自默认 Edit 菜单）
+    if (key === 'z') {
+      event.preventDefault();
+      contents.redo();
+    }
+    return;
+  }
+  switch (key) {
+    case 'c':
+      event.preventDefault();
+      contents.copy();
+      return;
+    case 'v':
+      event.preventDefault();
+      contents.paste();
+      return;
+    case 'x':
+      event.preventDefault();
+      contents.cut();
+      return;
+    case 'a':
+      event.preventDefault();
+      contents.selectAll();
+      return;
+    case 'z':
+      event.preventDefault();
+      contents.undo();
+      return;
+    case 'q':
+      event.preventDefault();
+      app.quit();
+      return;
+    case 'w':
+      event.preventDefault();
+      BrowserWindow.fromWebContents(contents)?.close();
+      return;
+    case 'm':
+      event.preventDefault();
+      BrowserWindow.fromWebContents(contents)?.minimize();
+      return;
+    default:
+      return;
+  }
+}
+
+// 所有窗口（登录/主窗/置顶弹窗）都挂快捷键处理；webview guest 在 web-contents-created 另行挂载
+app.on('browser-window-created', (_event, window) => {
+  window.webContents.on('before-input-event', (event, input) =>
+    handleAppShortcut(event, input, window.webContents),
+  );
+});
+
+/**
+ * 右键菜单：应用已去掉默认菜单，把常用的文本操作与页面刷新放到右键菜单里。
+ * 主窗壳、登录窗、webview guest 都会挂载；「刷新」只对页面（webview）提供，避免误刷外壳。
+ */
+function installContextMenu(contents: Electron.WebContents): void {
+  contents.on('context-menu', (_event, params) => {
+    const items: Electron.MenuItemConstructorOptions[] = [];
+    const isEditable = params.isEditable;
+    const hasSelection = params.selectionText.trim().length > 0;
+
+    if (params.linkURL) {
+      items.push({
+        label: '复制链接地址',
+        click: () => {
+          void clipboard.writeText(params.linkURL);
+        },
+      });
+      items.push({ type: 'separator' });
+    }
+    if (isEditable) {
+      items.push({ label: '剪切', enabled: hasSelection, click: () => contents.cut() });
+      items.push({ label: '复制', enabled: hasSelection, click: () => contents.copy() });
+      items.push({ label: '粘贴', click: () => contents.paste() });
+      items.push({ label: '全选', click: () => contents.selectAll() });
+    } else {
+      items.push({ label: '复制', enabled: hasSelection, click: () => contents.copy() });
+      items.push({ label: '全选', click: () => contents.selectAll() });
+    }
+    if (contents.getType() === 'webview') {
+      items.push({ type: 'separator' });
+      items.push({ label: '刷新', click: () => contents.reload() });
+    }
+    if (items.length === 0) return;
+    Menu.buildFromTemplate(items).popup();
+  });
 }
 
 /**
@@ -1061,6 +1179,12 @@ function registerTabsIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  // 去掉 Electron 默认应用菜单（macOS 顶部会显示 Electron/File/Edit/View/Window，
+  // Windows/Linux 是窗口内菜单条），业务壳用不到这些入口。
+  // macOS 用空菜单模板而不是 null：null 在 macOS 上会残留上一次的原生菜单栏，
+  // 空模板才会真正清空；清空菜单会连带带走 ⌘C/⌘V/⌘Z 等系统快捷键，
+  // 已在 handleAppShortcut 里手动补回。
+  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([]) : null);
   // 必须在创建任何窗口前同步应用主题，首帧的 vibrancy 才不会先取系统外观。
   applyNativeTheme(getConfig());
   registerIpcHandlers();
@@ -1073,6 +1197,7 @@ app.whenReady().then(() => {
 
 /**
  * webview guest（ERP/AI 标签页）统一拦截，规则与壳导航锁同一 URL 策略：
+ * - 菜单卡片新标签：菜单模组页卡片点击按网页版 `_blank` 语义转壳新标签（见 erp-menu-newtab.ts）；
  * - 网页版退出入口（{corpNo}/TFrmLogout 及其 .exit 动作）：不加载网页版退出页，
  *   改走壳退出（performLogout）回壳登录窗，避免壳退出与网页版退出两套流程并存；
  * - window.open / target=_blank：ERP 站点家族与 AI 站转壳新标签（tabs:open-request，
@@ -1080,7 +1205,13 @@ app.whenReady().then(() => {
  * - 页内导航/重定向：ERP 站点家族与 AI 站放行（正常业务跳转），外域拦下转系统浏览器。
  */
 app.on('web-contents-created', (_event, contents) => {
+  // 右键菜单对所有 webContents 生效（外壳/登录窗提供文本操作，webview 额外提供刷新）
+  installContextMenu(contents);
   if (contents.getType() !== 'webview') return;
+  // 应用快捷键：焦点在 ERP 页面内时同样接管（⌘/Ctrl+B、⌘/Ctrl+, 与 macOS 编辑快捷键）
+  contents.on('before-input-event', (event, input) => handleAppShortcut(event, input, contents));
+  // 经典菜单页卡片默认走 location.href 同标签替换，与网页版 _blank 不一致：注入补丁转 window.open
+  installErpMenuNewTabPatch(contents);
   /** 网页版退出入口统一映射到壳退出；返回是否已受理（受理后不再按普通导航处理） */
   const handleWebLogout = (url: string): boolean => {
     if (!isErpLogoutUrl(url, getSession(), currentAiBase())) return false;

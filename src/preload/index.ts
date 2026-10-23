@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   MqttState,
   SessionSummary,
+  ShortcutAction,
   TabsOpenRequestPayload,
   ThemeState,
 } from '../shared/types';
@@ -59,6 +60,13 @@ const diteng: DitengApi = {
     ipcRenderer.on('session:changed', handler);
     return () => {
       ipcRenderer.removeListener('session:changed', handler);
+    };
+  },
+  onShortcut: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, action: ShortcutAction) => listener(action);
+    ipcRenderer.on('shortcut:action', handler);
+    return () => {
+      ipcRenderer.removeListener('shortcut:action', handler);
     };
   },
   onMqttChanged: (listener) => {

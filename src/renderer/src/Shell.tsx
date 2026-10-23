@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type {
   SessionSummary,
+  ShortcutAction,
   TabInfo,
   TabsResolveRequest,
   TabsResolveResult,
@@ -323,6 +324,16 @@ export function Shell() {
   const selectSettingsCategory = useCallback((category: SettingsCategoryKey) => {
     setSettingsCategory(category);
   }, []);
+
+  // 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 进入设置页。
+  // 按键在主进程 before-input-event 统一拦截（含 webview guest 焦点），这里只执行 UI 动作。
+  useEffect(() => {
+    const unsubscribe = window.diteng.onShortcut((action: ShortcutAction) => {
+      if (action === 'toggle-rail') toggleRail();
+      else openSettings();
+    });
+    return unsubscribe;
+  }, [openSettings, toggleRail]);
 
   // ===== 侧栏宽度拖拽：拖拽期间盖全窗透明盾牌（z-index 高于一切，含 webview），
   // 否则指针移入 webview 区域后事件被路由进 guest 进程，宿主页收不到 move/up（真实拖拽同样会卡住）；
