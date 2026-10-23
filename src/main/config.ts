@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import type { AppConfig, AppConfigPatch, ThemeSetting, WindowBounds } from '../shared/types';
+import type { AppConfig, AppConfigPatch, ChromeColor, ThemeSetting, WindowBounds } from '../shared/types';
 
 /** 线上生产环境地址（登录页默认预填；本地开发可直接手输其它地址） */
 const DEFAULT_SERVER_BASE = 'https://m.cdcp.site';
@@ -12,6 +12,9 @@ const LEGACY_DEFAULT_SERVER_BASE = 'http://127.0.0.1:8101';
 
 /** 配置结构版本：2 = 默认服务地址切到线上；旧配置（缺字段视为 1）按旧默认值判定迁移 */
 const CONFIG_VERSION = 2;
+
+/** 外围颜色合法取值（渲染层色板同序；auto = 自动黑白灰） */
+const CHROME_COLORS: ChromeColor[] = ['auto', 'ink', 'slate', 'green', 'blue', 'purple', 'orange', 'pink'];
 
 /** 历史账号保留上限：超出按最近登录时间淘汰，避免下拉列表无限增长 */
 const MAX_SAVED_ACCOUNTS = 10;
@@ -48,7 +51,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { configVersion: CONFIG_VERSION, serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -135,6 +138,11 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
       : storedServerBase || base.serverBase;
   const theme: ThemeSetting =
     input?.theme === 'light' || input?.theme === 'dark' ? input.theme : 'system';
+  // 外围颜色：非法/旧配置缺字段一律回落 auto（自动黑白灰），不打断启动
+  const chromeColorRaw = (input as { chromeColor?: unknown } | undefined)?.chromeColor;
+  const chromeColor: ChromeColor = CHROME_COLORS.includes(chromeColorRaw as ChromeColor)
+    ? (chromeColorRaw as ChromeColor)
+    : 'auto';
   const windowBounds = normalizeWindowBounds(input?.windowBounds);
   // 侧栏宽度：0=未自定义（渲染层用默认 300）；自定义值限 200~480 整数，越界视为未记录
   const railWidthRaw = (input as { railWidth?: unknown } | undefined)?.railWidth;
@@ -165,6 +173,7 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
     savedLoginId,
     savedPassword,
     theme,
+    chromeColor,
     windowBounds,
     railWidth,
     rememberPassword,
@@ -221,6 +230,8 @@ export function updateConfig(patch: AppConfigPatch): StoredAppConfig {
     config.aiBase = patch.aiBase.trim().replace(/\/+$/, '');
   if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
     config.theme = patch.theme;
+  // 外围颜色：只接受预设值（auto = 自动黑白灰）
+  if (patch.chromeColor && CHROME_COLORS.includes(patch.chromeColor)) config.chromeColor = patch.chromeColor;
   // railWidth：0（恢复默认）或 200~480 整数
   if (patch.railWidth === 0) config.railWidth = 0;
   else if (

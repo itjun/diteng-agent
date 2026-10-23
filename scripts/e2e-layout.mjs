@@ -226,7 +226,8 @@ check('根容器 shell-rail', (await shell.locator('[data-testid="shell-rail"]')
 const toolbarBox = await shell.locator('[data-testid="browser-toolbar"]').boundingBox();
 check(
   'Chrome 式工具栏宽高',
-  Boolean(toolbarBox) && toolbarBox.width >= 600 && toolbarBox.height >= 40 && toolbarBox.height <= 46,
+  // 顶部通栏已压缩到 38px（rail 头部与右侧工具栏同高）
+  Boolean(toolbarBox) && toolbarBox.width >= 600 && toolbarBox.height >= 32 && toolbarBox.height <= 40,
   `w=${toolbarBox?.width} h=${toolbarBox?.height}`,
 );
 for (const testid of ['sidebar-toggle', 'nav-back', 'nav-forward', 'nav-reload', 'nav-home']) {
@@ -375,11 +376,12 @@ check('设置页不显示 Chat 工具栏按钮', (await shell.locator('[data-tes
 const settingsPageBox = await shell.locator('[data-testid="settings-page"]').boundingBox();
 const settingsRailBox = await shell.locator('[data-testid="settings-rail"]').boundingBox();
 check(
-  '设置页从 rail 右侧直接铺开',
+  '设置页从 rail 右侧 5px 处铺开（悬浮卡片四边留白一致）',
   Boolean(settingsPageBox) &&
     Boolean(settingsRailBox) &&
-    settingsPageBox.x >= settingsRailBox.x + settingsRailBox.width - 1 &&
-    settingsPageBox.y <= 1,
+    settingsPageBox.x >= settingsRailBox.x + settingsRailBox.width + 4 &&
+    settingsPageBox.y >= 4 &&
+    settingsPageBox.y <= 6,
   `page.x=${settingsPageBox?.x} y=${settingsPageBox?.y} rail.right=${settingsRailBox ? settingsRailBox.x + settingsRailBox.width : undefined}`,
 );
 const settingsContentBox = await shell.locator('[data-testid="settings-content"]').boundingBox();

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, SessionSummary } from '../../shared/types';
+import type { AppConfig, ChromeColor, SessionSummary } from '../../shared/types';
 import { ArrowLeftIcon, SignOutIcon } from './theme-icons';
 import { useThemeSetting } from './use-theme';
+import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
 import styles from './Settings.module.css';
 
 /** 应用版本（package.json version，v1 固定展示） */
@@ -48,9 +49,20 @@ interface SegmentOption {
   onSelect: () => void;
 }
 
-/** 行右侧控件三形态：分段选择 / 只读值 / 占位禁用按钮 */
+/** 外围颜色色板选项（Dia 式圆形色点） */
+interface SwatchOption {
+  value: string;
+  label: string;
+  /** 色点填充（CSS 颜色或渐变），auto 用黑白双色渐变 */
+  swatch: string;
+  testid: string;
+  onSelect: () => void;
+}
+
+/** 行右侧控件形态：分段选择 / 外围颜色色板 / 只读值 / 占位禁用按钮 */
 type RowControl =
   | { kind: 'segmented'; ariaLabel: string; value: string; options: SegmentOption[] }
+  | { kind: 'swatches'; ariaLabel: string; value: string; options: SwatchOption[] }
   | { kind: 'value'; testid?: string; text: string }
   | { kind: 'disabledButton'; label: string };
 
@@ -117,6 +129,26 @@ function RowControlView({ control }: { control: RowControl }) {
           >
             {option.label}
           </button>
+        ))}
+      </div>
+    );
+  }
+  if (control.kind === 'swatches') {
+    return (
+      <div className={styles.swatches} role="radiogroup" aria-label={control.ariaLabel}>
+        {control.options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={control.value === option.value}
+            aria-label={option.label}
+            title={option.label}
+            data-testid={option.testid}
+            className={control.value === option.value ? styles.swatchActive : styles.swatch}
+            style={{ background: option.swatch }}
+            onClick={option.onSelect}
+          />
         ))}
       </div>
     );
@@ -220,6 +252,13 @@ export function SettingsPage({
   const corpNo = session?.corpNo ?? '';
   const activeCat = categoryOf(activeCategory);
 
+  /** 外围颜色：立即改 DOM（CSS 按 data-chrome-color 取混色）并落盘，无需重启 */
+  function selectChromeColor(value: ChromeColor) {
+    applyChromeColor(value);
+    setConfig((current) => (current ? { ...current, chromeColor: value } : current));
+    void window.diteng.setConfig({ chromeColor: value });
+  }
+
   const rowsByCategory: Record<SettingsCategoryKey, SettingRowDef[]> = {
     account: [
       {
@@ -243,6 +282,23 @@ export function SettingsPage({
             { value: 'light', label: '浅色', testid: 'settings-theme-light', onSelect: () => setTheme('light') },
             { value: 'dark', label: '深色', testid: 'settings-theme-dark', onSelect: () => setTheme('dark') },
           ],
+        },
+      },
+      {
+        key: 'chrome-color',
+        title: '外围颜色',
+        desc: '侧栏与悬浮卡片外框的底色，默认自动跟随黑白灰',
+        control: {
+          kind: 'swatches',
+          ariaLabel: '外围颜色',
+          value: config?.chromeColor ?? 'auto',
+          options: CHROME_COLOR_OPTIONS.map((option) => ({
+            value: option.value,
+            label: option.label,
+            swatch: option.swatch,
+            testid: `settings-chrome-${option.value}`,
+            onSelect: () => selectChromeColor(option.value),
+          })),
         },
       },
     ],

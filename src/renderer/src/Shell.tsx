@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import type {
   SessionSummary,
   ShortcutAction,
@@ -30,6 +30,9 @@ import {
   SettingsRail,
 } from './Settings';
 import type { SettingsCategoryKey } from './Settings';
+import { applyChromeColor } from './chrome-color';
+import { probePageSurface } from './page-surface';
+import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
@@ -111,6 +114,8 @@ export function Shell() {
   });
   const [isRailDrag, setIsRailDrag] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<FeedbackToast | null>(null);
+  // 标签页顶部底色（地址栏跟随网页内容变色）：按标签存，切换标签直接复用，采不到时留空走应用主题默认色
+  const [pageSurfaces, setPageSurfaces] = useState<Record<string, PageSurface>>({});
   const nextIdRef = useRef(1);
   const webviewRefs = useRef(new Map<string, WebviewElement>());
   const activeTabIdRef = useRef('');
@@ -165,6 +170,15 @@ export function Shell() {
   /** 仅当前可见标签的历史状态驱动工具栏前进/后退按钮 */
   const handleNavigationState = useCallback((id: string, state: NavigationState) => {
     if (id === activeTabIdRef.current) setNavigationState(state);
+  }, []);
+
+  /** 网页顶部底色回写（同色重复上报不触发重渲染，避免每次加载都抖一下） */
+  const handlePageSurface = useCallback((id: string, surface: PageSurface) => {
+    setPageSurfaces((current) => {
+      const previous = current[id];
+      if (previous && previous.color === surface.color && previous.isDark === surface.isDark) return current;
+      return { ...current, [id]: surface };
+    });
   }, []);
 
   const toggleRail = useCallback(() => {
@@ -253,6 +267,8 @@ export function Shell() {
       if (config.railWidth > 0) {
         setRailWidth(Math.min(Math.max(config.railWidth, RAIL_WIDTH_MIN), RAIL_WIDTH_MAX));
       }
+      // 外围颜色（rail + 卡片四周留白）：设置页改选时也会即时应用，这里负责首帧后恢复上次选择
+      applyChromeColor(config.chromeColor);
     });
     void window.diteng.tabsPopEntry().then((entry) => {
       if (entry) openTab(entry.url, entry.corpNo);
@@ -292,6 +308,25 @@ export function Shell() {
   useEffect(() => {
     setNavigationState(navigationStateOf(webviewRefs.current.get(activeTabId)));
   }, [activeTabId]);
+
+  // 页面底色只保留仍存在的标签（关标签 / 切账套只保留当前标签）
+  useEffect(() => {
+    setPageSurfaces((current) => {
+      const alive = new Set(tabs.map((tab) => tab.id));
+      const kept = Object.fromEntries(Object.entries(current).filter(([id]) => alive.has(id)));
+      return Object.keys(kept).length === Object.keys(current).length ? current : kept;
+    });
+  }, [tabs]);
+
+  // 切到尚未采到底色的标签（首屏采样还没回来）时补采一次，避免地址栏一直停在默认底色
+  useEffect(() => {
+    if (!activeTabId || pageSurfaces[activeTabId]) return;
+    const webview = webviewRefs.current.get(activeTabId);
+    if (!webview) return;
+    void probePageSurface(webview).then((surface) => {
+      if (surface) handlePageSurface(activeTabId, surface);
+    });
+  }, [activeTabId, pageSurfaces, handlePageSurface]);
 
   // 平台标记（纯 renderer 判定，不加 IPC）：macOS 主窗在 <html> 标 data-platform，
   // CSS 据此走 vibrancy 半透明分支（dsh 同名约定，design-platform.css 已有配套规则）；
@@ -401,6 +436,14 @@ export function Shell() {
   // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，地址栏显示新建标签页）
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
+  // 内容卡片/地址栏底色跟随当前标签的网页顶部底色；没有采样结果（新建标签页、加载中）时
+  // 不写 --card-surface，回落到应用主题的卡片底色。tone 决定工具条文字/图标走深色还是浅色档。
+  const activeSurface = activeTabId ? pageSurfaces[activeTabId] : undefined;
+  const cardTone = activeSurface ? (activeSurface.isDark ? 'dark' : 'light') : undefined;
+  const cardStyle = activeSurface
+    ? ({ '--card-surface': activeSurface.color } as CSSProperties)
+    : undefined;
+
   const shellClass = `${styles.shell} ${styles.shellRail}${isMacPlatform ? '' : ` ${styles.shellRailWin}`}`;
 
   return (
@@ -470,40 +513,53 @@ export function Shell() {
 
         {/* 设置页直接接管内容区，不再复用浏览器工具栏；返回标签视图后恢复 webview 内容 */}
         <main className={isSettingsOpen ? `${styles.body} ${styles.bodySettings}` : styles.body}>
-          {!isSettingsOpen && (
-            <ContentToolbar
-              url={activeTab?.url ?? ''}
-              pageTitle={activeTab?.title ?? ''}
-              showSidebarToggle={isRailCollapsed}
-              onToggleRail={toggleRail}
-              canGoBack={Boolean(activeTab) && navigationState.canGoBack}
-              canGoForward={Boolean(activeTab) && navigationState.canGoForward}
-              isLoading={Boolean(activeTab?.isLoading)}
-              hasActiveTab={Boolean(activeTab)}
-              onBack={navigateBack}
-              onForward={navigateForward}
-              onReload={reloadActiveTab}
-              onHome={() => void navigateHome()}
-              chatDisabled={!session}
-              onChat={openChat}
-              onFeedback={() => void captureFeedback()}
-            />
-          )}
-          {/* webview 宿主：非激活标签 display:none 隐藏（保留 DOM，guest 不销毁不重载）；
-              设置页打开时整体隐藏（webview 不销毁，返回后标签原样恢复） */}
-          <div className={styles.viewport} style={{ display: isSettingsOpen ? 'none' : undefined }}>
-            {tabs.map((tab) => (
-              <TabWebview
-                key={tab.id}
-                tab={tab}
-                isActive={tab.id === activeTabId}
-                onMeta={updateTab}
-                onRegister={registerWebview}
-                onNavigationState={handleNavigationState}
+          {/* 内容卡片：地址栏与网页同处一张 16px 圆角卡片，四边 5px 外围色留白（上/下/右等宽）；
+              地址栏底色跟随网页内容，卡片内部不再出现一条横向的外壳色色带。
+              设置页打开时整卡 display:none 隐藏（webview 不销毁，返回后标签原样恢复）。 */}
+          <div
+            className={styles.contentCard}
+            data-testid="content-card"
+            data-tone={cardTone}
+            style={{ display: isSettingsOpen ? 'none' : undefined, ...cardStyle }}
+          >
+            {!isSettingsOpen && (
+              <ContentToolbar
+                url={activeTab?.url ?? ''}
+                pageTitle={activeTab?.title ?? ''}
+                showSidebarToggle={isRailCollapsed}
+                onToggleRail={toggleRail}
+                canGoBack={Boolean(activeTab) && navigationState.canGoBack}
+                canGoForward={Boolean(activeTab) && navigationState.canGoForward}
+                isLoading={Boolean(activeTab?.isLoading)}
+                hasActiveTab={Boolean(activeTab)}
+                onBack={navigateBack}
+                onForward={navigateForward}
+                onReload={reloadActiveTab}
+                onHome={() => void navigateHome()}
+                chatDisabled={!session}
+                onChat={openChat}
+                onFeedback={() => void captureFeedback()}
               />
-            ))}
+            )}
+            {/* webview 宿主：非激活标签 display:none 隐藏（保留 DOM，guest 不销毁不重载）；
+                新建标签页盖在地址栏下方的页面区域里，与网页共用同一张卡片 */}
+            <div className={styles.viewport}>
+              {tabs.map((tab) => (
+                <TabWebview
+                  key={tab.id}
+                  tab={tab}
+                  isActive={tab.id === activeTabId}
+                  onMeta={updateTab}
+                  onRegister={registerWebview}
+                  onNavigationState={handleNavigationState}
+                  onPageSurface={handlePageSurface}
+                />
+              ))}
+              {!isSettingsOpen && tabs.length === 0 && (
+                <NewTabPage session={session} openViaMain={resolveAndOpen} />
+              )}
+            </div>
           </div>
-          {!isSettingsOpen && tabs.length === 0 && <NewTabPage session={session} openViaMain={resolveAndOpen} />}
           {isSettingsOpen && (
             <>
               {isRailCollapsed && (
@@ -568,12 +624,14 @@ function TabWebview({
   onMeta,
   onRegister,
   onNavigationState,
+  onPageSurface,
 }: {
   tab: TabInfo;
   isActive: boolean;
   onMeta: (id: string, patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading' | 'corpNo'>>) => void;
   onRegister: (id: string, webview: WebviewElement | null) => void;
   onNavigationState: (id: string, state: NavigationState) => void;
+  onPageSurface: (id: string, surface: PageSurface) => void;
 }) {
   const initialSrc = useRef(tab.url).current;
   const elementRef = useRef<WebviewElement | null>(null);
@@ -585,6 +643,17 @@ function TabWebview({
     const meta = (patch: Partial<Pick<TabInfo, 'url' | 'title' | 'favicon' | 'isLoading' | 'corpNo'>>) =>
       onMeta(tab.id, patch);
     const syncNavigation = () => onNavigationState(tab.id, navigationStateOf(element));
+    // 页面顶部底色采样：延迟一拍等首屏样式/字体生效；页面还没绘制完时采不到就保留上次颜色
+    let surfaceTimer: number | undefined;
+    const probeSurface = () => {
+      void probePageSurface(element).then((surface) => {
+        if (surface) onPageSurface(tab.id, surface);
+      });
+    };
+    const scheduleSurfaceProbe = (delay = 240) => {
+      window.clearTimeout(surfaceTimer);
+      surfaceTimer = window.setTimeout(probeSurface, delay);
+    };
     const onTitle = (event: WebviewDomEvent) => meta({ title: event.title ?? '' });
     const onFavicon = (event: WebviewDomEvent) => {
       if (event.favicons && event.favicons.length > 0) meta({ favicon: event.favicons[0] });
@@ -596,19 +665,25 @@ function TabWebview({
     const onStopLoading = () => {
       meta({ isLoading: false });
       syncNavigation();
+      // 首屏资源加载完成后页面底色才是最终值（部分站点靠脚本改主题色）
+      scheduleSurfaceProbe(260);
     };
     const onNavigate = (event: WebviewDomEvent) => {
       const url = event.url ?? element.getURL();
       const corpNo = corpNoOfUrl(url);
       meta(corpNo ? { url, corpNo } : { url });
       syncNavigation();
+      // 页内路由（SPA）切换后重采；整页导航等 dom-ready/did-finish-load 再采
+      scheduleSurfaceProbe(320);
     };
     const onDomReady = () => {
       const url = element.getURL();
       const corpNo = corpNoOfUrl(url);
       meta(corpNo ? { url, corpNo } : { url });
       syncNavigation();
+      scheduleSurfaceProbe(160);
     };
+    const onFinishLoad = () => scheduleSurfaceProbe(120);
     onRegister(tab.id, element);
     syncNavigation();
     element.addEventListener('page-title-updated', onTitle);
@@ -618,8 +693,10 @@ function TabWebview({
     element.addEventListener('did-navigate', onNavigate);
     element.addEventListener('did-navigate-in-page', onNavigate);
     element.addEventListener('did-fail-load', onNavigate);
+    element.addEventListener('did-finish-load', onFinishLoad);
     element.addEventListener('dom-ready', onDomReady);
     return () => {
+      window.clearTimeout(surfaceTimer);
       onRegister(tab.id, null);
       element.removeEventListener('page-title-updated', onTitle);
       element.removeEventListener('page-favicon-updated', onFavicon);
@@ -628,9 +705,10 @@ function TabWebview({
       element.removeEventListener('did-navigate', onNavigate);
       element.removeEventListener('did-navigate-in-page', onNavigate);
       element.removeEventListener('did-fail-load', onNavigate);
+      element.removeEventListener('did-finish-load', onFinishLoad);
       element.removeEventListener('dom-ready', onDomReady);
     };
-  }, [tab.id, onMeta, onRegister, onNavigationState]);
+  }, [tab.id, onMeta, onRegister, onNavigationState, onPageSurface]);
 
   return (
     <webview

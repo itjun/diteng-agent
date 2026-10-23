@@ -53,6 +53,10 @@ const DEV_SERVER_URL = 'http://127.0.0.1:5173';
 // 对应 --dsw-static-neutral-bluish-950 / 00，避免深色主题下窗口底色闪白
 const THEME_DARK_BACKGROUND = '#151517';
 const THEME_LIGHT_BACKGROUND = '#ffffff';
+// Windows 系统标题条（titleBarOverlay）颜色：与 rail/外围边框的 sidebar-fill 实底保持一致，
+// 避免顶部出现一条和侧栏不同色的系统色带（--dsw-static-neutral-bluish-50 / -900）
+const WINDOWS_OVERLAY_LIGHT = '#f9fafb';
+const WINDOWS_OVERLAY_DARK = '#1b1b1c';
 // macOS 主窗整窗 vibrancy（dsh desktop 同款）：底色全透明（#RRGGBBAA），让 NSVisualEffectView 材质透出
 const MAC_TRANSPARENT_BACKGROUND = '#00000000';
 // 主窗壳路由 hash：与登录窗共用同一入口页，仅 hash 区分（App.tsx 判定 #/main，需带斜杠）
@@ -400,7 +404,8 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
     ...(process.platform === 'darwin' && {
       titleBarStyle: 'hiddenInset' as const,
-      trafficLightPosition: { x: 16, y: 16 },
+      // 红绿灯下移 2px：卡片上边距 5px 后，rail 头部内容与卡片内地址栏同一基线（中心 y=24）
+      trafficLightPosition: { x: 16, y: 18 },
       vibrancy: 'sidebar' as const,
       // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）
       visualEffectState: 'active' as const,
@@ -409,7 +414,7 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: {
         height: WINDOWS_TITLEBAR_HEIGHT,
-        color: isDark ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
+        color: isDark ? WINDOWS_OVERLAY_DARK : WINDOWS_OVERLAY_LIGHT,
         symbolColor: isDark ? '#f9fafb' : '#0f1115',
       },
     }),
@@ -504,7 +509,7 @@ function applyWindowTheme(): void {
     if (process.platform === 'win32') {
       mainWindow?.setTitleBarOverlay({
         height: WINDOWS_TITLEBAR_HEIGHT,
-        color,
+        color: isDark ? WINDOWS_OVERLAY_DARK : WINDOWS_OVERLAY_LIGHT,
         symbolColor: isDark ? '#f9fafb' : '#0f1115',
       });
     }

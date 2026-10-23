@@ -1,15 +1,19 @@
 /* 设置页：分类导航复用主窗 rail，正文直接铺在内容区并独立滚动。
    颜色一律走 --dsw-* token，深色由 body[data-ds-dark-theme] 自动切换。 */
 
-/* 设置页接管整个内容区；实底避免毛玻璃与页面内容形成分段色块。 */
+/* 设置页接管整个内容区；与网页卡片一致的悬浮外观：
+   四边 5px 留白露出外围色作视觉边框 + 16px 圆角（与网页卡片同规格，上/下/右等宽；
+   不加阴影以保证边框颜色与 rail 一致）。 */
 .page {
   position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  margin: 5px;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
+  border-radius: 16px;
 }
 
 /* ============ rail 内设置导航 ============ */
@@ -327,6 +331,37 @@
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 外围颜色色板（Dia 式圆形色点）：选中项加一圈强调色细环 */
+.swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+}
+
+.swatch,
+.swatchActive {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.16);
+  transition: transform 120ms ease;
+}
+
+.swatch:hover {
+  transform: scale(1.1);
+}
+
+.swatchActive {
+  box-shadow:
+    0 0 0 2px var(--dsw-alias-bg-base),
+    0 0 0 3.5px var(--dsw-alias-state-business-primary);
 }
 
 /* 占位禁用按钮（检查更新） */

@@ -25,13 +25,35 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  /* 内容列铺外围色：卡片四周 5px 留白露出这层底色，与 rail 连成一体 */
+  background: var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill));
 }
 
-/* webview 宿主：CSS 布局自管（webview 铺满本容器，无需主进程摆 bounds） */
-.viewport {
+/* 内容卡片：地址栏 + webview 同一张悬浮卡片。
+   四角 16px 圆角（与 macOS 27 窗口弧度一致，实测窗口 alpha 圆角半径），四边留白 5px，
+   露出与 rail 同色的外围色作为视觉边框——上/下/右三侧等宽；左侧与 rail 同色自然融合。
+   卡片底色 = 网页顶部底色（--card-surface，由渲染层采样写入），地址栏随之与网页连成一体。 */
+.contentCard {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  margin: 5px;
+  overflow: hidden;
+  background: var(--card-surface, var(--dsw-alias-bg-base));
+  border-radius: 16px;
+}
+
+/* webview 宿主：CSS 布局自管（webview 铺满本容器，无需主进程摆 bounds）；底色随卡片 */
+.viewport {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--card-surface, var(--dsw-alias-bg-base));
 }
 
 /* ============ 左右两栏各自的顶部工具区 ============ */
@@ -43,24 +65,113 @@
   gap: 3px;
   flex: none;
   width: 100%;
-  height: 46px;
+  /* 顶部工具区高度：右侧地址栏 38px；左侧 rail 头部在下方单独加高 5px 对齐同一内容基线 */
+  height: 38px;
   padding: 0 10px;
   box-sizing: border-box;
   user-select: none;
   -webkit-app-region: drag;
 }
 
-/* 左侧工具栏属于 rail：背景完全沿用 rail */
+/* 左侧工具栏属于 rail：背景完全沿用 rail。
+   卡片上边距 5px（红绿灯/栏开关所在的整行比卡片顶边高 5px），
+   这里补 5px 上内边距让 rail 头部与卡片内地址栏内容同一基线（红绿灯位置同步下移 2px，见主进程）。 */
 .sidebarToolbar {
+  height: 43px;
+  padding-top: 5px;
   background: transparent;
   overflow: hidden;
 }
 
-/* 右侧工具栏从 rail 右缘开始，拥有独立底色与底部分隔线 */
+/* 右侧工具栏在卡片内部：底色与卡片一致（跟随网页底色），不再铺外围色 */
 .contentToolbar {
   padding-left: 8px;
-  background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 82%, var(--dsw-alias-bg-base));
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  background: transparent;
+}
+
+/* 卡片明暗档：网页底色浅时工具条用深色文字/图标，深色时用浅色档；与应用主题解耦，
+   只覆盖卡片内部继承的 --dsw-alias-* token，webview 页面内容不受影响。 */
+.contentCard[data-tone='light'] {
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-200);
+  --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
+}
+
+.contentCard[data-tone='dark'] {
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
+}
+
+
+/* ============ 外围颜色（设置 → 外观可选；auto 不设属性 = 默认黑白灰实底） ============ */
+/* 选中预设色时，用「预设色 + 侧栏实底」混出低饱和底色；深色主题加大预设色权重保持可辨识 */
+:global(html[data-chrome-color='ink'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #2b2d31 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='ink'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #2b2d31 32%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='slate'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #64748b 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='slate'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #64748b 32%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='green'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #3f8f6b 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='green'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #3f8f6b 32%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='blue'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #3b6fd4 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='blue'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #3b6fd4 32%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='purple'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #6d5bd0 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='purple'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #6d5bd0 32%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='orange'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #c97a2b 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='orange'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #c97a2b 32%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='pink'] body) {
+  --dsw-chrome-fill: color-mix(in srgb, #d05a7a 20%, var(--dsw-specific-sidebar-fill));
+}
+
+:global(html[data-chrome-color='pink'] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: color-mix(in srgb, #d05a7a 32%, var(--dsw-specific-sidebar-fill));
 }
 
 /* macOS 红绿灯落在左栏内部，由左侧工具栏自行让位；栏开关贴 rail 右上角（对齐 DeepSeek Harness 顶栏）。
@@ -209,13 +320,21 @@
   opacity: 0.42;
 }
 
+/* Chat 图标跟随外壳颜色：设置页选了预设色时用 --dsw-chrome-accent（chrome-color.ts 写入），
+   auto/未设置时回落主题中性色 */
 .toolbarChatIcon {
   display: inline-flex;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-chrome-accent, var(--dsw-alias-label-secondary));
 }
 
 .toolbarChat:hover:not(:disabled) .toolbarChatIcon {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-chrome-accent, var(--dsw-alias-label-primary));
+}
+
+/* 深色网页卡片：Chat 胶囊底是深色，外围色提亮后再作图标色才可辨识 */
+.contentCard[data-tone='dark'] .toolbarChatIcon,
+.contentCard[data-tone='dark'] .toolbarChat:hover:not(:disabled) .toolbarChatIcon {
+  color: color-mix(in srgb, var(--dsw-chrome-accent, var(--dsw-alias-label-secondary)) 45%, #ffffff);
 }
 
 /* 一键反馈：与 Chat 同尺寸的低强调胶囊，截图动作不与 Chat 争主动作 */
@@ -442,8 +561,9 @@
   flex: none;
   /* 宽度由 Shell 按拖拽状态 inline 设置（默认 300，对齐 Cursor/VS Code 侧栏默认宽度） */
   box-sizing: border-box;
-  background: var(--dsw-specific-sidebar-fill);
-  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill));
+  /* 与右侧外围色同色，去掉竖向分隔线让 rail 与卡片外框连成一条连续边带 */
+  border-right: none;
   user-select: none;
 }
 
@@ -489,67 +609,17 @@
   background: transparent;
 }
 
-:global(html[data-platform='darwin']) .body {
-  background: var(--dsw-alias-bg-base);
-}
-
-/* 设置页态：webview 已隐藏，摘掉实底让整窗 vibrancy 毛玻璃透出（Cursor 式透明设置层） */
-:global(html[data-platform='darwin']) .bodySettings {
-  background: transparent;
-}
-
-/* 设置页收起 rail 后的唯一展开入口：浮在内容区右上角，不再生成通栏。 */
+/* 设置页收起 rail 后的唯一展开入口：浮在设置卡片右上角，不再生成通栏。 */
 .settingsRailToggle {
   position: absolute;
-  top: 7px;
-  right: 10px;
+  top: 16px;
+  right: 16px;
   z-index: 20;
   -webkit-app-region: no-drag;
 }
 
-/* rail 半透明 tint：沿用 dsh AppFrame.module.css darwin sidebarCol 原值——顶部蓝洗 + 底部蓝紫洗
-   两层渐变，叠 sidebar-fill 轻 tint（与 transparent 混 40%），各层全透明让毛玻璃透出；
-   分隔线上移出 rail：半透明底上的 alpha 边框会与壁纸混成暗缝（dsh 把线移到不透明 center 同理） */
-:global(html[data-platform='darwin']) .rail {
-  background:
-    linear-gradient(
-      to bottom,
-      rgb(122 155 240 / 0.1),
-      rgb(122 155 240 / 0) 35%,
-      rgb(143 137 184 / 0) 68%,
-      rgb(143 137 184 / 0.09)
-    ),
-    color-mix(in srgb, color-mix(in srgb, var(--dsw-specific-sidebar-fill) 97%, rgb(122 155 240)) 40%, transparent);
-  border-right: none;
-}
-
-/* 深色：去掉蓝染（浅色蓝洗在深底上发紫）并把 tint 减到 50% 让壁纸多透（dsh 原值） */
-:global(html[data-platform='darwin'] body[data-ds-dark-theme]) .rail {
-  background:
-    linear-gradient(
-      to bottom,
-      rgb(122 155 240 / 0.08),
-      rgb(122 155 240 / 0) 35%,
-      rgb(143 137 184 / 0) 68%,
-      rgb(143 137 184 / 0.07)
-    ),
-    color-mix(in srgb, var(--dsw-specific-sidebar-fill) 50%, transparent);
-}
-
-/* macOS「减少透明度」：系统把 vibrancy 压成灰底，薄 tint 会发灰，
-   两主题统一换成 90% 不透明填充（dsh 同款兜底；深色选择器重复出现以盖过上面的薄 tint） */
-@media (prefers-reduced-transparency: reduce) {
-  :global(html[data-platform='darwin']) .rail,
-  :global(html[data-platform='darwin'] body[data-ds-dark-theme]) .rail {
-    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
-  }
-}
-
-/* rail 与内容区的分隔线改由不透明内容区左缘承担 */
-:global(html[data-platform='darwin']) .shellRail .body {
-  border-left: 0.5px solid var(--dsw-alias-border-l2);
-}
-
+/* 侧栏与卡片外框统一使用 sidebar-fill 实底色（与 Windows 版侧栏灰一致），macOS 不再叠加半透明 tint；
+   内容卡片（网页/设置页）四角 16px 圆角、四周 5px 留白悬浮在这层外围色上。 */
 /* 新建标签：dsh 侧栏"新会话"按钮语言——通栏、radius 8、hover 高亮 */
 .railNewTab {
   display: flex;
@@ -559,7 +629,8 @@
   align-self: stretch;
   flex: none;
   height: 34px;
-  margin: 8px 12px 0;
+  /* rail 头部已含 5px 上内边距，这里不再留上边距：首个标签行与卡片内网页内容顶部对齐 */
+  margin: 0 12px;
   padding: 0 12px;
   border: none;
   border-radius: var(--dsw-radius-sm);

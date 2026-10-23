@@ -6,6 +6,13 @@
 /** 主题设置：默认跟随系统，手动切换后存入 config.theme */
 export type ThemeSetting = 'system' | 'light' | 'dark';
 
+/**
+ * 外围颜色（rail 侧栏 + 内容卡片四周留白的底色）：
+ * auto = 自动黑白灰（跟随深浅色主题的中性实底，默认值），其余为 Dia 式低饱和预设色。
+ * 地址栏跟随网页内容取色，不属于外围色。
+ */
+export type ChromeColor = 'auto' | 'ink' | 'slate' | 'green' | 'blue' | 'purple' | 'orange' | 'pink';
+
 /** 主进程统一解析后的应用实际外观；所有窗口共用，避免原生窗口与 CSS 主题分叉 */
 export interface ThemeState {
   setting: ThemeSetting;
@@ -36,6 +43,8 @@ export interface AppConfig {
    */
   savedPassword: string;
   theme: ThemeSetting;
+  /** 外围颜色：rail 侧栏与内容卡片四周留白的底色；默认 auto（黑白灰实底，跟随深浅色主题） */
+  chromeColor: ChromeColor;
   /** 上次关闭时的主窗大小；null = 从未记录（首启用主屏工作区 80% 作默认）。仅主进程读写 */
   windowBounds: WindowBounds | null;
   /** 左侧标签栏宽度；0 = 未自定义（用默认 300，对齐 Cursor/VS Code 侧栏默认宽度）。仅渲染层使用 */
@@ -57,7 +66,7 @@ export interface WindowBounds {
  * 不在渲染层可写范围内；machineCode/windowBounds 同样仅主进程维护。
  */
 export type AppConfigPatch = Partial<
-  Pick<AppConfig, 'serverBase' | 'aiBase' | 'theme' | 'railWidth' | 'rememberPassword' | 'autoLogin'>
+  Pick<AppConfig, 'serverBase' | 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin'>
 >;
 
 /**
