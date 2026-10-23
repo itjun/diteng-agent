@@ -9,7 +9,21 @@ import {
   systemPreferences,
 } from 'electron';
 import { join } from 'node:path';
-import { getConfig, resolveAiBase, saveWindowBounds, updateConfig } from './config';
+import {
+  clearAutoLoginCredential,
+  getConfig,
+  resolveAiBase,
+  saveWindowBounds,
+  updateConfig,
+} from './config';
+import {
+  clearSavedAccounts,
+  findSavedAccount,
+  listSavedAccounts,
+  recordSavedAccountLogin,
+  removeSavedAccount,
+  touchSavedAccount,
+} from './saved-accounts';
 import * as serverApi from './api';
 import { clearSession, getCorpList, getSession, getSessionSummary, saveCorpList, saveSession } from './session-store';
 import { buildAiUrl, buildErpUrl, classifyUrl, readErpCorpNo, withSessionParams } from './url-policy';
@@ -23,6 +37,7 @@ import type {
   CorpAccount,
   LoginResult,
   MqttState,
+  SavedAccountKey,
   SessionInfo,
   TabsResolveRequest,
   ThemeState,
@@ -479,8 +494,9 @@ function performLogout(): void {
     else console.warn(`[auth] 服务端登出失败（不阻塞本地登出）：${result.message}`);
   });
   clearSession();
-  // 退出登录清除已存密码（下次冷启动不再自动登录）；savedLoginId 保留，登录页继续预填账号
-  if (getConfig().savedPassword) updateConfig({ savedPassword: '' });
+  // 退出登录只清自动登录凭据（下次冷启动不再自动登录）；savedLoginId 保留供登录页预填账号，
+  // 历史账号及其密码密文保留，登录页下拉仍可选中账号并回填密码
+  clearAutoLoginCredential();
   mqttService.stop('logout');
   importantNotifier.close('logout');
   trayService.destroy();
@@ -723,20 +739,48 @@ function invalid(message: string): ApiFailure {
 }
 
 /**
- * 按登录页「记住密码」勾选状态保存/清除加密密码：
- * 勾选且 safeStorage 可用时以 base64 密文写入 config.savedPassword（armor 文本）；
- * 未勾选清除已存密文；safeStorage 不可用一律不存（避免明文落盘），仅告警。
+ * 登录成功记录历史账号并按「记住密码」勾选状态保存密码：
+ * - 历史账号始终记录（账号 + 服务器），供登录页下拉选择与管理；未勾选时清除该账号已存密文
+ * - 勾选且加密可用时同时更新 savedLoginId/savedPassword 兼容字段（自动登录只读这两项），
+ *   历史与凭据在同一次落盘中写入
+ * - safeStorage 不可用时只刷新账号历史，保留已有密文与自动登录凭据（避免临时 keyring 故障清掉密码）
  */
-function persistSavedPassword(isRemember: boolean, password: string): void {
-  if (!isRemember) {
-    if (getConfig().savedPassword) updateConfig({ savedPassword: '' });
+function persistLoginAccount(
+  serverBase: string,
+  loginId: string,
+  isRememberPassword: boolean,
+  password: string,
+): void {
+  if (!isRememberPassword) {
+    recordSavedAccountLogin(loginId, serverBase, '', { serverBase, savedLoginId: '', savedPassword: '' });
     return;
   }
   if (!safeStorage.isEncryptionAvailable()) {
-    console.warn('[auth] safeStorage 加密不可用，本次登录不保存密码（不落明文）');
+    console.warn('[auth] safeStorage 加密不可用，本次登录不保存密码（保留已存密文）');
+    recordSavedAccountLogin(loginId, serverBase, null);
     return;
   }
-  updateConfig({ savedPassword: safeStorage.encryptString(password).toString('base64') });
+  const passwordCipher = safeStorage.encryptString(password).toString('base64');
+  recordSavedAccountLogin(loginId, serverBase, passwordCipher, {
+    serverBase,
+    savedLoginId: loginId,
+    savedPassword: passwordCipher,
+  });
+}
+
+/** 渲染层可见的 config：剥离仅主进程使用的历史账号密文列表（与 AppConfig 契约一致） */
+function publicConfig(): AppConfig {
+  const config: AppConfig & { savedAccounts?: unknown } = { ...getConfig() };
+  delete config.savedAccounts;
+  return config;
+}
+
+/** 历史账号 IPC 入参：账号 + 服务器地址，缺一不可（不做当前服务器回退，避免误操作同名账号） */
+function readSavedAccountKey(request: unknown): SavedAccountKey {
+  return {
+    loginId: readString((request as { loginId?: unknown } | null)?.loginId).trim(),
+    serverBase: readString((request as { serverBase?: unknown } | null)?.serverBase).trim(),
+  };
 }
 
 /** 从请求里取表单当前服务器地址，缺省回退 config（登录页必填，正常不会走回退） */
@@ -746,7 +790,7 @@ function readServerBase(request: unknown): string {
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle('config:get', () => getConfig());
+  ipcMain.handle('config:get', () => publicConfig());
 
   // preload 首帧同步读取；只含非敏感主题状态，数据量极小
   ipcMain.on('theme:get-sync', (event) => {
@@ -755,11 +799,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle('theme:get', () => currentThemeState());
 
   ipcMain.handle('config:set', (_event, patch: unknown) => {
-    const config = updateConfig((patch ?? {}) as AppConfigPatch);
-    applyNativeTheme(config);
+    updateConfig((patch ?? {}) as AppConfigPatch);
+    applyNativeTheme(getConfig());
     applyWindowTheme();
     broadcastThemeState();
-    return config;
+    return publicConfig();
   });
 
   ipcMain.handle('auth:login', async (_event, request: unknown) => {
@@ -778,10 +822,14 @@ function registerIpcHandlers(): void {
       verifyCode || undefined,
     );
     if (result.ok) {
-      // 「记住密码」按本次登录勾选落盘（取消勾选即清除已存密码）；
+      // 「记住密码」按本次登录勾选记录历史账号并保存/清除密文；历史账号始终记录（供下拉选择与管理）。
       // 无条件执行：竞态下自动登录可能先成功并关掉登录窗，迟到的手动登录结果送不回渲染层，
-      // 清除偏好不能依赖渲染层的 setConfig 补写
-      persistSavedPassword(isRememberPassword, password);
+      // 账号历史与偏好不能依赖渲染层的 setConfig 补写。持久化失败不影响本次登录。
+      try {
+        persistLoginAccount(serverBase, loginId, isRememberPassword, password);
+      } catch (error) {
+        console.warn('[auth] 记录历史账号失败（不影响登录）：', error);
+      }
       // 竞态守卫：等待期间可能已有会话（如自动登录先成功开窗），迟到的成功不再开第二扇主窗
       if (!getSession()) await keepSession(serverBase, result.data);
     }
@@ -825,24 +873,61 @@ function registerIpcHandlers(): void {
       savedPlain,
     );
     // 竞态守卫：等待期间用户可能已手动登录成功（会话已建立），迟到的成功忽略，避免开出第二扇主窗
-    if (result.ok && !getSession()) await keepSession(config.serverBase, result.data);
+    if (result.ok) {
+      // 自动登录成功即刷最近登录时间，保证下次启动/下拉顺序仍以最近使用的账号优先；失败不影响登录
+      try {
+        touchSavedAccount(config.savedLoginId, config.serverBase);
+      } catch (error) {
+        console.warn('[auth] 刷新历史账号最近登录时间失败（不影响登录）：', error);
+      }
+      if (!getSession()) await keepSession(config.serverBase, result.data);
+    }
     return result;
   });
 
-  // 取已保存凭据（记住密码✓ 且自动登录✗ 时登录页预填账号与密码）
-  ipcMain.handle('auth:get-saved-credential', () => {
-    const config = getConfig();
-    if (!config.savedLoginId || !config.savedPassword) {
-      return { ok: false as const, code: 0, message: '未保存登录凭据' };
-    }
+  // 历史账号：登录页下拉展示、选择时按需解密密码、逐条删除、清空
+  ipcMain.handle('auth:list-saved-accounts', () => listSavedAccounts());
+
+  ipcMain.handle('auth:get-saved-account-password', (event, request: unknown) => {
+    // 明文密码只允许登录窗读取，避免主窗/置顶弹窗的本地页面顺手解任意历史密码
+    if (!loginWindow || event.sender !== loginWindow.webContents) return invalid('仅登录窗可读取历史密码');
+    const key = readSavedAccountKey(request);
+    if (!key.loginId || !key.serverBase) return invalid('账号和服务器地址不能为空');
+    const account = findSavedAccount(key);
+    if (!account) return invalid('历史账号不存在或已被删除');
+    if (!account.passwordCipher) return invalid('该账号未保存密码，请手动输入');
     try {
-      const password = safeStorage.decryptString(Buffer.from(config.savedPassword, 'base64'));
-      if (!password) return { ok: false as const, code: 0, message: '未保存登录凭据' };
-      return { ok: true as const, data: { loginId: config.savedLoginId, password } };
+      const password = safeStorage.decryptString(Buffer.from(account.passwordCipher, 'base64'));
+      if (!password) return invalid('该账号保存的密码为空，请手动输入');
+      return { ok: true as const, data: password };
     } catch (error) {
-      console.warn('[auth] 预填密码解密失败：', error);
-      return { ok: false as const, code: 0, message: '已保存的密码无法解密' };
+      console.warn('[auth] 历史账号密码解密失败：', error);
+      return invalid('已保存的密码无法解密，请手动输入');
     }
+  });
+
+  ipcMain.handle('auth:remove-saved-account', (_event, request: unknown) => {
+    const key = readSavedAccountKey(request);
+    if (!key.loginId || !key.serverBase) return invalid('账号和服务器地址不能为空');
+    try {
+      // 删除与自动登录凭据清理在同一次落盘内完成
+      if (!removeSavedAccount(key.loginId, key.serverBase)) return invalid('历史账号不存在或已被删除');
+    } catch (error) {
+      console.warn('[auth] 删除历史账号落盘失败：', error);
+      return invalid('保存历史账号失败，请重试');
+    }
+    return { ok: true as const, data: listSavedAccounts() };
+  });
+
+  ipcMain.handle('auth:clear-saved-accounts', () => {
+    try {
+      // 历史账号与自动登录凭据在同一次落盘内清空
+      clearSavedAccounts();
+    } catch (error) {
+      console.warn('[auth] 清空历史账号落盘失败：', error);
+      return invalid('保存历史账号失败，请重试');
+    }
+    return { ok: true as const, data: listSavedAccounts() };
   });
 
   // 退出登录：本地登出必然完成（服务端失败不阻塞）；主窗随即销毁，回包不保证送达

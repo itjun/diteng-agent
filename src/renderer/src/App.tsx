@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 // 内部客户端：中文文案直接写死，暂不接入 Lang.as 翻译（后续多语言需求出现再迁移）
-import { DEVICE_UNCHECKED_CODE } from '../../shared/types';
+import { DEVICE_UNCHECKED_CODE, type SavedAccountSummary } from '../../shared/types';
 import { NotifyPopup } from './NotifyPopup';
 import { Shell } from './Shell';
 import { useThemeSetting } from './use-theme';
@@ -19,6 +19,15 @@ type AutoLoginPhase = 'checking' | 'waiting' | 'manual';
 
 /** 服务器地址下拉预设，datalist 允许自由手输任意地址 */
 const SERVER_PRESETS = ['http://127.0.0.1:8101'];
+
+/** 历史账号下拉的服务器标识：优先显示 host，解析失败回退原地址（多服务器时用于区分同名账号） */
+function readServerHost(serverBase: string): string {
+  try {
+    return new URL(serverBase).host;
+  } catch {
+    return serverBase;
+  }
+}
 
 /** 短信验证码重发冷却秒数（服务端 5 分钟冷却，对齐 im-client 登录页） */
 const SMS_RESEND_SECONDS = 300;
@@ -51,10 +60,16 @@ function LoginPanel() {
   const [countdown, setCountdown] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingSms, setIsSendingSms] = useState(false);
+  const [isPasswordPending, setIsPasswordPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   // 登录成功后的过渡态：主进程随即打开主窗并关闭登录窗
   const [isEntering, setIsEntering] = useState(false);
   const [machineCode, setMachineCode] = useState('');
+  // 历史登录账号（最近登录在前）：账号输入框右侧出口，支持选择、删除、清空
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccountSummary[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // 清空是破坏性操作：底部按钮先点一次进入确认态，再点一次才真正清空
+  const [isClearHistoryConfirming, setIsClearHistoryConfirming] = useState(false);
   // 登录页不再提供手动切换入口，主题仍跟随 config.theme / 系统自动应用
   useThemeSetting();
 
@@ -64,6 +79,34 @@ function LoginPanel() {
   const isAutoLoginStartedRef = useRef(false);
   // 自动登录阶段同步 ref：迟到结果据此判断用户是否已点「手动登录」（避免闭包旧值）
   const autoLoginPhaseRef = useRef<AutoLoginPhase>('checking');
+  // 历史账号下拉的点击外部区域判定
+  const accountFieldRef = useRef<HTMLDivElement>(null);
+  // 密码回填（初始预填/选择历史账号）的请求序号：改账号、改密码或再次选择都会作废在途结果
+  const passwordFillSeqRef = useRef(0);
+  // 密码是否由历史账号/兼容凭据自动回填：手动改账号或服务器时据此清空，避免把 A 的密码带给 B
+  const isPasswordAutoFilledRef = useRef(false);
+  // 密码回填进行中（含状态与同步 ref）：解密返回前禁止提交，避免用空密码/旧密码登录
+  const isPasswordPendingRef = useRef(false);
+  // 历史账号删除/清空的防重守卫：连点与确认态共用同一同步闸门，避免重复发起写操作
+  const isHistoryBusyRef = useRef(false);
+  // 「清空」确认态起始时间：防止把一次物理双击当成两次独立确认
+  const clearConfirmAtRef = useRef(0);
+
+  /** 密码回填态同时写 ref 与 state：提交闸门读 ref，按钮禁用读 state */
+  function updatePasswordPending(isPending: boolean) {
+    isPasswordPendingRef.current = isPending;
+    setIsPasswordPending(isPending);
+  }
+
+  /** 手动改账号/服务器：作废在途回填并清掉自动回填的密码，避免把上一个账号的密码带到新账号 */
+  function invalidatePasswordFill() {
+    passwordFillSeqRef.current += 1;
+    updatePasswordPending(false);
+    if (isPasswordAutoFilledRef.current) {
+      isPasswordAutoFilledRef.current = false;
+      setPassword('');
+    }
+  }
 
   function switchAutoLoginPhase(next: AutoLoginPhase) {
     autoLoginPhaseRef.current = next;
@@ -92,9 +135,14 @@ function LoginPanel() {
 
   useEffect(() => {
     void (async () => {
-      const config = await window.diteng.getConfig();
+      const [config, accounts] = await Promise.all([
+        window.diteng.getConfig(),
+        window.diteng.listSavedAccounts(),
+      ]);
+      setSavedAccounts(accounts);
       setServerBase(config.serverBase);
-      setLoginId(config.savedLoginId);
+      // 账号预填优先取「自动登录凭据对应的账号」，其次取最近登录的历史账号（记住密码未勾选时后者仍可用）
+      setLoginId(config.savedLoginId || accounts[0]?.loginId || '');
       setMachineCode(config.machineCode);
       setIsRememberPassword(config.rememberPassword);
       setIsAutoLogin(config.autoLogin && config.rememberPassword);
@@ -108,16 +156,40 @@ function LoginPanel() {
         return;
       }
       switchAutoLoginPhase('manual');
-      // 记住密码✓ 且已存凭据（但未开自动登录）：预填账号与密码，点「登录」即走
+      // 记住密码✓ 且已存凭据（但未开自动登录）：预填密码；退出登录会清空该凭据，此时密码留空。
+      // 按兼容凭据的 {账号, 服务器} 精确取密码，且用序号防止慢结果覆盖用户此后的输入/选择
       if (config.rememberPassword && config.savedLoginId && config.savedPassword) {
-        const credential = await window.diteng.getSavedCredential();
-        if (credential.ok) {
-          setLoginId(credential.data.loginId);
-          setPassword(credential.data.password);
+        const prefillSeq = ++passwordFillSeqRef.current;
+        updatePasswordPending(true);
+        try {
+          const credential = await window.diteng.getSavedAccountPassword({
+            loginId: config.savedLoginId,
+            serverBase: config.serverBase,
+          });
+          if (prefillSeq !== passwordFillSeqRef.current) return;
+          if (credential.ok) {
+            setPassword(credential.data);
+            isPasswordAutoFilledRef.current = true;
+          }
+        } finally {
+          if (prefillSeq === passwordFillSeqRef.current) updatePasswordPending(false);
         }
       }
     })();
   }, []);
+
+  // 历史账号下拉：点击账号区域以外关闭；关闭时重置「清空」确认态，避免下次打开误清空
+  useEffect(() => {
+    if (!isHistoryOpen) {
+      setIsClearHistoryConfirming(false);
+      return;
+    }
+    function handleMouseDown(event: MouseEvent) {
+      if (!accountFieldRef.current?.contains(event.target as Node)) setIsHistoryOpen(false);
+    }
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [isHistoryOpen]);
 
   /** 双勾选联动并持久化：关记住密码 → 自动登录一并关；开自动登录 → 记住密码一并开 */
   function toggleRememberPassword(isChecked: boolean) {
@@ -134,6 +206,87 @@ function LoginPanel() {
     void window.diteng.setConfig({ autoLogin: isEffective, rememberPassword: isEffective ? true : isRememberPassword });
   }
 
+  /**
+   * 选择历史账号：回填账号与服务器地址；记住密码✓ 且该账号存有密码时解密回填。
+   * 切换账号时同步清空旧密码并禁止提交，解密结果返回前绝不沿用上一个账号的密码；
+   * 解密失败时保持密码为空并提示。
+   */
+  async function handleSelectSavedAccount(account: SavedAccountSummary) {
+    const seq = ++passwordFillSeqRef.current;
+    setIsHistoryOpen(false);
+    setLoginId(account.loginId);
+    setServerBase(account.serverBase);
+    setMode('password');
+    setSmsCode('');
+    setSmsHint('');
+    setCountdown(0);
+    setErrorMsg('');
+    setPassword('');
+    isPasswordAutoFilledRef.current = false;
+    updatePasswordPending(false);
+    if (!account.hasPassword || !isRememberPassword) return;
+    updatePasswordPending(true);
+    try {
+      const result = await window.diteng.getSavedAccountPassword({
+        loginId: account.loginId,
+        serverBase: account.serverBase,
+      });
+      if (seq !== passwordFillSeqRef.current) return;
+      if (result.ok) {
+        setPassword(result.data);
+        isPasswordAutoFilledRef.current = true;
+      } else {
+        setErrorMsg(result.message);
+      }
+    } finally {
+      if (seq === passwordFillSeqRef.current) updatePasswordPending(false);
+    }
+  }
+
+  async function handleRemoveSavedAccount(account: SavedAccountSummary) {
+    if (isHistoryBusyRef.current) return;
+    isHistoryBusyRef.current = true;
+    try {
+      const result = await window.diteng.removeSavedAccount({
+        loginId: account.loginId,
+        serverBase: account.serverBase,
+      });
+      if (!result.ok) {
+        setErrorMsg(result.message);
+        return;
+      }
+      setSavedAccounts(result.data);
+      setIsClearHistoryConfirming(false);
+      if (result.data.length === 0) setIsHistoryOpen(false);
+    } finally {
+      isHistoryBusyRef.current = false;
+    }
+  }
+
+  async function handleClearSavedAccounts() {
+    if (isHistoryBusyRef.current) return;
+    if (!isClearHistoryConfirming) {
+      clearConfirmAtRef.current = Date.now();
+      setIsClearHistoryConfirming(true);
+      return;
+    }
+    // 防止一次物理双击被当成「进入确认 + 确认清空」两次点击：确认态保持一小段时间才接受第二次确认
+    if (Date.now() - clearConfirmAtRef.current < 800) return;
+    isHistoryBusyRef.current = true;
+    try {
+      const result = await window.diteng.clearSavedAccounts();
+      if (!result.ok) {
+        setErrorMsg(result.message);
+        return;
+      }
+      setSavedAccounts(result.data);
+      setIsClearHistoryConfirming(false);
+      setIsHistoryOpen(false);
+    } finally {
+      isHistoryBusyRef.current = false;
+    }
+  }
+
   useEffect(() => {
     if (countdown <= 0) return;
     const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
@@ -142,7 +295,8 @@ function LoginPanel() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isBusyRef.current || isEntering) return;
+    // 历史密码回填未完成时不允许提交：此时密码可能为空或仍是上一个账号的值
+    if (isBusyRef.current || isEntering || isPasswordPendingRef.current) return;
     const server = serverBase.trim();
     const id = loginId.trim();
     if (!server || !id) {
@@ -169,10 +323,7 @@ function LoginPanel() {
         verifyCode: mode === 'sms' ? smsCode.trim() : undefined,
       });
       if (result.ok) {
-        void window.diteng.setConfig({
-          serverBase: server,
-          savedLoginId: isRememberPassword ? id : '',
-        });
+        // 账号历史、密码密文与 serverBase 均由主进程在登录成功时落盘，渲染层不再补写 config
         setIsEntering(true);
         return;
       }
@@ -229,6 +380,9 @@ function LoginPanel() {
     setCountdown(0);
     setErrorMsg('');
   }
+
+  // 同一账号可能登录不同服务器：多服务器时下拉补显示 host，避免同名账号无法区分
+  const isMultiServer = new Set(savedAccounts.map((account) => account.serverBase)).size > 1;
 
   return (
     <div className={styles.page}>
@@ -298,7 +452,10 @@ function LoginPanel() {
                 className={styles.input}
                 list="server-presets"
                 value={serverBase}
-                onChange={(event) => setServerBase(event.target.value)}
+                onChange={(event) => {
+                  setServerBase(event.target.value);
+                  invalidatePasswordFill();
+                }}
                 placeholder="http://127.0.0.1:8101"
                 spellCheck={false}
                 autoComplete="off"
@@ -313,16 +470,92 @@ function LoginPanel() {
             <label className={styles.fieldLabel} htmlFor="login-id">
               账号
             </label>
-            <div className={styles.inputWrap}>
-              <input
-                id="login-id"
-                className={styles.input}
-                value={loginId}
-                onChange={(event) => setLoginId(event.target.value)}
-                placeholder="账号 / 手机号 / 用户编码"
-                spellCheck={false}
-                autoComplete="username"
-              />
+            <div className={styles.accountField} ref={accountFieldRef}>
+              <div className={styles.inputWrap}>
+                <input
+                  id="login-id"
+                  className={styles.input}
+                  value={loginId}
+                  onChange={(event) => {
+                    setLoginId(event.target.value);
+                    // 手动输入即退出历史选择，避免输入框与下拉内容不一致；同时作废在途回填
+                    setIsHistoryOpen(false);
+                    invalidatePasswordFill();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' && savedAccounts.length > 0) {
+                      event.preventDefault();
+                      setIsHistoryOpen(true);
+                    }
+                    if (event.key === 'Escape') setIsHistoryOpen(false);
+                  }}
+                  placeholder="账号 / 手机号 / 用户编码"
+                  spellCheck={false}
+                  autoComplete="username"
+                />
+                {savedAccounts.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.historyToggle}
+                    data-testid="account-history-toggle"
+                    title="历史登录账号"
+                    aria-label="历史登录账号"
+                    aria-expanded={isHistoryOpen}
+                    onClick={() => {
+                      setIsClearHistoryConfirming(false);
+                      setIsHistoryOpen((open) => !open);
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M2.5 4.25L6 7.75l3.5-3.5" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              {isHistoryOpen && savedAccounts.length > 0 && (
+                <ul className={styles.historyList} data-testid="account-history-list" aria-label="历史登录账号">
+                  {savedAccounts.map((account) => (
+                    <li key={`${account.serverBase}\n${account.loginId}`} className={styles.historyItem}>
+                      <button
+                        type="button"
+                        className={styles.historyAccount}
+                        data-testid="account-history-item"
+                        data-account={account.loginId}
+                        data-server={account.serverBase}
+                        onClick={() => void handleSelectSavedAccount(account)}
+                      >
+                        <span className={styles.historyAccountId}>{account.loginId}</span>
+                        {isMultiServer && (
+                          <span className={styles.historyAccountServer}>{readServerHost(account.serverBase)}</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.historyRemove}
+                        data-testid="account-history-remove"
+                        title="删除该历史账号"
+                        aria-label={`删除历史账号 ${account.loginId}`}
+                        onClick={() => void handleRemoveSavedAccount(account)}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+                          <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+                        </svg>
+                      </button>
+                    </li>
+                  ))}
+                  <li className={styles.historyFooter}>
+                    <span className={styles.historyCount}>{savedAccounts.length} 个历史账号</span>
+                    <button
+                      type="button"
+                      className={isClearHistoryConfirming ? styles.historyClearConfirm : styles.historyClear}
+                      data-testid="account-history-clear"
+                      onClick={() => void handleClearSavedAccounts()}
+                    >
+                      {isClearHistoryConfirming ? '确认清空？' : '清空'}
+                    </button>
+                  </li>
+                </ul>
+              )}
             </div>
 
             {mode === 'password' && (
@@ -336,7 +569,13 @@ function LoginPanel() {
                     type="password"
                     className={styles.input}
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => {
+                      // 用户手输密码：作废在途回填，之后改账号也不再视为「自动回填」而清空
+                      setPassword(event.target.value);
+                      passwordFillSeqRef.current += 1;
+                      isPasswordAutoFilledRef.current = false;
+                      updatePasswordPending(false);
+                    }}
                     placeholder="登录密码（留空默认 123456）"
                     autoComplete="current-password"
                   />
@@ -377,8 +616,8 @@ function LoginPanel() {
 
             {errorMsg && <p className={styles.error}>{errorMsg}</p>}
 
-            <button type="submit" className={styles.primaryButton} disabled={isSubmitting}>
-              {isSubmitting ? '登录中…' : '登录'}
+            <button type="submit" className={styles.primaryButton} disabled={isSubmitting || isPasswordPending}>
+              {isPasswordPending ? '填充密码…' : isSubmitting ? '登录中…' : '登录'}
             </button>
 
             <div className={styles.formFooter}>

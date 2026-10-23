@@ -28,8 +28,11 @@ const diteng: DitengApi = {
   login: (request) => ipcRenderer.invoke('auth:login', request),
   loginSendCode: (request) => ipcRenderer.invoke('auth:login-send-code', request),
   autoLogin: () => ipcRenderer.invoke('auth:auto-login'),
-  // 记住密码✓且自动登录✗时，登录页预填账号与密码用（本机 Keychain 解密）
-  getSavedCredential: () => ipcRenderer.invoke('auth:get-saved-credential'),
+  // 历史登录账号：列表只含摘要，密码密文留在主进程、选中账号时才按需解密
+  listSavedAccounts: () => ipcRenderer.invoke('auth:list-saved-accounts'),
+  getSavedAccountPassword: (key) => ipcRenderer.invoke('auth:get-saved-account-password', key),
+  removeSavedAccount: (key) => ipcRenderer.invoke('auth:remove-saved-account', key),
+  clearSavedAccounts: () => ipcRenderer.invoke('auth:clear-saved-accounts'),
   // 登录窗自绘 × 按钮用；关闭后 window-all-closed 退出应用
   closeLoginWindow: () => ipcRenderer.invoke('app:close-login'),
   // 退出登录：主窗随即销毁，回包不保证送达，调用方无需等待结果

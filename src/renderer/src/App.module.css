@@ -153,6 +153,157 @@ body[data-ds-dark-theme] .card {
   color: var(--dsw-alias-label-dimmed);
 }
 
+/* 账号输入行：右侧历史账号下拉按钮 + 浮层列表 */
+.accountField {
+  position: relative;
+}
+
+.historyToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.historyToggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 历史账号浮层：绝对定位在账号输入框下方，长列表内部滚动，不撑高卡片 */
+.historyList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 196px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+body[data-ds-dark-theme] .historyList {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.historyItem {
+  display: flex;
+  align-items: center;
+  border-radius: var(--dsw-radius-xs);
+}
+
+.historyItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+}
+
+.historyAccount {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.historyAccountId,
+.historyAccountServer {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyAccountServer {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.historyRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.historyRemove:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.historyFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.historyCount {
+  font-size: 11px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.historyClear,
+.historyClearConfirm {
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.historyClear:hover,
+.historyClearConfirm:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 清空是破坏性操作：确认态用错误色提示 */
+.historyClearConfirm {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.historyClearConfirm:hover {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .codeRow {
   display: flex;
   align-items: center;

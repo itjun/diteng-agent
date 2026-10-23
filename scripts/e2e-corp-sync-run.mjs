@@ -157,12 +157,14 @@ function writeTestConfig(originalConfig) {
     aiBase: '',
     savedLoginId: '',
     savedPassword: '',
+    // 显式清空历史账号：不能把真实账号/密文带进 mock 环境（登录页会用真实 Keychain 解密真实密码）
+    savedAccounts: [],
     autoLogin: false,
     rememberPassword: false,
   };
   writeFileSync(CONFIG_PATH, JSON.stringify(testConfig, null, 2), 'utf8');
   state.configOverridden = true;
-  log(`已写入测试 config：serverBase=${MOCK_BASE} savedPassword=清空 autoLogin=false rememberPassword=false`);
+  log(`已写入测试 config：serverBase=${MOCK_BASE} savedPassword=清空 savedAccounts=清空 autoLogin=false rememberPassword=false`);
 }
 
 async function startMockServer() {
