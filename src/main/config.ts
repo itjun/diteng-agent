@@ -4,8 +4,14 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import type { AppConfig, AppConfigPatch, ThemeSetting, WindowBounds } from '../shared/types';
 
-/** 本地 diteng-im-server 默认地址（本地 8101 未启动属预期，登录时按网络错误提示） */
-const DEFAULT_SERVER_BASE = 'http://127.0.0.1:8101';
+/** 线上生产环境地址（登录页默认预填；本地开发可直接手输其它地址） */
+const DEFAULT_SERVER_BASE = 'https://m.cdcp.site';
+
+/** 旧版默认服务地址（本地 diteng-im-server）：仅用于升级迁移，不参与新安装默认值 */
+const LEGACY_DEFAULT_SERVER_BASE = 'http://127.0.0.1:8101';
+
+/** 配置结构版本：2 = 默认服务地址切到线上；旧配置（缺字段视为 1）按旧默认值判定迁移 */
+const CONFIG_VERSION = 2;
 
 /** 历史账号保留上限：超出按最近登录时间淘汰，避免下拉列表无限增长 */
 const MAX_SAVED_ACCOUNTS = 10;
@@ -42,7 +48,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -54,6 +60,13 @@ function normalizeWindowBounds(input: unknown): WindowBounds | null {
   if (!Number.isInteger(width) || !Number.isInteger(height)) return null;
   if (width < 200 || width > 20000 || height < 200 || height > 20000) return null;
   return { width, height };
+}
+
+/** 已存配置的版本号：缺字段/非法值按旧配置 1 处理（旧版本没有该字段） */
+function storedConfigVersion(input: Partial<AppConfig> | null): number {
+  return typeof input?.configVersion === 'number' && Number.isInteger(input.configVersion) && input.configVersion > 0
+    ? input.configVersion
+    : 1;
 }
 
 /** 单条历史账号解析；账号或服务器缺失视为脏数据丢弃 */
@@ -111,10 +124,15 @@ function normalizeSavedAccounts(
 /** 按字段类型逐项归一，坏字段回落默认值，避免脏 JSON 直接进入内存 */
 function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
   const base = createDefault();
-  const serverBase =
+  const storedServerBase =
     typeof input?.serverBase === 'string' && input.serverBase.trim()
       ? input.serverBase.trim().replace(/\/+$/, '')
-      : base.serverBase;
+      : '';
+  // 旧版默认地址迁移：值仍是旧默认（用户从未自定义地址）才切到线上默认，手改过的地址保持不动
+  const serverBase =
+    storedConfigVersion(input) < CONFIG_VERSION && storedServerBase === LEGACY_DEFAULT_SERVER_BASE
+      ? base.serverBase
+      : storedServerBase || base.serverBase;
   const theme: ThemeSetting =
     input?.theme === 'light' || input?.theme === 'dark' ? input.theme : 'system';
   const windowBounds = normalizeWindowBounds(input?.windowBounds);
@@ -137,6 +155,7 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
   // savedPassword 为自动登录用的兼容凭据（safeStorage base64），与历史账号最近一次登录同步
   const savedPassword = typeof input?.savedPassword === 'string' ? input.savedPassword.trim() : '';
   return {
+    configVersion: CONFIG_VERSION,
     serverBase,
     aiBase:
       typeof input?.aiBase === 'string'
@@ -165,7 +184,11 @@ function readFromDisk(): StoredAppConfig {
   const file = configFile();
   if (!existsSync(file)) return createDefault();
   try {
-    return normalize(JSON.parse(readFileSync(file, 'utf8')) as Partial<StoredAppConfig>);
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<StoredAppConfig>;
+    const config = normalize(raw);
+    // 旧版配置迁移（默认服务地址切换/补齐版本号）立即回写：避免每次启动重复迁移、登录页仍预填旧地址
+    if (storedConfigVersion(raw) < CONFIG_VERSION) writeToDisk(config);
+    return config;
   } catch (error) {
     console.warn('[config] config.json 解析失败，改用默认配置：', error);
     return createDefault();

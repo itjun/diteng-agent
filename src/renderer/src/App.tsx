@@ -17,8 +17,8 @@ type LoginMode = 'password' | 'sms';
  */
 type AutoLoginPhase = 'checking' | 'waiting' | 'manual';
 
-/** 服务器地址下拉预设，datalist 允许自由手输任意地址 */
-const SERVER_PRESETS = ['http://127.0.0.1:8101'];
+/** 服务器地址下拉预设（默认线上生产环境），datalist 允许自由手输任意地址（如本地开发地址） */
+const SERVER_PRESETS = ['https://m.cdcp.site'];
 
 /** 历史账号下拉的服务器标识：优先显示 host，解析失败回退原地址（多服务器时用于区分同名账号） */
 function readServerHost(serverBase: string): string {
@@ -456,7 +456,7 @@ function LoginPanel() {
                   setServerBase(event.target.value);
                   invalidatePasswordFill();
                 }}
-                placeholder="http://127.0.0.1:8101"
+                placeholder="https://m.cdcp.site"
                 spellCheck={false}
                 autoComplete="off"
               />

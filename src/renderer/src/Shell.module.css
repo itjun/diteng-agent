@@ -34,45 +34,130 @@
   min-height: 0;
 }
 
-/* ============ 左右两栏各自的顶部工具区 ============ */
+/* ============ rail 顶栏（dsh 侧栏 logo 行）与 Windows caption 条 ============ */
 
-.sidebarToolbar,
-.contentToolbar {
+/* rail 顶栏：品牌行 + 右端侧栏开关；整行为窗口拖拽区（macOS 红绿灯落在本行左侧）。
+   高度与 Windows caption 条同高（40px），两侧拼成同一高度的顶带 */
+.railHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  width: 100%;
+  height: 40px;
+  padding: 0 8px 0 14px;
+  box-sizing: border-box;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+/* 品牌标识（dsh logo 行语言）：名称 + 反色小胶囊 */
+.railBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+
+.railBrandName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.railBrandTag {
+  flex: none;
+  padding: 2.5px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 1;
+}
+
+/* macOS 红绿灯落在 rail 顶栏内部，由品牌行左侧 padding 让位 */
+:global(html[data-platform='darwin']) .railHeader {
+  padding-left: 84px;
+}
+
+/* Windows 内容列 caption 条（无系统标题栏的替代）：整条为拖拽区，
+   右端自绘窗口控制；底色铺 sidebar-fill 与 rail 连成一色（dsh caption 同做法），
+   内容从其下沿才开始，顶带视觉上与侧栏浑然一体 */
+.captionBar {
   display: flex;
   align-items: center;
   gap: 3px;
   flex: none;
   width: 100%;
-  height: 46px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 0 0 8px;
   box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill);
   user-select: none;
   -webkit-app-region: drag;
 }
 
-/* 左侧工具栏属于 rail：背景完全沿用 rail */
-.sidebarToolbar {
-  background: transparent;
+/* caption 中部标题：当前页/视图名，仅展示（窗口拖拽区的一部分） */
+.captionTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0 8px;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
-/* 右侧工具栏从 rail 右缘开始，拥有独立底色与底部分隔线 */
-.contentToolbar {
-  padding-left: 8px;
-  background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 82%, var(--dsw-alias-bg-base));
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+.captionControls {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  flex: none;
+  -webkit-app-region: no-drag;
 }
 
-/* macOS 红绿灯落在左栏内部，由左侧工具栏自行让位；栏开关贴 rail 右上角（对齐 DeepSeek Harness 顶栏）。
-   Windows 不套用：DSH 桌面版在 Windows 仍把开关放在标题栏左侧。 */
-:global(html[data-platform='darwin']) .sidebarToolbar {
-  justify-content: flex-end;
-  padding-left: 84px;
+/* 窗口控制按钮：命中区贴 caption 全高（Windows 惯例），hover 柔和底色 */
+.captionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  flex: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
-/* rail 收起后，右侧工具栏临时提供展开入口，同时继续避开红绿灯 */
-:global(html[data-platform='darwin']) .contentToolbarCollapsed {
-  padding-left: 84px;
+.captionButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 关闭按钮 hover 走系统红（Windows caption 惯例） */
+.captionClose:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* macOS 收起 rail 后的展开入口：浮在内容区左上角（左侧避开红绿灯） */
+.railExpandFloat {
+  position: absolute;
+  top: 7px;
+  left: 84px;
+  z-index: 20;
+  -webkit-app-region: no-drag;
 }
 
 /* 32px 方形图标命中区：克制的 hover 底色，不用描边按钮 */
@@ -114,117 +199,13 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Chrome 式导航组：后退/前进/刷新/主页紧邻地址栏。 */
+/* Chrome 式导航组：后退/前进/刷新（Windows caption 条左端）。 */
 .toolbarNav {
   display: flex;
   align-items: center;
   gap: 3px;
   margin-right: 2px;
   flex: none;
-}
-
-/* Dia 式地址区：融入右侧工具栏，仅 hover 时显出轻底色；只读文本保持单行省略 */
-.toolbarAddress {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-  height: 32px;
-  min-width: 100px;
-  margin: 0 8px 0 4px;
-  padding: 0 4px 0 9px;
-  box-sizing: border-box;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  -webkit-app-region: no-drag;
-}
-
-.toolbarAddress:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.toolbarAddressText {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.toolbarCopy {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.toolbarCopy:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
-}
-
-.toolbarCopy:disabled {
-  cursor: default;
-  opacity: 0.35;
-}
-
-/* 右上角 Chat：Dia 式低矮胶囊，实际打开当前账套的 AI 助手 */
-.toolbarChat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 32px;
-  padding: 0 12px 0 10px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-.toolbarChat:hover:not(:disabled) {
-  border-color: var(--dsw-alias-border-l3);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.toolbarChat:disabled {
-  cursor: default;
-  opacity: 0.42;
-}
-
-.toolbarChatIcon {
-  display: inline-flex;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.toolbarChat:hover:not(:disabled) .toolbarChatIcon {
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 复制成功/失败反馈 */
-.toolbarCopyOk {
-  color: var(--dsw-alias-state-business-primary);
-}
-
-.toolbarCopyFail {
-  color: var(--dsw-alias-state-error-primary);
 }
 
 /* 刷新图标固定 16px 网格，避免 span 按文字行高计算后视觉上移 */
@@ -394,12 +375,6 @@
   min-width: 0;
 }
 
-/* Windows：titleBarOverlay 压整窗顶部一行（高 40，与主进程 WINDOWS_OVERLAY_FALLBACK_HEIGHT 一致），
-   rail 与内容区统一下移；macOS 红绿灯由左栏工具栏的左侧 padding 让位 */
-.shellRailWin {
-  padding-top: 40px;
-}
-
 .rail {
   position: relative;
   display: flex;
@@ -408,8 +383,24 @@
   /* 宽度由 Shell 按拖拽状态 inline 设置（默认 300，对齐 Cursor/VS Code 侧栏默认宽度） */
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
-  border-right: 0.5px solid var(--dsw-alias-border-l2);
   user-select: none;
+}
+
+/* 右缘分隔线从 caption 下沿（40px）才开始：顶带（品牌行 + caption 条）同色无缝连成一体；
+   线用伪元素分段，rail 本体不再通高 border-right */
+.rail::after {
+  content: '';
+  position: absolute;
+  top: 40px;
+  right: 0;
+  bottom: 0;
+  width: 0.5px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* macOS 分隔线由不透明内容区左缘承担（body border-left），rail 侧不出线 */
+:global(html[data-platform='darwin']) .rail::after {
+  display: none;
 }
 
 /* 宽度拖拽手柄：贴右缘压在边框上，命中区 7px（外伸 3px 内含 4px），hover/拖拽显示强调色细条 */
@@ -463,15 +454,6 @@
   background: transparent;
 }
 
-/* 设置页收起 rail 后的唯一展开入口：浮在内容区右上角，不再生成通栏。 */
-.settingsRailToggle {
-  position: absolute;
-  top: 7px;
-  right: 10px;
-  z-index: 20;
-  -webkit-app-region: no-drag;
-}
-
 /* rail 半透明 tint：沿用 dsh AppFrame.module.css darwin sidebarCol 原值——顶部蓝洗 + 底部蓝紫洗
    两层渐变，叠 sidebar-fill 轻 tint（与 transparent 混 40%），各层全透明让毛玻璃透出；
    分隔线上移出 rail：半透明底上的 alpha 边框会与壁纸混成暗缝（dsh 把线移到不透明 center 同理） */
@@ -515,7 +497,7 @@
   border-left: 0.5px solid var(--dsw-alias-border-l2);
 }
 
-/* 新建标签：dsh 侧栏"新会话"按钮语言——通栏、radius 8、hover 高亮 */
+/* 新建标签：dsh 侧栏"新会话"按钮语言——白底描边卡片 + 柔和投影，通栏 */
 .railNewTab {
   display: flex;
   align-items: center;
@@ -523,8 +505,35 @@
   box-sizing: border-box;
   align-self: stretch;
   flex: none;
-  height: 34px;
-  margin: 8px 12px 0;
+  height: 36px;
+  margin: 10px 12px 0;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.railNewTab:hover {
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* rail 常驻导航项（dsh 插件/自动化任务位）：AI 对话入口 */
+.railNavItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  align-self: stretch;
+  flex: none;
+  height: 32px;
+  margin: 2px 12px 0;
   padding: 0 12px;
   border: none;
   border-radius: var(--dsw-radius-sm);
@@ -535,9 +544,25 @@
   cursor: pointer;
 }
 
-.railNewTab:hover {
+.railNavItem:hover:not(:disabled) {
   background: var(--dsw-specific-sidebar-nav-item-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.railNavItem:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* 标签列表分组小标题（dsh"工作区"组标语言） */
+.railGroupLabel {
+  flex: none;
+  margin: 14px 20px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--dsw-alias-label-tertiary);
+  user-select: none;
 }
 
 /* 标签列表：纵向滚动（细滚动条走全局 scrollbar.css token） */

@@ -223,33 +223,32 @@ async function tabstripBox() {
 }
 
 check('根容器 shell-rail', (await shell.locator('[data-testid="shell-rail"]').count()) === 1);
-const toolbarBox = await shell.locator('[data-testid="browser-toolbar"]').boundingBox();
-check(
-  'Chrome 式工具栏宽高',
-  Boolean(toolbarBox) && toolbarBox.width >= 600 && toolbarBox.height >= 40 && toolbarBox.height <= 46,
-  `w=${toolbarBox?.width} h=${toolbarBox?.height}`,
-);
-for (const testid of ['sidebar-toggle', 'nav-back', 'nav-forward', 'nav-reload', 'nav-home']) {
-  check(`工具栏按钮 ${testid}`, (await shell.locator(`[data-testid="${testid}"]`).count()) === 1);
+// 平台分支：Windows 无系统标题栏（内容列顶部为自绘 caption 条），macOS 红绿灯落 rail 顶栏
+const appIsWindows = !(await shell.evaluate(() => /Macintosh/.test(navigator.userAgent)));
+if (appIsWindows) {
+  const captionBox = await shell.locator('[data-testid="caption-bar"]').boundingBox();
+  check(
+    'Windows caption 条宽高且贴顶',
+    Boolean(captionBox) && captionBox.width >= 400 && captionBox.height >= 36 && captionBox.height <= 44 && captionBox.y <= 1,
+    `w=${captionBox?.width} h=${captionBox?.height} y=${captionBox?.y}`,
+  );
+  for (const testid of ['nav-back', 'nav-forward', 'nav-reload']) {
+    check(`caption 导航按钮 ${testid}`, (await shell.locator(`[data-testid="${testid}"]`).count()) === 1);
+  }
+  for (const testid of ['caption-minimize', 'caption-maximize', 'caption-close']) {
+    check(`caption 窗口控制 ${testid}`, (await shell.locator(`[data-testid="${testid}"]`).count()) === 1);
+  }
+} else {
+  check('macOS 无自绘 caption 条', (await shell.locator('[data-testid="caption-bar"]').count()) === 0);
 }
 check(
-  '侧栏开关保留在左栏',
+  '侧栏开关保留在左栏顶栏',
   (await shell.locator('[data-testid="sidebar-toolbar"] [data-testid="sidebar-toggle"]').count()) === 1,
 );
-const navBackBox = await shell.locator('[data-testid="nav-back"]').boundingBox();
-const navHomeBox = await shell.locator('[data-testid="nav-home"]').boundingBox();
-const urlBarBox = await shell.locator('[data-testid="url-bar"]').boundingBox();
-const navAddressGap =
-  navHomeBox && urlBarBox ? urlBarBox.x - (navHomeBox.x + navHomeBox.width) : Number.NaN;
-check(
-  '导航组紧邻地址栏',
-  Boolean(navBackBox) &&
-    Boolean(urlBarBox) &&
-    navBackBox.x > toolbarBox.x &&
-    navAddressGap >= 0 &&
-    navAddressGap <= 12,
-  `nav-back.x=${navBackBox?.x} nav-address.gap=${navAddressGap}`,
-);
+check('rail 品牌行标识', (await shell.locator('[data-testid="sidebar-toolbar"]').innerText()).includes('diteng'));
+check('rail AI 对话导航项', (await shell.locator('[data-testid="rail-ai"]').count()) === 1);
+check('无浏览器工具栏（已按 dsh 布局移除）', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 0);
+check('无地址栏（新建标签页内输入代替）', (await shell.locator('[data-testid="url-bar"]').count()) === 0);
 const railConfig = await shell.evaluate(() => window.diteng.getConfig());
 const expectedRailWidth = (railConfig.railWidth >= 200 && railConfig.railWidth <= 480) ? railConfig.railWidth : 300;
 const box = await tabstripBox();
@@ -359,6 +358,11 @@ check('设置页不显示地址输入条', (await shell.locator('[data-testid="u
 check('设置页不显示地址复制按钮', (await shell.locator('[data-testid="url-bar-copy"]').count()) === 0);
 check('设置页不显示浏览器工具栏', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 0);
 check('设置页不显示 Chat 工具栏按钮', (await shell.locator('[data-testid="toolbar-chat"]').count()) === 0);
+check(
+  '设置页 caption 条常驻但导航组隐藏',
+  (await shell.locator('[data-testid="caption-bar"]').count()) === (appIsWindows ? 1 : 0) &&
+    (await shell.locator('[data-testid="nav-back"]').count()) === 0,
+);
 const settingsPageBox = await shell.locator('[data-testid="settings-page"]').boundingBox();
 const settingsRailBox = await shell.locator('[data-testid="settings-rail"]').boundingBox();
 check(
@@ -366,7 +370,8 @@ check(
   Boolean(settingsPageBox) &&
     Boolean(settingsRailBox) &&
     settingsPageBox.x >= settingsRailBox.x + settingsRailBox.width - 1 &&
-    settingsPageBox.y <= 1,
+    // Windows 顶部为 40px caption 条，macOS 内容直达顶边
+    settingsPageBox.y <= (appIsWindows ? 41 : 1),
   `page.x=${settingsPageBox?.x} y=${settingsPageBox?.y} rail.right=${settingsRailBox ? settingsRailBox.x + settingsRailBox.width : undefined}`,
 );
 const settingsContentBox = await shell.locator('[data-testid="settings-content"]').boundingBox();
@@ -431,16 +436,23 @@ check('切页后主题控件移除', (await shell.locator('[data-testid="setting
 await shell.click('[data-testid="settings-back"]');
 await shell.waitForTimeout(300);
 check('设置页返回', (await shell.locator('[data-testid="settings-page"]').count()) === 0);
-check('返回浏览页后恢复浏览器工具栏', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 1);
+check(
+  '返回浏览页后恢复 caption 条',
+  (await shell.locator('[data-testid="caption-bar"]').count()) === (appIsWindows ? 1 : 0) &&
+    (await shell.locator('[data-testid="nav-back"]').count()) === (appIsWindows ? 1 : 0),
+);
 check('返回后恢复底部用户行', (await shell.locator('[data-testid="user-chip"]').count()) === 1);
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('返回后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6c. 侧栏收起/展开：工具栏留在最上方，rail 从布局中移除，再点同一按钮恢复
+// 6d. 侧栏收起/展开：caption 条留在最上方（展开入口移入其左端），rail 从布局中移除，再点同一按钮恢复
 await shell.click('[data-testid="sidebar-toggle"]');
 await shell.waitForTimeout(300);
 check('收起侧栏后 rail 隐藏', (await shell.locator('[data-testid="tabstrip"]').count()) === 0);
-check('收起侧栏后工具栏保留', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 1);
+check(
+  '收起侧栏后 caption 条保留',
+  (await shell.locator('[data-testid="caption-bar"]').count()) === (appIsWindows ? 1 : 0),
+);
 await shell.click('[data-testid="sidebar-toggle"]');
 await shell.waitForTimeout(300);
 check('展开侧栏后 rail 恢复', (await shell.locator('[data-testid="tabstrip"]').count()) === 1);

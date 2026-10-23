@@ -14,7 +14,9 @@ export interface ThemeState {
 
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
-  /** 后端 diteng-im-server 地址，默认 http://127.0.0.1:8101 */
+  /** 配置结构版本（主进程内部迁移标记，渲染层忽略）；2 起默认服务地址为线上 https://m.cdcp.site */
+  configVersion: number;
+  /** 后端 diteng-im-server 地址，默认 https://m.cdcp.site（线上生产环境） */
   serverBase: string;
   /** AI 对话站地址；空串表示未手动设置，按 serverBase 推导（cdcp.site → https://ai.cdcp.site，否则 http://127.0.0.1:3060） */
   aiBase: string;
@@ -339,4 +341,14 @@ export interface DitengApi {
   onCorpSwitched(listener: (payload: CorpSwitchedPayload) => void): () => void;
   /** 订阅会话变化推送（账套切换后触发），返回取消订阅函数 */
   onSessionChanged(listener: (summary: SessionSummary | null) => void): () => void;
+  /** 主窗自绘 caption（Windows 无系统标题栏）：最小化主窗 */
+  windowMinimize(): void;
+  /** 主窗自绘 caption：最大化/向下还原切换 */
+  windowToggleMaximize(): void;
+  /** 主窗自绘 caption：关闭主窗（托盘常驻时与系统关闭一致，隐藏到托盘） */
+  windowClose(): void;
+  /** 主窗当前是否最大化（自绘 caption 的 □/❐ 图标态） */
+  windowIsMaximized(): Promise<boolean>;
+  /** 订阅主窗最大化状态变化（最大化/还原时推送），返回取消订阅函数 */
+  onWindowMaximizedChanged(listener: (maximized: boolean) => void): () => void;
 }

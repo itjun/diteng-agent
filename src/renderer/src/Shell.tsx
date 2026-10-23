@@ -13,9 +13,7 @@ import {
   ChatIcon,
   CheckIcon,
   CloseIcon,
-  CopyIcon,
   ForwardIcon,
-  HomeIcon,
   MonitorIcon,
   MoonIcon,
   PlusIcon,
@@ -24,6 +22,9 @@ import {
   SidebarToggleIcon,
   SignOutIcon,
   SunIcon,
+  WindowMaximizeIcon,
+  WindowMinimizeIcon,
+  WindowRestoreIcon,
 } from './theme-icons';
 import {
   DEFAULT_SETTINGS_CATEGORY,
@@ -34,7 +35,7 @@ import type { SettingsCategoryKey } from './Settings';
 import { useThemeSetting } from './use-theme';
 import styles from './Shell.module.css';
 
-/** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
+/** 平台判定：macOS 红绿灯落在 rail 品牌行内；Windows 无系统标题栏，内容列顶部由自绘 caption 条接管 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
 const DEFAULT_RAIL_WIDTH = 300;
 /** macOS 左栏要容纳红绿灯让位与整组导航按钮，避免窄栏裁切。 */
@@ -72,9 +73,10 @@ function corpNoOfUrl(url: string): string {
 
 /**
  * 主窗壳：左侧竖向标签栏（rail）+ 内容区都在渲染层，每 tab 一个 <webview>（页内合成，与 macOS 整窗 vibrancy 兼容）。
+ * 布局对齐 dsh desktop（deepseek-harness）侧栏形态：品牌行 → 新建标签卡片 → 导航项 → 标签列表 → 底部用户行；
+ * 两平台内容都直达窗口顶边（macOS 红绿灯落在 rail 品牌行左侧，Windows 内容列顶部是自绘 caption 条）。
  * 标签状态（id/url/title/favicon/corpNo/isLoading）归渲染层，标题/favicon/loading 由 webview 元素事件维护；
  * URL 策略（分类 + 同域补 sid）归主进程：任何开标签入口先经 tabs:resolve 拿最终 URL 再建 webview。
- * 左栏拥有独立顶部工具区；右栏另起地址与 Chat，两栏从窗口顶部到底部完全分开。
  * 壳内另有「设置页」视图：rail 原地切换为设置导航，内容区替换为设置项（webview 隐藏不销毁），
  * ESC/返回切回标签视图。
  * 关闭到 0 个 tab 时内容区被新建标签页覆盖，窗口不销毁。
@@ -167,26 +169,7 @@ export function Shell() {
     webviewRefs.current.get(activeTabIdRef.current)?.reload();
   }, []);
 
-  /** 主页键在当前标签内导航；没有标签时才新建首页标签（与浏览器主页行为一致） */
-  const navigateHome = useCallback(async () => {
-    setIsSettingsOpen(false);
-    const result = await window.diteng.tabsResolve({ home: true });
-    if (!result.ok || result.action !== 'in-app') return;
-    const activeId = activeTabIdRef.current;
-    const webview = activeId ? webviewRefs.current.get(activeId) : undefined;
-    if (!webview) {
-      openTab(result.url, result.corpNo);
-      return;
-    }
-    updateTab(activeId, { url: result.url, isLoading: true });
-    try {
-      await webview.loadURL(result.url);
-    } catch {
-      updateTab(activeId, { isLoading: false });
-    }
-  }, [openTab, updateTab]);
-
-  /** 右上角 Chat 走真实 AI 助手路由；设置页中点击时先回到标签视图 */
+  /** 右侧导航组的 Chat 走真实 AI 助手路由；设置页中点击时先回到标签视图 */
   const openChat = useCallback(() => {
     setIsSettingsOpen(false);
     void resolveAndOpen({ ai: true });
@@ -321,13 +304,11 @@ export function Shell() {
   // 底部用户行显示名：当前账套名称优先，名称未下发时回落账套代码
   const corpDisplayName = session?.corpName || session?.corpNo || '未登录';
 
-  // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，地址栏显示新建标签页）
+  // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，caption 条标题显示新建标签页）
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
-  const shellClass = `${styles.shell} ${styles.shellRail}${isMacPlatform ? '' : ` ${styles.shellRailWin}`}`;
-
   return (
-    <div className={shellClass} data-testid="shell-rail">
+    <div className={`${styles.shell} ${styles.shellRail}`} data-testid="shell-rail">
       {/* 拖宽期间的全窗事件盾牌：挡住 webview/guest 输入路由，保证宿主页持续收到 move/up */}
       {isRailDrag && (
         <div
@@ -341,7 +322,7 @@ export function Shell() {
       <div className={styles.workspace}>
         {!isRailCollapsed && (
           <aside className={styles.rail} data-testid="tabstrip" style={{ width: railWidth }}>
-            <SidebarToolbar onToggleRail={toggleRail} />
+            <RailHeader onToggleRail={toggleRail} />
             {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 300 */}
             <div
               className={styles.railResizeHandle}
@@ -369,6 +350,20 @@ export function Shell() {
                   <PlusIcon />
                   <span>新建标签</span>
                 </button>
+                <button
+                  type="button"
+                  data-testid="rail-ai"
+                  className={styles.railNavItem}
+                  title="打开当前账套的 AI 助手"
+                  disabled={!session}
+                  onClick={openChat}
+                >
+                  <ChatIcon />
+                  <span>AI 对话</span>
+                </button>
+                <div className={styles.railGroupLabel} role="presentation">
+                  标签页
+                </div>
                 <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="ERP 标签页">
                   {tabs.map((tab) => (
                     <RailTab
@@ -391,14 +386,23 @@ export function Shell() {
           </aside>
         )}
 
-        {/* 设置页直接接管内容区，不再复用浏览器工具栏；返回标签视图后恢复 webview 内容 */}
+        {/* macOS 收起 rail 后的唯一展开入口：浮在内容区左上角（左侧避开红绿灯） */}
+        {isMacPlatform && isRailCollapsed && (
+          <div className={styles.railExpandFloat}>
+            <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={toggleRail}>
+              <SidebarToggleIcon />
+            </ToolbarButton>
+          </div>
+        )}
+
+        {/* 设置页直接接管内容区；标签视图下 webview 从 caption 条下沿铺到底 */}
         <main className={isSettingsOpen ? `${styles.body} ${styles.bodySettings}` : styles.body}>
-          {!isSettingsOpen && (
-            <ContentToolbar
-              url={activeTab?.url ?? ''}
-              pageTitle={activeTab?.title ?? ''}
+          {!isMacPlatform && (
+            <CaptionBar
+              title={isSettingsOpen ? '设置' : activeTab?.title || activeTab?.url || '新建标签页'}
               showSidebarToggle={isRailCollapsed}
               onToggleRail={toggleRail}
+              showNav={!isSettingsOpen}
               canGoBack={Boolean(activeTab) && navigationState.canGoBack}
               canGoForward={Boolean(activeTab) && navigationState.canGoForward}
               isLoading={Boolean(activeTab?.isLoading)}
@@ -406,13 +410,11 @@ export function Shell() {
               onBack={navigateBack}
               onForward={navigateForward}
               onReload={reloadActiveTab}
-              onHome={() => void navigateHome()}
-              chatDisabled={!session}
-              onChat={openChat}
             />
           )}
           {/* webview 宿主：非激活标签 display:none 隐藏（保留 DOM，guest 不销毁不重载）；
-              设置页打开时整体隐藏（webview 不销毁，返回后标签原样恢复） */}
+              设置页打开时整体隐藏（webview 不销毁，返回后标签原样恢复）；
+              新建标签页也锚在本容器（inset:0 不再上溢盖住 caption 条） */}
           <div className={styles.viewport} style={{ display: isSettingsOpen ? 'none' : undefined }}>
             {tabs.map((tab) => (
               <TabWebview
@@ -424,19 +426,10 @@ export function Shell() {
                 onNavigationState={handleNavigationState}
               />
             ))}
+            {tabs.length === 0 && <NewTabPage session={session} openViaMain={resolveAndOpen} />}
           </div>
-          {!isSettingsOpen && tabs.length === 0 && <NewTabPage session={session} openViaMain={resolveAndOpen} />}
           {isSettingsOpen && (
-            <>
-              {isRailCollapsed && (
-                <div className={styles.settingsRailToggle}>
-                  <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={toggleRail}>
-                    <SidebarToggleIcon />
-                  </ToolbarButton>
-                </div>
-              )}
-              <SettingsPage session={session} activeCategory={settingsCategory} />
-            </>
+            <SettingsPage session={session} activeCategory={settingsCategory} />
           )}
         </main>
       </div>
@@ -839,15 +832,19 @@ function ToolbarButton({
   );
 }
 
-/** 左侧栏顶部只负责栏开关，按钮贴 rail 右上角（对齐 DeepSeek Harness 顶栏）；页面导航与地址栏留在右侧内容区。 */
-function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
+/** rail 顶栏（dsh 侧栏 logo 行）：左侧品牌标识（macOS 红绿灯让位由 CSS 处理），右端侧栏开关 */
+function RailHeader({ onToggleRail }: { onToggleRail: () => void }) {
   return (
     <div
-      className={styles.sidebarToolbar}
+      className={styles.railHeader}
       data-testid="sidebar-toolbar"
       role="toolbar"
-      aria-label="侧栏工具栏"
+      aria-label="侧栏顶栏"
     >
+      <span className={styles.railBrand} title="diteng agent">
+        <span className={styles.railBrandName}>diteng agent</span>
+        <span className={styles.railBrandTag}>DESKTOP</span>
+      </span>
       <ToolbarButton
         label="收起侧栏"
         testId="sidebar-toggle"
@@ -862,14 +859,15 @@ function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
 }
 
 /**
- * 右侧内容区工具栏：导航组紧贴地址栏左侧（Chrome 式）。
- * 地址只读，复制按钮拷贝完整 URL（含 sid 等会话参数）。仅浏览页使用，设置页不渲染。
+ * Windows 内容列 caption 条（无系统标题栏的替代）：整条为窗口拖拽区，
+ * 左端侧栏开关（收起态）与页面导航（后退/前进/刷新），中间当前页标题，
+ * 右端自绘窗口控制（—/□/×，动作经 IPC 落主进程）。
  */
-function ContentToolbar({
-  url,
-  pageTitle,
+function CaptionBar({
+  title,
   showSidebarToggle,
   onToggleRail,
+  showNav,
   canGoBack,
   canGoForward,
   isLoading,
@@ -877,14 +875,11 @@ function ContentToolbar({
   onBack,
   onForward,
   onReload,
-  onHome,
-  chatDisabled,
-  onChat,
 }: {
-  url: string;
-  pageTitle: string;
+  title: string;
   showSidebarToggle: boolean;
   onToggleRail: () => void;
+  showNav: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
   isLoading: boolean;
@@ -892,119 +887,83 @@ function ContentToolbar({
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
-  onHome: () => void;
-  chatDisabled: boolean;
-  onChat: () => void;
 }) {
-  // 复制反馈：ok 成功 / fail 剪贴板不可用，2 秒后还原
-  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const hasUrl = url.trim() !== '';
+  const [isMaximized, setIsMaximized] = useState(false);
 
+  // 初始态同步一次 + 订阅主进程最大化/还原推送（□/❐ 图标切换）
   useEffect(() => {
-    if (copyState === 'idle') return;
-    const timer = setTimeout(() => setCopyState('idle'), 2000);
-    return () => clearTimeout(timer);
-  }, [copyState]);
+    void window.diteng.windowIsMaximized().then(setIsMaximized);
+    return window.diteng.onWindowMaximizedChanged(setIsMaximized);
+  }, []);
 
-  async function copyUrl() {
-    if (!hasUrl) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopyState('ok');
-    } catch {
-      setCopyState('fail');
-    }
-  }
-
-  const copyLabel =
-    copyState === 'ok' ? '已复制' : copyState === 'fail' ? '复制失败' : '复制当前网址';
-  const locationText = toolbarLocationText(url, pageTitle);
   return (
     <div
-      className={[styles.contentToolbar, showSidebarToggle ? styles.contentToolbarCollapsed : '']
-        .filter(Boolean)
-        .join(' ')}
-      data-testid="browser-toolbar"
+      className={styles.captionBar}
+      data-testid="caption-bar"
       role="toolbar"
-      aria-label="浏览器工具栏"
+      aria-label="窗口标题栏"
     >
       {showSidebarToggle && (
         <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={onToggleRail}>
           <SidebarToggleIcon />
         </ToolbarButton>
       )}
-      <div className={styles.toolbarNav}>
-        <ToolbarButton label="后退" testId="nav-back" disabled={!canGoBack} onClick={onBack}>
-          <BackIcon />
-        </ToolbarButton>
-        <ToolbarButton label="前进" testId="nav-forward" disabled={!canGoForward} onClick={onForward}>
-          <ForwardIcon />
-        </ToolbarButton>
-        <ToolbarButton label="刷新" testId="nav-reload" disabled={!hasActiveTab} onClick={onReload}>
-          <span
-            className={[styles.toolbarIcon, isLoading ? styles.toolbarReloading : '']
-              .filter(Boolean)
-              .join(' ')}
-          >
-            <ReloadIcon />
-          </span>
-        </ToolbarButton>
-        <ToolbarButton label="主页" testId="nav-home" onClick={onHome}>
-          <HomeIcon />
-        </ToolbarButton>
-      </div>
-      <div className={styles.toolbarAddress} data-testid="url-bar" role="group" aria-label="当前页面网址">
-        <span className={styles.toolbarAddressText} title={locationText}>
-          {locationText}
-        </span>
+      {showNav && (
+        <div className={styles.toolbarNav}>
+          <ToolbarButton label="后退" testId="nav-back" disabled={!canGoBack} onClick={onBack}>
+            <BackIcon />
+          </ToolbarButton>
+          <ToolbarButton label="前进" testId="nav-forward" disabled={!canGoForward} onClick={onForward}>
+            <ForwardIcon />
+          </ToolbarButton>
+          <ToolbarButton label="刷新" testId="nav-reload" disabled={!hasActiveTab} onClick={onReload}>
+            <span
+              className={[styles.toolbarIcon, isLoading ? styles.toolbarReloading : '']
+                .filter(Boolean)
+                .join(' ')}
+            >
+              <ReloadIcon />
+            </span>
+          </ToolbarButton>
+        </div>
+      )}
+      <span className={styles.captionTitle} aria-hidden="true">
+        {title}
+      </span>
+      <div className={styles.captionControls}>
         <button
           type="button"
-          className={[
-            styles.toolbarCopy,
-            copyState === 'ok' ? styles.toolbarCopyOk : '',
-            copyState === 'fail' ? styles.toolbarCopyFail : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          data-testid="url-bar-copy"
-          disabled={!hasUrl}
-          onClick={() => void copyUrl()}
-          title={copyLabel}
-          aria-label={copyLabel}
+          className={styles.captionButton}
+          data-testid="caption-minimize"
+          title="最小化"
+          aria-label="最小化"
+          onClick={() => window.diteng.windowMinimize()}
         >
-          {copyState === 'ok' ? <CheckIcon /> : <CopyIcon />}
+          <WindowMinimizeIcon />
+        </button>
+        <button
+          type="button"
+          className={styles.captionButton}
+          data-testid="caption-maximize"
+          title={isMaximized ? '向下还原' : '最大化'}
+          aria-label={isMaximized ? '向下还原' : '最大化'}
+          onClick={() => window.diteng.windowToggleMaximize()}
+        >
+          {isMaximized ? <WindowRestoreIcon /> : <WindowMaximizeIcon />}
+        </button>
+        <button
+          type="button"
+          className={`${styles.captionButton} ${styles.captionClose}`}
+          data-testid="caption-close"
+          title="关闭"
+          aria-label="关闭"
+          onClick={() => window.diteng.windowClose()}
+        >
+          <CloseIcon />
         </button>
       </div>
-      <button
-        type="button"
-        className={styles.toolbarChat}
-        data-testid="toolbar-chat"
-        disabled={chatDisabled}
-        onClick={onChat}
-        title="打开 Ravenclaw AI 对话"
-        aria-label="打开 Ravenclaw AI 对话"
-      >
-        <span className={styles.toolbarChatIcon}>
-          <ChatIcon />
-        </span>
-        <span>Chat</span>
-      </button>
     </div>
   );
-}
-
-/** Dia 式地址文案：域名 / 页面标题，不把带会话参数的完整 URL 铺在工具栏上 */
-function toolbarLocationText(url: string, title: string): string {
-  const label = title.trim();
-  if (!url.trim()) return label || '新建标签页';
-  try {
-    const parsed = new URL(url);
-    const pageLabel = label && label !== url.trim() ? label : '';
-    if (pageLabel) return `${parsed.host} / ${pageLabel}`;
-    return `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}`;
-  } catch {
-    return label || url;
-  }
 }
 
 /** 新建标签页：地址栏 + 快捷入口（renderer 自绘，直接覆盖在 webview 宿主之上） */
