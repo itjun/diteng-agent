@@ -4,3 +4,5 @@ release/
 *.local
 .DS_Store
 scripts/e2e-secrets.mjs
+# 本地会话计划/工具产物
+.zcode/
