@@ -6,6 +6,12 @@
 /** 主题设置：默认跟随系统，手动切换后存入 config.theme */
 export type ThemeSetting = 'system' | 'light' | 'dark';
 
+/** 主进程统一解析后的应用实际外观；所有窗口共用，避免原生窗口与 CSS 主题分叉 */
+export interface ThemeState {
+  setting: ThemeSetting;
+  resolved: 'light' | 'dark';
+}
+
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
   /** 后端 diteng-im-server 地址，默认 http://127.0.0.1:8101 */
@@ -237,8 +243,14 @@ export interface MqttBrokerConfig {
 
 /** preload 暴露给渲染层的最小 API（window.diteng） */
 export interface DitengApi {
+  /** preload 加载时同步取得的主题快照，供 React 首帧直接使用，避免先闪系统主题 */
+  initialThemeState: ThemeState;
   getConfig(): Promise<AppConfig>;
   setConfig(patch: AppConfigPatch): Promise<AppConfig>;
+  /** 当前应用主题设置与主进程解析后的实际外观 */
+  getThemeState(): Promise<ThemeState>;
+  /** 订阅主题变化（设置切换或 system 模式下系统外观变化），返回取消订阅函数 */
+  onThemeChanged(listener: (state: ThemeState) => void): () => void;
   login(request: LoginRequest): Promise<ApiCallResult<LoginResult>>;
   /**
    * 发送登录短信验证码（SvrUserLogin.getToken verifyCode 指令，服务端 5 分钟冷却）。

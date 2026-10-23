@@ -4,14 +4,27 @@ import type {
   MqttState,
   SessionSummary,
   TabsOpenRequestPayload,
+  ThemeState,
 } from '../shared/types';
 import type { DitengApi } from '../shared/types';
 
 // 最小暴露面：渲染层只经 window.diteng 访问主进程能力，不直接接触 ipcRenderer。
 // 编译为 CJS（tsconfig module commonjs）以满足 sandbox preload 的加载要求。
+// 主题在首帧前同步取一次：固定浅/深色时不能先按系统外观绘制再跳变。
+const initialThemeState = ipcRenderer.sendSync('theme:get-sync') as ThemeState;
+
 const diteng: DitengApi = {
+  initialThemeState,
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
+  getThemeState: () => ipcRenderer.invoke('theme:get'),
+  onThemeChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: ThemeState) => listener(state);
+    ipcRenderer.on('theme:changed', handler);
+    return () => {
+      ipcRenderer.removeListener('theme:changed', handler);
+    };
+  },
   login: (request) => ipcRenderer.invoke('auth:login', request),
   loginSendCode: (request) => ipcRenderer.invoke('auth:login-send-code', request),
   autoLogin: () => ipcRenderer.invoke('auth:auto-login'),

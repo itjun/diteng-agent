@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, screen, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  nativeTheme,
+  safeStorage,
+  screen,
+  shell,
+  systemPreferences,
+} from 'electron';
 import { join } from 'node:path';
 import { getConfig, resolveAiBase, saveWindowBounds, updateConfig } from './config';
 import * as serverApi from './api';
@@ -7,7 +16,16 @@ import { buildAiUrl, buildErpUrl, classifyUrl, withSessionParams } from './url-p
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
-import type { AppConfig, AppConfigPatch, ApiFailure, LoginResult, MqttState, SessionInfo, TabsResolveRequest } from '../shared/types';
+import type {
+  AppConfig,
+  AppConfigPatch,
+  ApiFailure,
+  LoginResult,
+  MqttState,
+  SessionInfo,
+  TabsResolveRequest,
+  ThemeState,
+} from '../shared/types';
 
 const DEV_SERVER_URL = 'http://127.0.0.1:5173';
 // 对应 --dsw-static-neutral-bluish-950 / 00，避免深色主题下窗口底色闪白
@@ -104,7 +122,44 @@ function isDevMode(): boolean {
 function resolveIsDarkTheme(config: AppConfig): boolean {
   if (config.theme === 'dark') return true;
   if (config.theme === 'light') return false;
+  // Electron 在未打包/部分 macOS 运行形态下可能不继承系统 Dark；以系统默认值兜底，
+  // system 模式仍由 nativeTheme.updated 驱动实时刷新。
+  if (process.platform === 'darwin') {
+    try {
+      const appearance = systemPreferences.getUserDefault('AppleInterfaceStyle', 'string');
+      if (appearance === 'Dark' || appearance === 'Light') return appearance === 'Dark';
+    } catch {
+      // 系统未提供该默认值时继续用 nativeTheme 判定
+    }
+  }
   return nativeTheme.shouldUseDarkColors;
+}
+
+/**
+ * 应用主题与原生外观必须同源：themeSource 固定为 light/dark 时，macOS 窗口框架、
+ * vibrancy 材质、系统菜单及渲染层 prefers-color-scheme 都会忽略系统深浅色；
+ * system 则继续跟随系统。已固定主题下再改系统外观不会让两侧配色分叉。
+ */
+function applyNativeTheme(config: AppConfig): void {
+  if (nativeTheme.themeSource !== config.theme) nativeTheme.themeSource = config.theme;
+}
+
+/** 主进程统一解析主题，渲染层不再各自把 config 与系统媒体查询拼在一起 */
+function currentThemeState(): ThemeState {
+  const config = getConfig();
+  const setting = config.theme;
+  const resolved = resolveIsDarkTheme(config) ? 'dark' : 'light';
+  return { setting, resolved };
+}
+
+/** 主题是应用级偏好：所有已开窗口（登录、主窗、置顶弹窗）必须同步更新 */
+function broadcastThemeState(): void {
+  const state = currentThemeState();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send('theme:changed', state);
+    }
+  }
 }
 
 /** macOS vibrancy 兜底底色：对齐 dsh desktop chromeFallbackFill（resolved --dsw-static-neutral-bluish-900 / -50） */
@@ -113,7 +168,7 @@ function macVibrancyFallbackFill(): string {
 }
 
 /**
- * macOS 主窗背景态：可见时透明底 + sidebar vibrancy（材质深浅跟随系统，无需按主题切换）；
+ * macOS 主窗背景态：可见时透明底 + sidebar vibrancy（材质深浅由 nativeTheme.themeSource 跟随应用主题）；
  * 最小化/隐藏期间摘除 vibrancy 并铺不透明兜底底——deminiaturize 会晚挂 NSVisualEffectView
  * （electron/electron#25368），透明窗在还原动画里会瞬透桌面，先实底、还原后切回。
  * 与 dsh desktop main.ts applyBackdrop 同做法。
@@ -301,13 +356,21 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
 
 /** 主题变化时同步原生窗口底色，避免缩放/刷新瞬间露底 */
 function applyWindowTheme(): void {
-  const color = resolveIsDarkTheme(getConfig()) ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND;
+  const isDark = resolveIsDarkTheme(getConfig());
+  const color = isDark ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND;
   loginWindow?.setBackgroundColor(color);
   if (process.platform === 'darwin') {
-    // 主窗可见时保持透明（vibrancy 材质深浅跟随系统）；不可见期间的兜底底色随主题刷新
+    // 主窗可见时保持透明（vibrancy 材质深浅跟随应用主题）；不可见期间的兜底底色随主题刷新
     applyMacMainWindowBackdrop();
   } else {
     mainWindow?.setBackgroundColor(color);
+    if (process.platform === 'win32') {
+      mainWindow?.setTitleBarOverlay({
+        height: WINDOWS_TITLEBAR_HEIGHT,
+        color,
+        symbolColor: isDark ? '#f9fafb' : '#0f1115',
+      });
+    }
   }
 }
 
@@ -451,9 +514,17 @@ function readServerBase(request: unknown): string {
 function registerIpcHandlers(): void {
   ipcMain.handle('config:get', () => getConfig());
 
+  // preload 首帧同步读取；只含非敏感主题状态，数据量极小
+  ipcMain.on('theme:get-sync', (event) => {
+    event.returnValue = currentThemeState();
+  });
+  ipcMain.handle('theme:get', () => currentThemeState());
+
   ipcMain.handle('config:set', (_event, patch: unknown) => {
     const config = updateConfig((patch ?? {}) as AppConfigPatch);
+    applyNativeTheme(config);
     applyWindowTheme();
+    broadcastThemeState();
     return config;
   });
 
@@ -671,9 +742,13 @@ function registerTabsIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
-  getConfig();
+  // 必须在创建任何窗口前同步应用主题，首帧的 vibrancy 才不会先取系统外观。
+  applyNativeTheme(getConfig());
   registerIpcHandlers();
-  nativeTheme.on('updated', applyWindowTheme);
+  nativeTheme.on('updated', () => {
+    applyWindowTheme();
+    broadcastThemeState();
+  });
   createLoginWindow();
 });
 

@@ -1,13 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import type { ThemeSetting } from '../../shared/types';
 
-/** 同窗口内多实例（壳/用户卡片/设置页）同步主题变更的自定义事件 */
-const THEME_CHANGED_EVENT = 'diteng:theme-changed';
-
 /**
- * 主题状态：config 持久化 + 跟随系统实时切换 + 写 body[data-ds-dark-theme]。
- * 登录窗与主窗壳共用，避免多处各抄一份 matchMedia 逻辑；
- * 多个实例各自持状态，写入 config 后广播 THEME_CHANGED_EVENT 互相同步。
+ * 主题状态由主进程统一解析并广播：setting 是用户选择，resolved 是最终应用外观。
+ * 原生窗口材质、渲染层 token 和原生控件都消费同一份状态，系统外观只影响 system 模式。
  */
 export function useThemeSetting(): {
   resolvedTheme: 'light' | 'dark';
@@ -15,43 +11,42 @@ export function useThemeSetting(): {
   setTheme: (next: ThemeSetting) => void;
   toggleTheme: () => void;
 } {
-  const [themeSetting, setThemeSetting] = useState<ThemeSetting>('system');
-  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
-    window.matchMedia('(prefers-color-scheme: dark)').matches,
+  const [themeSetting, setThemeSetting] = useState<ThemeSetting>(
+    () => window.diteng.initialThemeState.setting,
+  );
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(
+    () => window.diteng.initialThemeState.resolved,
   );
 
   useEffect(() => {
-    void window.diteng.getConfig().then((config) => setThemeSetting(config.theme));
+    let active = true;
+    const unsubscribe = window.diteng.onThemeChanged((state) => {
+      setThemeSetting(state.setting);
+      setResolvedTheme(state.resolved);
+    });
+    // preload 快照与监听之间若刚好发生主题切换，主动拉一次补齐
+    void window.diteng.getThemeState().then((state) => {
+      if (!active) return;
+      setThemeSetting(state.setting);
+      setResolvedTheme(state.resolved);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
-  // 其他实例（用户卡片/设置页）改主题后同步本地状态
-  useEffect(() => {
-    const onThemeChanged = () => void window.diteng.getConfig().then((config) => setThemeSetting(config.theme));
-    window.addEventListener(THEME_CHANGED_EVENT, onThemeChanged);
-    return () => window.removeEventListener(THEME_CHANGED_EVENT, onThemeChanged);
-  }, []);
-
-  // 跟随系统：theme 为 system 时，系统深浅色变化实时生效
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-
-  const resolvedTheme: 'light' | 'dark' =
-    themeSetting === 'system' ? (systemPrefersDark ? 'dark' : 'light') : themeSetting;
-
-  useEffect(() => {
+  // 在绘制前同时更新 token 开关和原生控件/滚动条配色，避免首帧或切换时短暂混搭
+  useLayoutEffect(() => {
+    document.documentElement.style.colorScheme = resolvedTheme;
     if (resolvedTheme === 'dark') document.body.setAttribute('data-ds-dark-theme', '');
     else document.body.removeAttribute('data-ds-dark-theme');
   }, [resolvedTheme]);
 
   function setTheme(next: ThemeSetting) {
+    // 选择器状态立即反馈；最终外观由主进程广播回来
     setThemeSetting(next);
-    void window.diteng.setConfig({ theme: next }).then(() => {
-      window.dispatchEvent(new CustomEvent(THEME_CHANGED_EVENT));
-    });
+    void window.diteng.setConfig({ theme: next });
   }
 
   function toggleTheme() {
