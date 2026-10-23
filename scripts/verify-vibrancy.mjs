@@ -359,12 +359,14 @@ for (let i = 0; i < 20; i++) {
 }
 const isDark = await shell.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'));
 if (isDark) {
-  // rail 底部主题按钮已并入用户卡片「外观」组：点用户行 → 跟随浅色 → ESC 收卡片
-  await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 10_000 });
-  await shell.click('[data-testid="user-chip"]');
-  await shell.click('[data-testid="card-theme-light"]');
+  // 外观入口统一在设置页：齿轮 → 外观（默认分类）→ 浅色 → ESC 返回标签视图
+  await shell.waitForSelector('[data-testid="user-chip"] [data-testid="open-settings"]', { timeout: 10_000 });
+  await shell.click('[data-testid="user-chip"] [data-testid="open-settings"]');
+  await shell.waitForSelector('[data-testid="settings-theme-light"]', { timeout: 5_000 });
+  await shell.click('[data-testid="settings-theme-light"]');
   await shell.waitForTimeout(500);
   await shell.keyboard.press('Escape');
+  await shell.waitForTimeout(300);
 }
 // 采样期剥掉 rail 的 CSS tint（40% 不透明浅色填充 + 蓝洗渐变）：剥掉后直测 NSVisualEffectView
 // 材质透光（tint 半透明层由 e2e-vibrancy 断言，不在此重复）

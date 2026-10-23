@@ -2,7 +2,7 @@ import type { CorpAccount, SessionInfo, SessionSummary } from '../shared/types';
 
 /**
  * 登录会话仅存主进程内存（token 不落盘、不下发 renderer）。
- * corpList 为 listMyLivingUsers 的主进程缓存（登录时清空、首次切换器打开时拉取）。
+ * corpList 为 listMyLivingUsers 的主进程缓存（登录时清空、需要解析账套名称时按需拉取）。
  */
 let currentSession: SessionInfo | null = null;
 let corpList: CorpAccount[] = [];

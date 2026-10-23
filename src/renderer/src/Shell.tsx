@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type {
-  CorpAccount,
   SessionSummary,
   TabInfo,
   TabsResolveRequest,
@@ -14,14 +13,11 @@ import {
   CheckIcon,
   CloseIcon,
   ForwardIcon,
-  MonitorIcon,
-  MoonIcon,
   PlusIcon,
   ReloadIcon,
   SettingsIcon,
   SidebarToggleIcon,
   SignOutIcon,
-  SunIcon,
   WindowMaximizeIcon,
   WindowMinimizeIcon,
   WindowRestoreIcon,
@@ -32,7 +28,6 @@ import {
   SettingsRail,
 } from './Settings';
 import type { SettingsCategoryKey } from './Settings';
-import { useThemeSetting } from './use-theme';
 import styles from './Shell.module.css';
 
 /** 平台判定：macOS 红绿灯落在 rail 品牌行内；Windows 无系统标题栏，内容列顶部由自绘 caption 条接管 */
@@ -59,8 +54,9 @@ function navigationStateOf(webview: WebviewElement | undefined): NavigationState
 
 /**
  * 标签归属账套重记账：ERP/AI 页路径首段为账套号（/{corpNo}/…）。guest 内部切换账套
- * （网页版右上角账套卡片）后标签实际账套已变，仅按此修正归属——它是切换账套时关旧账套
- * 标签的依据；非 /{corpNo}/ 形态返回空串表示维持原值。URL 放行/补参策略仍归主进程。
+ * （网页版右上角账套卡片）后标签实际账套已变，仅按此修正归属；关闭旧账套标签由会话账套
+ * 变化驱动（见 Shell 内 session.corpNo effect）。非 /{corpNo}/ 形态返回空串表示维持原值，
+ * URL 放行/补参策略仍归主进程。
  */
 function corpNoOfUrl(url: string): string {
   try {
@@ -100,6 +96,7 @@ export function Shell() {
   const webviewRefs = useRef(new Map<string, WebviewElement>());
   const activeTabIdRef = useRef('');
   activeTabIdRef.current = activeTabId;
+  const sessionCorpNoRef = useRef('');
 
   /** 开新标签（URL 必须经主进程 resolve 拿到的最终值），并激活 */
   const openTab = useCallback((url: string, corpNo: string) => {
@@ -175,7 +172,7 @@ export function Shell() {
     void resolveAndOpen({ ai: true });
   }, [resolveAndOpen]);
 
-  // 挂载：会话/配置拉取、首个标签（登录落点）、guest 开标签请求、账套切换广播
+  // 挂载：会话/配置拉取、首个标签（登录落点）、guest 开标签请求、会话变化推送
   useEffect(() => {
     void window.diteng.getSession().then(setSession);
     void window.diteng.getConfig().then((config) => {
@@ -189,19 +186,25 @@ export function Shell() {
     const unsubscribeOpen = window.diteng.onTabsOpenRequest(({ url }) => {
       void resolveAndOpen({ url });
     });
-    const unsubscribeCorp = window.diteng.onCorpSwitched(({ corpNo, entryUrl }) => {
-      // 关旧账套全部标签（AI 标签记打开时账套，一并关闭），再开新账套首页
-      setTabs((prev) => prev.filter((tab) => tab.corpNo === corpNo));
-      openTab(entryUrl, corpNo);
-    });
     // 账套切换后主进程推送新摘要，底部用户行与快捷入口文案随之刷新
     const unsubscribeSession = window.diteng.onSessionChanged((summary) => setSession(summary));
     return () => {
       unsubscribeOpen();
-      unsubscribeCorp();
       unsubscribeSession();
     };
   }, [openTab, resolveAndOpen]);
+
+  // 网页版切账套：主进程完成会话同步后推送 session:changed，账套号变化即意味着旧账套标签
+  // 在新 token 下已无访问权。切换发生在当前可见标签，故保留该标签、关闭其余全部标签（含 AI 标签）；
+  // 首次拿到会话与仅名称/用户信息回填（账套号不变）不动标签。
+  useEffect(() => {
+    const corpNo = session?.corpNo ?? '';
+    const previousCorpNo = sessionCorpNoRef.current;
+    sessionCorpNoRef.current = corpNo;
+    if (!previousCorpNo || !corpNo || corpNo === previousCorpNo) return;
+    const activeId = activeTabIdRef.current;
+    setTabs((prev) => prev.filter((tab) => tab.id === activeId).map((tab) => ({ ...tab, corpNo })));
+  }, [session?.corpNo]);
 
   // 激活态自愈：激活 tab 被关掉后落到剩余最后一个（与旧主进程实现一致），全关则空（新建标签页）
   useEffect(() => {
@@ -233,7 +236,7 @@ export function Shell() {
     };
   }, [tabs, activeTabId]);
 
-  /** 进设置页（rail 齿轮 / 卡片「设置…」共用） */
+  /** 进设置页（rail 齿轮唯一入口；外观/主题等统一在设置页处理） */
   const openSettings = useCallback(() => {
     setSettingsCategory(DEFAULT_SETTINGS_CATEGORY);
     setIsSettingsOpen(true);
@@ -575,7 +578,8 @@ function RailTab({
 
 /**
  * 底部用户行（Cursor 式）：圆形头像（当前账套名称首字符）+ 账套名称单行省略 + 右端齿轮，
- * 扁平融入侧栏无边框；点击整行向上弹出用户卡片，齿轮单独点击直达设置页。
+ * 扁平融入侧栏无边框；点击整行向上弹出用户卡片（仅退出登录——账套切换统一在网页版内完成），
+ * 齿轮单独点击直达设置页（外观、账号等设置项统一在设置页处理）。
  */
 function UserChip({
   session,
@@ -587,17 +591,7 @@ function UserChip({
   onOpenSettings: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [corps, setCorps] = useState<CorpAccount[]>([]);
-  const [isListLoading, setIsListLoading] = useState(false);
-  const [isSwitching, setIsSwitching] = useState(false);
-  const [hint, setHint] = useState('');
-  const { themeSetting, setTheme } = useThemeSetting();
   const wrapRef = useRef<HTMLDivElement>(null);
-
-  // 挂载即拉取一次：账套列表主进程缓存，用于卡片账套组展示
-  useEffect(() => {
-    void loadCorps();
-  }, []);
 
   // 展开时点外/Escape 收起
   useEffect(() => {
@@ -616,37 +610,6 @@ function UserChip({
     };
   }, [isOpen]);
 
-  async function loadCorps() {
-    setIsListLoading(true);
-    const result = await window.diteng.sessionListCorps();
-    setIsListLoading(false);
-    if (result.ok) {
-      setCorps(result.data);
-      setHint('');
-    } else {
-      setHint(result.message);
-    }
-  }
-
-  function toggleOpen() {
-    if (isSwitching) return;
-    const next = !isOpen;
-    setIsOpen(next);
-    // 空列表（首次拉取失败或未完成）时展开重试
-    if (next && corps.length === 0) void loadCorps();
-  }
-
-  /** 账套切换：getNuewToken 免密切换由主进程完成并广播 corp:switched（关旧账套标签 + 开新账套首页） */
-  async function switchCorp(corpNo: string) {
-    if (isSwitching) return;
-    setIsSwitching(true);
-    setHint('');
-    const result = await window.diteng.sessionSwitchCorp({ corpNo });
-    setIsSwitching(false);
-    if (result.ok) setIsOpen(false);
-    else setHint(result.message);
-  }
-
   const avatarChar = displayName.charAt(0).toUpperCase();
   // tooltip：当前账套「名称（代码）」，名称未下发时只显示代码；服务器随会话展示
   const corpLabel = session?.corpName ? `${session.corpName}（${session.corpNo}）` : (session?.corpNo ?? '');
@@ -658,12 +621,10 @@ function UserChip({
         type="button"
         className={`${styles.userChip} ${styles.userChipRail}`}
         data-testid="user-chip"
-        data-switching={isSwitching ? 'true' : 'false'}
-        onClick={toggleOpen}
-        disabled={!session || isSwitching}
+        onClick={() => setIsOpen((open) => !open)}
+        disabled={!session}
         title={chipTitle}
       >
-        {isSwitching && <span className={styles.spinner} aria-hidden="true" />}
         <span className={styles.userAvatar} aria-hidden="true">
           {avatarChar}
         </span>
@@ -685,102 +646,6 @@ function UserChip({
       </button>
       {isOpen && (
         <div className={`${styles.userCard} ${styles.userCardUp}`} data-testid="user-card" role="menu" aria-label="用户菜单">
-          <div className={styles.userCardLabel}>账套</div>
-          <div className={styles.userCardCorps} role="listbox" aria-label="可用账套">
-            {isListLoading && corps.length === 0 && <div className={styles.userCardHint}>加载中…</div>}
-            {!isListLoading && corps.length === 0 && !hint && (
-              <div className={styles.userCardHint}>暂无可用账套</div>
-            )}
-            {corps.map((corp) => {
-              const isCurrent = corp.corpNo === session?.corpNo;
-              return (
-                <button
-                  key={corp.corpNo}
-                  type="button"
-                  role="option"
-                  aria-selected={isCurrent}
-                  data-testid={`corp-option-${corp.corpNo}`}
-                  className={
-                    isCurrent ? `${styles.userCardRow} ${styles.userCardRowCurrent}` : styles.userCardRow
-                  }
-                  disabled={isSwitching || isCurrent}
-                  onClick={() => void switchCorp(corp.corpNo)}
-                >
-                  <span className={styles.userCardCorpDot} aria-hidden="true">
-                    {(corp.shortName || corp.name || corp.corpNo).charAt(0)}
-                  </span>
-                  <span className={styles.userCardCorpText}>
-                    <span className={styles.userCardCorpName}>{corp.shortName || corp.name || corp.corpNo}</span>
-                    <span className={styles.userCardCorpNo}>{corp.corpNo}</span>
-                  </span>
-                  {isCurrent && (
-                    <span className={styles.userCardCheck}>
-                      <CheckIcon />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            {hint && <div className={styles.userCardHint}>{hint}</div>}
-          </div>
-          <div className={styles.userCardDivider} />
-          <div className={styles.userCardLabel}>外观</div>
-          <button
-            type="button"
-            data-testid="card-theme-system"
-            className={styles.userCardRow}
-            onClick={() => setTheme('system')}
-          >
-            <MonitorIcon />
-            <span className={styles.userCardRowText}>跟随系统</span>
-            {themeSetting === 'system' && (
-              <span className={styles.userCardCheck}>
-                <CheckIcon />
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            data-testid="card-theme-light"
-            className={styles.userCardRow}
-            onClick={() => setTheme('light')}
-          >
-            <SunIcon />
-            <span className={styles.userCardRowText}>浅色</span>
-            {themeSetting === 'light' && (
-              <span className={styles.userCardCheck}>
-                <CheckIcon />
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            data-testid="card-theme-dark"
-            className={styles.userCardRow}
-            onClick={() => setTheme('dark')}
-          >
-            <MoonIcon />
-            <span className={styles.userCardRowText}>深色</span>
-            {themeSetting === 'dark' && (
-              <span className={styles.userCardCheck}>
-                <CheckIcon />
-              </span>
-            )}
-          </button>
-          <div className={styles.userCardDivider} />
-          <button
-            type="button"
-            data-testid="card-settings"
-            className={styles.userCardRow}
-            onClick={() => {
-              setIsOpen(false);
-              onOpenSettings();
-            }}
-          >
-            <SettingsIcon />
-            <span className={styles.userCardRowText}>设置…</span>
-            <span className={styles.userCardKbd}>⌘,</span>
-          </button>
           <button
             type="button"
             data-testid="logout"

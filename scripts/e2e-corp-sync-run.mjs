@@ -30,7 +30,7 @@ import {
  *   2 备份真实用户 config.json 到 /tmp（含 savedPassword 密文，sha256 留证）；
  *   3 停 electron → 写入测试 config（serverBase=本地 mock、清空 savedPassword、关自动登录）；
  *   4 起 mock(8788，只监听 127.0.0.1) → 重启 electron(9223)；
- *   5 跑 e2e-webview-switch.mjs（三条切换链路 + 设置页/用户行断言）；
+ *   5 跑 e2e-webview-switch.mjs（网页内切账套两条链路 + 关闭其他标签 + 设置页/用户行断言）；
  *   6 finally 无条件还原：停 electron/mock → config.json 原样还原并校验 sha256 →
  *     重启真实环境 electron（允许应用自身自动登录）→ 打开设置页确认显示最新会话并截图。
  *
@@ -193,7 +193,7 @@ async function waitUntil(fn, timeoutMs, intervalMs = 500) {
 }
 
 async function runE2e() {
-  log('运行 e2e-webview-switch.mjs（三条切换链路）');
+  log('运行 e2e-webview-switch.mjs（网页内切账套两条链路）');
   state.e2eExitCode = await new Promise((resolve) => {
     const child = spawn(process.execPath, [join(PROJECT_ROOT, 'scripts/e2e-webview-switch.mjs')], {
       cwd: PROJECT_ROOT,

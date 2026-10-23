@@ -164,7 +164,7 @@ export interface SessionSummary {
   userCode: string;
 }
 
-/** listMyLivingUsers 返回的一条子账号记录（渲染层展示用，不含凭据） */
+/** listMyLivingUsers 返回的一条子账号记录（主进程解析账套名称用，不含凭据） */
 export interface CorpAccount {
   /** 账套号（CorpNo_） */
   corpNo: string;
@@ -174,11 +174,6 @@ export interface CorpAccount {
   name: string;
   /** 账套简称（ShortName_，可为空） */
   shortName: string;
-}
-
-/** session:switch-corp 请求参数：目标账套号（主进程校验须在可用列表内） */
-export interface CorpSwitchRequest {
-  corpNo: string;
 }
 
 /**
@@ -205,7 +200,7 @@ export interface TabsState {
  * - url：任意地址（地址栏、guest window.open、消息中心入口）
  * - home：当前会话 ERP 首页（{corpNo}/{homeForm}）
  * - ai：AI 对话页（{aiBase}/{corpNo}/chat）
- * corpNo 缺省取当前会话账套，用于渲染层给标签记账套（切换账套时关旧账套标签）。
+ * corpNo 缺省取当前会话账套，用于渲染层给标签记账套。
  */
 export interface TabsResolveRequest {
   url?: string;
@@ -228,12 +223,6 @@ export type TabsResolveResult =
 export interface TabsEntry {
   url: string;
   corpNo: string;
-}
-
-/** corp:switched 载荷：账套切换成功，壳据此关旧账套标签并开新账套首页 */
-export interface CorpSwitchedPayload {
-  corpNo: string;
-  entryUrl: string;
 }
 
 /** tabs:open-request 载荷：guest window.open 等入口请求开新标签 */
@@ -312,13 +301,6 @@ export interface DitengApi {
   logout(): Promise<void>;
   /** 当前会话摘要；未登录返回 null */
   getSession(): Promise<SessionSummary | null>;
-  /** 当前主账号可用账套列表（主进程缓存，首次调用走 listMyLivingUsers） */
-  sessionListCorps(): Promise<ApiCallResult<CorpAccount[]>>;
-  /**
-   * 切换账套：getNuewToken 换目标账套 token；主进程只广播 corp:switched，
-   * 关旧账套标签 + 开新首页由壳（标签状态在渲染层）完成。
-   */
-  sessionSwitchCorp(request: CorpSwitchRequest): Promise<ApiCallResult<SessionSummary>>;
   /** 请求开 URL（地址栏 / guest window.open / 消息中心 / 快捷入口）：主进程做分类与补参 */
   tabsResolve(request: TabsResolveRequest): Promise<TabsResolveResult>;
   /** 主窗壳挂载时取首个标签（forceRedirect 落点或 ERP 首页）；已消费或不存在返回 null */
@@ -337,9 +319,7 @@ export interface DitengApi {
   notifyPopupHover(isHovering: boolean): void;
   /** 订阅开标签请求（guest window.open、消息中心入口），返回取消订阅函数 */
   onTabsOpenRequest(listener: (payload: TabsOpenRequestPayload) => void): () => void;
-  /** 订阅账套切换广播（壳关旧账套标签并开新首页），返回取消订阅函数 */
-  onCorpSwitched(listener: (payload: CorpSwitchedPayload) => void): () => void;
-  /** 订阅会话变化推送（账套切换后触发），返回取消订阅函数 */
+  /** 订阅会话变化推送（网页版切账套同步后触发，壳据此关闭旧账套的其余标签），返回取消订阅函数 */
   onSessionChanged(listener: (summary: SessionSummary | null) => void): () => void;
   /** 主窗自绘 caption（Windows 无系统标题栏）：最小化主窗 */
   windowMinimize(): void;

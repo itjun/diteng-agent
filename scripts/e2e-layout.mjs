@@ -2,7 +2,7 @@ import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
 /**
  * 真机验证：主窗壳左侧竖向标签栏（rail，唯一布局）。
  * 断言：rail 根容器与竖向形态、侧栏拖宽/双击复位、双标签打开与激活、
- * 用户卡片（打开/账套列表/当前账套打勾）、设置页（打开/返回，标签不丢；
+ * 用户卡片（打开/仅退出登录，账套切换只在网页版内）、设置页（打开/返回，标签不丢；
  * 设置导航复用最左 rail：分类切换、主题控件 testid；设置态隐藏底部用户行与齿轮）；
  * Chrome 式浏览器工具栏：宽高、侧栏收起/展开、前进/后退/刷新/主页按钮紧邻地址栏。
  * 注意：ERP 标签是渲染层 <webview>（guest target type=webview），playwright-core 1.64 只把
@@ -331,19 +331,24 @@ check('第二标签打开', state.tabs.length === 2, `tabs=${state.tabs.length}`
 const secondTabId = state.tabs[state.tabs.length - 1].id;
 check('新标签为激活态', state.activeTabId === secondTabId, `active=${state.activeTabId}`);
 
-// 5. 用户卡片：点底部用户行弹出，账套列表渲染，当前账套行打勾（aria-selected），ESC 关闭
-const session = await shell.evaluate(() => window.diteng.getSession());
+// 5. 用户卡片：点底部用户行弹出；账套切换只在网页版内，卡片仅保留退出登录，ESC 关闭
 await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 10_000 });
 await shell.click('[data-testid="user-chip"]');
 await shell.waitForSelector('[data-testid="user-card"]', { timeout: 5_000 });
 check('user-card 打开', (await shell.locator('[data-testid="user-card"]').count()) === 1);
-const corpOptionCount = await shell.locator('[data-testid="user-card"] [data-testid^="corp-option-"]').count();
-check('卡片账套列表渲染', corpOptionCount >= 1, `options=${corpOptionCount}`);
-const currentOption = shell.locator(`[data-testid="user-card"] [data-testid="corp-option-${session.corpNo}"]`);
 check(
-  '当前账套行打勾',
-  (await currentOption.count()) === 1 && (await currentOption.getAttribute('aria-selected')) === 'true',
-  `corpNo=${session.corpNo}`,
+  '卡片不再提供账套切换入口',
+  (await shell.locator('[data-testid="user-card"] [data-testid^="corp-option-"]').count()) === 0,
+);
+// 外观/设置入口已统一收进设置页（rail 齿轮），账套切换统一在网页版内：卡片只剩退出登录
+const cardText = (await shell.locator('[data-testid="user-card"]').innerText()).replace(/\s+/g, ' ');
+check(
+  '用户卡片仅保留退出登录',
+  cardText.includes('退出登录') &&
+    !cardText.includes('账套') &&
+    !cardText.includes('外观') &&
+    !cardText.includes('设置…'),
+  `text=${cardText.slice(0, 120)}`,
 );
 // ESC 关闭卡片
 await shell.keyboard.press('Escape');

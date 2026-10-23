@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
-  CorpSwitchedPayload,
   MqttState,
   SessionSummary,
   TabsOpenRequestPayload,
@@ -38,8 +37,6 @@ const diteng: DitengApi = {
   // 退出登录：主窗随即销毁，回包不保证送达，调用方无需等待结果
   logout: () => ipcRenderer.invoke('auth:logout'),
   getSession: () => ipcRenderer.invoke('session:get'),
-  sessionListCorps: () => ipcRenderer.invoke('session:list-corps'),
-  sessionSwitchCorp: (request) => ipcRenderer.invoke('session:switch-corp', request),
   tabsResolve: (request) => ipcRenderer.invoke('tabs:resolve', request),
   tabsPopEntry: () => ipcRenderer.invoke('tabs:pop-entry'),
   getMqttState: () => ipcRenderer.invoke('mqtt:get-state'),
@@ -53,13 +50,6 @@ const diteng: DitengApi = {
     ipcRenderer.on('tabs:open-request', handler);
     return () => {
       ipcRenderer.removeListener('tabs:open-request', handler);
-    };
-  },
-  onCorpSwitched: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, payload: CorpSwitchedPayload) => listener(payload);
-    ipcRenderer.on('corp:switched', handler);
-    return () => {
-      ipcRenderer.removeListener('corp:switched', handler);
     };
   },
   onSessionChanged: (listener) => {
