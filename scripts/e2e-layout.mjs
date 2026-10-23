@@ -370,12 +370,15 @@ check(
   `page.x=${settingsPageBox?.x} y=${settingsPageBox?.y} rail.right=${settingsRailBox ? settingsRailBox.x + settingsRailBox.width : undefined}`,
 );
 const settingsContentBox = await shell.locator('[data-testid="settings-content"]').boundingBox();
+const settingsExpectedContentX =
+  settingsPageBox && settingsContentBox
+    ? settingsPageBox.x + (settingsPageBox.width - settingsContentBox.width) / 2
+    : Number.NaN;
 check(
-  '设置正文贴近左栏',
+  '设置正文水平居中',
   Boolean(settingsContentBox) &&
-    Boolean(settingsRailBox) &&
-    settingsContentBox.x - (settingsRailBox.x + settingsRailBox.width) <= 2,
-  `content.x=${settingsContentBox?.x} rail.right=${settingsRailBox ? settingsRailBox.x + settingsRailBox.width : undefined}`,
+    Math.abs(settingsContentBox.x - settingsExpectedContentX) <= 2,
+  `content.x=${settingsContentBox?.x} expected=${settingsExpectedContentX}`,
 );
 const settingsBackground = await shell
   .locator('[data-testid="settings-page"]')

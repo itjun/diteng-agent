@@ -176,14 +176,14 @@
   overflow-y: auto;
 }
 
-/* 内容列贴近左侧导航，宽窗不把标题推到窗口中央。 */
+/* 内容列在右侧内容区内水平居中，窄窗时占满可用宽度。 */
 .mainInner {
   display: flex;
   flex-direction: column;
   gap: 24px;
   width: min(860px, 100%);
   max-width: 860px;
-  margin: 0;
+  margin: 0 auto;
   box-sizing: border-box;
   /* 与左侧「设置」标题同一视觉基线，但不绘制横向工具栏。 */
   padding: 76px 48px 56px;
