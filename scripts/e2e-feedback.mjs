@@ -594,8 +594,9 @@ async function readLayout() {
       innerHeight: window.innerHeight,
       platformMarker: document.documentElement.getAttribute('data-platform'),
       rail: rectOf(document.querySelector('[data-testid="tabstrip"]')),
-      railHeader: rectOf(document.querySelector('[data-testid="sidebar-toolbar"]')),
+      toolbar: rectOf(document.querySelector('[data-testid="browser-toolbar"]')),
       webview: rectOf(activeWebview),
+      chat: rectOf(document.querySelector('[data-testid="toolbar-chat"]')),
       feedbackButton: feedback
         ? {
             disabled: Boolean(feedback.disabled),
@@ -657,13 +658,10 @@ function buildSamples(layout, expectedWidth, expectedHeight, scale) {
       samples.push({ group: 'rail', x, y });
     }
   }
-  if (layout.railHeader) {
+  if (layout.toolbar) {
     for (const fx of [0.3, 0.5, 0.7]) {
-      const [x, y] = toPhysical(
-        layout.railHeader.left + layout.railHeader.width * fx,
-        layout.railHeader.top + layout.railHeader.height * 0.5,
-      );
-      samples.push({ group: 'railHeader', x, y });
+      const [x, y] = toPhysical(layout.toolbar.left + layout.toolbar.width * fx, layout.toolbar.top + layout.toolbar.height * 0.5);
+      samples.push({ group: 'toolbar', x, y });
     }
   }
   return samples;
@@ -747,7 +745,7 @@ async function feedbackButtonExists() {
   return (await state.shell.locator('[data-testid="feedback-button"]').count()) > 0;
 }
 
-/** 入口契约：存在、可用、文案/标题可读、位于 rail 顶栏内 */
+/** 入口契约：存在、可用、文案/标题可读、位于 Chat 左侧且同一行 */
 async function checkFeedbackEntry(layout) {
   const button = layout.feedbackButton;
   check('一键反馈入口存在（data-testid=feedback-button）', Boolean(button));
@@ -758,17 +756,16 @@ async function checkFeedbackEntry(layout) {
     /反馈/.test(button.text) || /反馈/.test(button.title),
     `text="${button.text}" title="${button.title}"`,
   );
-  const isInRailHeader =
-    Boolean(button.rect && layout.railHeader) &&
-    button.rect.left >= layout.railHeader.left - 1 &&
-    button.rect.left + button.rect.width <= layout.railHeader.left + layout.railHeader.width + 1 &&
-    button.rect.top >= layout.railHeader.top - 1 &&
-    button.rect.top + button.rect.height <= layout.railHeader.top + layout.railHeader.height + 1;
+  const isLeftOfChat =
+    Boolean(button.rect && layout.chat) &&
+    button.rect.left + button.rect.width <= layout.chat.left + 2 &&
+    Math.abs(button.rect.top + button.rect.height / 2 - (layout.chat.top + layout.chat.height / 2)) <=
+      layout.chat.height / 2;
   check(
-    '反馈按钮位于 rail 顶栏内',
-    isInRailHeader,
-    button.rect && layout.railHeader
-      ? `feedback=[${button.rect.left.toFixed(0)},${button.rect.top.toFixed(0)}→${(button.rect.left + button.rect.width).toFixed(0)},${(button.rect.top + button.rect.height).toFixed(0)}] railHeader=[${layout.railHeader.left.toFixed(0)},${layout.railHeader.top.toFixed(0)}→${(layout.railHeader.left + layout.railHeader.width).toFixed(0)},${(layout.railHeader.top + layout.railHeader.height).toFixed(0)}]`
+    '反馈按钮位于 Chat 左侧同一行',
+    isLeftOfChat,
+    button.rect && layout.chat
+      ? `feedback=[${button.rect.left.toFixed(0)},${button.rect.top.toFixed(0)}→${(button.rect.left + button.rect.width).toFixed(0)},${(button.rect.top + button.rect.height).toFixed(0)}] chat=[${layout.chat.left.toFixed(0)},${layout.chat.top.toFixed(0)}→${(layout.chat.left + layout.chat.width).toFixed(0)},${(layout.chat.top + layout.chat.height).toFixed(0)}]`
       : '元素缺失',
   );
   return true;
@@ -814,8 +811,8 @@ async function run() {
     guest ? `title="${guest.title}" bodyBg=${guest.bodyBg}` : '45s 内 guest 未加载出 #erp-marker',
   );
   const layout = await readLayout();
-  check('主窗布局可读（rail / rail 顶栏 / webview 矩形）', Boolean(layout.rail && layout.railHeader && layout.webview));
-  if (!layout.rail || !layout.railHeader || !layout.webview) throw new Error('主窗布局元素缺失');
+  check('主窗布局可读（rail / 工具栏 / webview 矩形）', Boolean(layout.rail && layout.toolbar && layout.webview));
+  if (!layout.rail || !layout.toolbar || !layout.webview) throw new Error('主窗布局元素缺失');
 
   // ---------- 2. inspector / 剪贴板通路 ----------
   state.mainInspector = await createMainInspector();
@@ -943,11 +940,11 @@ async function run() {
   );
   const railOpaque = countOpaque(clip.points, 'rail');
   check('rail 区域不透明（alpha=255）', railOpaque.hits === railOpaque.total, `${railOpaque.hits}/${railOpaque.total}`);
-  const railHeaderOpaque = countOpaque(clip.points, 'railHeader');
+  const toolbarOpaque = countOpaque(clip.points, 'toolbar');
   check(
-    'rail 顶栏区域不透明（alpha=255）',
-    railHeaderOpaque.hits === railHeaderOpaque.total,
-    `${railHeaderOpaque.hits}/${railHeaderOpaque.total}`,
+    '内容工具栏区域不透明（alpha=255）',
+    toolbarOpaque.hits === toolbarOpaque.total,
+    `${toolbarOpaque.hits}/${toolbarOpaque.total}`,
   );
   logInfo(`剪贴板图片已保存：${CLIP_PATH}（${clip.pngBytes} 字节）`);
 

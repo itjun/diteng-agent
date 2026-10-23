@@ -54,6 +54,8 @@ const THEME_LIGHT_BACKGROUND = '#ffffff';
 const MAC_TRANSPARENT_BACKGROUND = '#00000000';
 // 主窗壳路由 hash：与登录窗共用同一入口页，仅 hash 区分（App.tsx 判定 #/main，需带斜杠）
 const MAIN_WINDOW_HASH = '/main';
+// Windows 标题栏高度与壳 rail 顶部让位（40px，shellRailWin padding-top）对齐，参考 dsh apps/desktop windows-layout.ts
+const WINDOWS_TITLEBAR_HEIGHT = 40;
 
 let loginWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -227,9 +229,6 @@ function createLoginWindow(): void {
   });
   // macOS 隐藏原生红绿灯后由页面自绘 × 关闭按钮（app:close-login）
   if (process.platform === 'darwin') loginWindow.setWindowButtonVisibility(false);
-  // 登录窗顶部的系统菜单（File/Edit/View/Window）无业务用途，直接移除菜单栏；
-  // macOS 的应用菜单在屏幕顶部系统栏，系统级菜单（Cmd+Q 等）保留不动
-  else loginWindow.removeMenu();
   loginWindow.once('ready-to-show', () => loginWindow?.show());
   loginWindow.on('closed', () => {
     loginWindow = null;
@@ -279,18 +278,23 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     // macOS 整窗 vibrancy 需要透明底色让材质透出；Windows 维持实心底色
     backgroundColor:
       process.platform === 'darwin' ? MAC_TRANSPARENT_BACKGROUND : isDark ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
-    // macOS：hiddenInset + 红绿灯落在 rail 顶栏左侧，整窗 sidebar 毛玻璃（rail 由 CSS 半透明透出）；
-    // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）
+    // macOS：hiddenInset + 红绿灯落在 tab 条左侧，整窗 sidebar 毛玻璃（rail 由 CSS 半透明透出）；
+    // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
     ...(process.platform === 'darwin' && {
       titleBarStyle: 'hiddenInset' as const,
       trafficLightPosition: { x: 16, y: 16 },
       vibrancy: 'sidebar' as const,
+      // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）
       visualEffectState: 'active' as const,
     }),
-    // Windows：同样无系统标题栏（内容直达窗口顶边，与 macOS rail 通顶一致），
-    // 但不用 titleBarOverlay——它会在整窗顶部压出一条系统 caption（旧版"空白栏"）；
-    // 窗口控制（—/□/×）由壳内容列顶部 caption 条自绘（window:minimize 等 IPC）
-    ...(process.platform === 'win32' && { titleBarStyle: 'hidden' as const }),
+    ...(process.platform === 'win32' && {
+      titleBarStyle: 'hidden' as const,
+      titleBarOverlay: {
+        height: WINDOWS_TITLEBAR_HEIGHT,
+        color: isDark ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
+        symbolColor: isDark ? '#f9fafb' : '#0f1115',
+      },
+    }),
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -354,9 +358,6 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   });
   mainWindow.on('hide', persistBounds);
   mainWindow.on('close', persistBounds);
-  // 自绘 caption（Windows）的最大化态推送：□/❐ 图标随窗口最大化/还原切换
-  mainWindow.on('maximize', () => sendToShell('window:maximized-changed', true));
-  mainWindow.on('unmaximize', () => sendToShell('window:maximized-changed', false));
   // macOS/Windows 惯例：托盘常驻期间关窗仅隐藏，托盘"退出"才真正退出；
   // 未登录（无托盘）时保持原行为：关窗即退出
   mainWindow.on('close', (event) => {
@@ -382,6 +383,13 @@ function applyWindowTheme(): void {
     applyMacMainWindowBackdrop();
   } else {
     mainWindow?.setBackgroundColor(color);
+    if (process.platform === 'win32') {
+      mainWindow?.setTitleBarOverlay({
+        height: WINDOWS_TITLEBAR_HEIGHT,
+        color,
+        symbolColor: isDark ? '#f9fafb' : '#0f1115',
+      });
+    }
   }
 }
 
@@ -793,7 +801,7 @@ function readServerBase(request: unknown): string {
 
 /**
  * 一键反馈：整窗截图写入系统剪贴板，用户直接粘贴给客服。
- * 截图对象是主窗壳 webContents——rail/caption 条与 <webview> 标签页均为页内合成，一次 capturePage
+ * 截图对象是主窗壳 webContents——rail/工具栏与 <webview> 标签页均为页内合成，一次 capturePage
  * 即可拿到整幅画面；截图前的 macOS vibrancy 透明底处理由渲染层临时摘掉 data-platform 完成
  * （见 Shell captureFeedback）。Electron 44 起图片写入改为异步 ClipboardItem，
  * 旧的 clipboard.writeImage 已移除。
@@ -968,32 +976,11 @@ function registerIpcHandlers(): void {
     performLogout();
   });
 
-  registerWindowIpcHandlers();
-
   // 一键反馈：主窗整窗截图写剪贴板（渲染层负责入口与提示文案）
   ipcMain.handle('feedback:capture-screenshot', () => captureFeedbackScreenshot());
 
   registerTabsIpcHandlers();
   registerNotifyIpcHandlers();
-}
-
-/**
- * 主窗自绘 caption（Windows 无系统标题栏）窗口控制：
- * 渲染层按钮只发意图，动作全部落在主进程；close 不绕过 close 拦截
- * （托盘常驻时与系统 caption 关闭一致，隐藏到托盘而非退出）。
- */
-function registerWindowIpcHandlers(): void {
-  const aliveWindow = (): BrowserWindow | null =>
-    mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  ipcMain.handle('window:is-maximized', () => aliveWindow()?.isMaximized() ?? false);
-  ipcMain.on('window:minimize', () => aliveWindow()?.minimize());
-  ipcMain.on('window:toggle-maximize', () => {
-    const window = aliveWindow();
-    if (!window) return;
-    if (window.isMaximized()) window.unmaximize();
-    else window.maximize();
-  });
-  ipcMain.on('window:close-main', () => aliveWindow()?.close());
 }
 
 /** MQTT 状态与重要消息置顶弹窗 IPC */

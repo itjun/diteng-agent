@@ -14,9 +14,12 @@ export interface ThemeState {
 
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
-  /** 配置结构版本（主进程内部迁移标记，渲染层忽略）；2 起默认服务地址为线上 https://m.cdcp.site */
+  /**
+   * 配置结构版本：2 = 默认服务地址切线上（缺字段的旧配置按 1 处理，仅当 serverBase
+   * 仍是旧默认 127.0.0.1:8101 时迁移到线上地址；用户手改过的地址保持不动）
+   */
   configVersion: number;
-  /** 后端 diteng-im-server 地址，默认 https://m.cdcp.site（线上生产环境） */
+  /** 后端 diteng-im-server 地址，默认 https://m.cdcp.site */
   serverBase: string;
   /** AI 对话站地址；空串表示未手动设置，按 serverBase 推导（cdcp.site → https://ai.cdcp.site，否则 http://127.0.0.1:3060） */
   aiBase: string;
@@ -327,18 +330,8 @@ export interface DitengApi {
   onTabsOpenRequest(listener: (payload: TabsOpenRequestPayload) => void): () => void;
   /** 订阅会话变化推送（网页版切账套同步后触发，壳据此关闭旧账套的其余标签），返回取消订阅函数 */
   onSessionChanged(listener: (summary: SessionSummary | null) => void): () => void;
-  /** 主窗自绘 caption（Windows 无系统标题栏）：最小化主窗 */
-  windowMinimize(): void;
-  /** 主窗自绘 caption：最大化/向下还原切换 */
-  windowToggleMaximize(): void;
-  /** 主窗自绘 caption：关闭主窗（托盘常驻时与系统关闭一致，隐藏到托盘） */
-  windowClose(): void;
-  /** 主窗当前是否最大化（自绘 caption 的 □/❐ 图标态） */
-  windowIsMaximized(): Promise<boolean>;
-  /** 订阅主窗最大化状态变化（最大化/还原时推送），返回取消订阅函数 */
-  onWindowMaximizedChanged(listener: (maximized: boolean) => void): () => void;
   /**
-   * 一键反馈：把整个主窗（rail + caption 条 + 当前页，含 webview 页内合成内容）截图
+   * 一键反馈：把整个主窗（rail + 内容工具栏 + 当前页，含 webview 页内合成内容）截图
    * 写入系统剪贴板，壳据此提示用户直接粘贴给客服。
    */
   captureFeedbackScreenshot(): Promise<FeedbackScreenshotResult>;

@@ -324,36 +324,6 @@ export function ChevronDownIcon() {
   );
 }
 
-/* ============ Windows 自绘 caption 窗口控制（10×10 细线，对齐系统字形） ============ */
-
-/** 最小化（—） */
-export function WindowMinimizeIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      <path d="M0.5 5h9" />
-    </svg>
-  );
-}
-
-/** 最大化（□） */
-export function WindowMaximizeIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      <rect x="0.75" y="0.75" width="8.5" height="8.5" rx="0.5" />
-    </svg>
-  );
-}
-
-/** 向下还原（双层窗口） */
-export function WindowRestoreIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      <path d="M2.75 3.25V1.25h6v6h-2" />
-      <rect x="1.25" y="2.75" width="6" height="6" rx="0.5" />
-    </svg>
-  );
-}
-
 /** 一键反馈入口：相机（截图语义） */
 export function CameraIcon() {
   return (
