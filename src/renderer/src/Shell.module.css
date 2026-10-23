@@ -63,8 +63,10 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
-/* macOS 红绿灯落在左栏内部，由左侧工具栏自行让位 */
+/* macOS 红绿灯落在左栏内部，由左侧工具栏自行让位；栏开关贴 rail 右上角（对齐 DeepSeek Harness 顶栏）。
+   Windows 不套用：DSH 桌面版在 Windows 仍把开关放在标题栏左侧。 */
 :global(html[data-platform='darwin']) .sidebarToolbar {
+  justify-content: flex-end;
   padding-left: 84px;
 }
 
@@ -99,6 +101,17 @@
   color: var(--dsw-alias-label-dimmed);
   cursor: default;
   opacity: 0.42;
+}
+
+/* rail 右上角栏开关：28px 命中区，与 DeepSeek Harness 顶栏开关同尺寸 */
+.railToggleButton {
+  width: 28px;
+  height: 28px;
+}
+
+/* DSH 顶栏开关 hover 只加底色、图标保持次级灰 */
+.railToggleButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* Chrome 式导航组：后退/前进/刷新/主页紧邻地址栏。 */

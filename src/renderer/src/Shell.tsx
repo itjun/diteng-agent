@@ -27,7 +27,6 @@ import {
 } from './theme-icons';
 import {
   DEFAULT_SETTINGS_CATEGORY,
-  getVisibleSettingsCategories,
   SettingsPage,
   SettingsRail,
 } from './Settings';
@@ -86,11 +85,9 @@ export function Shell() {
   const [session, setSession] = useState<SessionSummary | null>(null);
   // 侧栏宽度：默认 300 对齐 Cursor/VS Code 侧栏默认宽度；0=未自定义（双击手柄复位时写 0）
   const [railWidth, setRailWidth] = useState(300);
-  const [savedLoginId, setSavedLoginId] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsCategory, setSettingsCategory] =
     useState<SettingsCategoryKey>(DEFAULT_SETTINGS_CATEGORY);
-  const [settingsQuery, setSettingsQuery] = useState('');
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [navigationState, setNavigationState] = useState<NavigationState>({
     canGoBack: false,
@@ -199,7 +196,6 @@ export function Shell() {
   useEffect(() => {
     void window.diteng.getSession().then(setSession);
     void window.diteng.getConfig().then((config) => {
-      setSavedLoginId(config.savedLoginId);
       if (config.railWidth > 0) {
         setRailWidth(Math.min(Math.max(config.railWidth, RAIL_WIDTH_MIN), RAIL_WIDTH_MAX));
       }
@@ -257,7 +253,6 @@ export function Shell() {
   /** 进设置页（rail 齿轮 / 卡片「设置…」共用） */
   const openSettings = useCallback(() => {
     setSettingsCategory(DEFAULT_SETTINGS_CATEGORY);
-    setSettingsQuery('');
     setIsSettingsOpen(true);
   }, []);
 
@@ -265,9 +260,8 @@ export function Shell() {
     setIsSettingsOpen(false);
   }, []);
 
-  /** 点设置分类：清搜索并切到该分类；搜索框与导航都在最左 rail 内 */
+  /** 点设置分类：切到该分类；分类导航在最左 rail 内 */
   const selectSettingsCategory = useCallback((category: SettingsCategoryKey) => {
-    setSettingsQuery('');
     setSettingsCategory(category);
   }, []);
 
@@ -324,13 +318,8 @@ export function Shell() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isSettingsOpen]);
 
-  // 底部用户行显示名：会话用户名优先，主进程未取到时回落记住的账号
-  const userDisplayName = session?.userName || savedLoginId || '未登录';
-  const visibleSettingsCategories = getVisibleSettingsCategories(
-    settingsQuery,
-    userDisplayName,
-    session?.userCode ?? '',
-  );
+  // 底部用户行显示名：当前账套名称优先，名称未下发时回落账套代码
+  const corpDisplayName = session?.corpName || session?.corpNo || '未登录';
 
   // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，地址栏显示新建标签页）
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -364,10 +353,7 @@ export function Shell() {
             />
             {isSettingsOpen ? (
               <SettingsRail
-                categories={visibleSettingsCategories}
                 activeCategory={settingsCategory}
-                query={settingsQuery}
-                onQueryChange={setSettingsQuery}
                 onSelectCategory={selectSettingsCategory}
                 onBack={closeSettings}
               />
@@ -396,9 +382,12 @@ export function Shell() {
                 </div>
               </>
             )}
-            <div className={styles.railFooter}>
-              <UserChip session={session} displayName={userDisplayName} onOpenSettings={openSettings} />
-            </div>
+            {/* 底部用户行只在标签视图出现：设置态 rail 由设置导航接管，账号卡片与齿轮都是重复入口 */}
+            {!isSettingsOpen && (
+              <div className={styles.railFooter}>
+                <UserChip session={session} displayName={corpDisplayName} onOpenSettings={openSettings} />
+              </div>
+            )}
           </aside>
         )}
 
@@ -442,16 +431,11 @@ export function Shell() {
               {isRailCollapsed && (
                 <div className={styles.settingsRailToggle}>
                   <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={toggleRail}>
-                    <SidebarToggleIcon collapsed />
+                    <SidebarToggleIcon />
                   </ToolbarButton>
                 </div>
               )}
-              <SettingsPage
-                session={session}
-                userDisplayName={userDisplayName}
-                activeCategory={settingsCategory}
-                query={settingsQuery}
-              />
+              <SettingsPage session={session} activeCategory={settingsCategory} />
             </>
           )}
         </main>
@@ -597,7 +581,7 @@ function RailTab({
 }
 
 /**
- * 底部用户行（Cursor 式）：圆形头像（用户名首字符，账套无关）+ 用户名单行省略 + 右端齿轮，
+ * 底部用户行（Cursor 式）：圆形头像（当前账套名称首字符）+ 账套名称单行省略 + 右端齿轮，
  * 扁平融入侧栏无边框；点击整行向上弹出用户卡片，齿轮单独点击直达设置页。
  */
 function UserChip({
@@ -827,6 +811,7 @@ function ToolbarButton({
   testId,
   disabled = false,
   pressed,
+  className,
   onClick,
   children,
 }: {
@@ -834,13 +819,14 @@ function ToolbarButton({
   testId: string;
   disabled?: boolean;
   pressed?: boolean;
+  className?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      className={styles.toolbarButton}
+      className={[styles.toolbarButton, className].filter(Boolean).join(' ')}
       data-testid={testId}
       title={label}
       aria-label={label}
@@ -853,7 +839,7 @@ function ToolbarButton({
   );
 }
 
-/** 左侧栏顶部只负责栏开关；页面导航与地址栏留在右侧内容区。 */
+/** 左侧栏顶部只负责栏开关，按钮贴 rail 右上角（对齐 DeepSeek Harness 顶栏）；页面导航与地址栏留在右侧内容区。 */
 function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
   return (
     <div
@@ -862,7 +848,13 @@ function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
       role="toolbar"
       aria-label="侧栏工具栏"
     >
-      <ToolbarButton label="收起侧栏" testId="sidebar-toggle" pressed onClick={onToggleRail}>
+      <ToolbarButton
+        label="收起侧栏"
+        testId="sidebar-toggle"
+        pressed
+        className={styles.railToggleButton}
+        onClick={onToggleRail}
+      >
         <SidebarToggleIcon />
       </ToolbarButton>
     </div>
@@ -938,7 +930,7 @@ function ContentToolbar({
     >
       {showSidebarToggle && (
         <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={onToggleRail}>
-          <SidebarToggleIcon collapsed />
+          <SidebarToggleIcon />
         </ToolbarButton>
       )}
       <div className={styles.toolbarNav}>

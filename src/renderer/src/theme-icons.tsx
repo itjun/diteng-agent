@@ -115,23 +115,20 @@ export function ArrowLeftIcon() {
   );
 }
 
-/** 浏览器工具栏：收起/展开左侧栏 */
-export function SidebarToggleIcon({ collapsed = false }: { collapsed?: boolean }) {
+/** 侧栏开关键：panel-left 线框，几何对齐 DeepSeek Harness 同名图标（无方向箭头，收起/展开共用） */
+export function SidebarToggleIcon() {
   return (
     <svg
       width="16"
       height="16"
-      viewBox="0 0 24 24"
+      viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      strokeWidth="1"
       aria-hidden="true"
     >
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
-      <path d="M9 4v16" />
-      <path d={collapsed ? 'M12.5 9.5l3 2.5-3 2.5' : 'M15.5 9.5l-3 2.5 3 2.5'} />
+      <rect x="1.5" y="1.5" width="13" height="13" rx="1" />
+      <path d="M5.5 1.5v13" />
     </svg>
   );
 }

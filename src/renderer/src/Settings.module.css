@@ -23,83 +23,44 @@
   user-select: none;
 }
 
-/* 标题行：返回入口 + 「设置」，左右内边距避免贴边 */
-.sidebarHead {
+/* 顶部返回行：整行（含留白）都是返回命中区。
+   行高沿用 12 + 34 + 4 = 50，内容居中位置与改动前一致。 */
+.back {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: none;
-  padding: 16px 12px 8px 16px;
-}
-
-.back {
-  display: inline-flex;
-  align-items: center;
   gap: 4px;
-  height: 26px;
-  padding: 0 8px;
+  box-sizing: border-box;
+  flex: none;
+  width: 100%;
+  height: 50px;
+  padding: 12px 12px 4px 24px;
   border: none;
-  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   cursor: pointer;
 }
 
-.back:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 搜索框：圆角、发丝边框、聚焦品牌描边 */
-.searchWrap {
-  flex: none;
-  padding: 2px 12px 6px;
-}
-
-.searchBox {
-  position: relative;
-}
-
-.searchIcon {
+/* 悬停底色单独用伪元素绘制：命中区铺满整行，视觉仍内缩 12px，与下方分类行对齐 */
+.back::before {
+  content: '';
   position: absolute;
-  left: 9px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  color: var(--dsw-alias-label-tertiary);
+  inset: 12px 12px 4px;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
   pointer-events: none;
 }
 
-.searchInput {
-  width: 100%;
-  height: 30px;
-  box-sizing: border-box;
-  padding: 0 10px 0 30px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-bg-base);
-  font-size: 12px;
+.back:hover::before {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.back:hover {
   color: var(--dsw-alias-label-primary);
-  outline: none;
 }
 
-.searchInput::placeholder {
-  color: var(--dsw-alias-label-dimmed);
-}
-
-.searchInput:focus {
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-/* 分类列表：分类名 + 次级描述；当前分类浅底 + 左侧 2px 品牌蓝竖条 */
+/* 分类列表：分类名 + 次级描述；当前分类只用浅底高亮 */
 .nav {
   display: flex;
   flex-direction: column;
@@ -113,7 +74,6 @@
 
 .navItem,
 .navItemActive {
-  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -135,18 +95,6 @@
 
 .navItemActive {
   background: var(--dsw-specific-sidebar-nav-item-active);
-}
-
-/* 当前分类强调条（Cursor 式）：品牌蓝 rgb(65,118,230) 由 state-business-primary 承担 */
-.navItemActive::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--dsw-alias-state-business-primary);
 }
 
 .navName {
@@ -185,7 +133,7 @@
   max-width: 860px;
   margin: 0 auto;
   box-sizing: border-box;
-  /* 与左侧「设置」标题同一视觉基线，但不绘制横向工具栏。 */
+  /* 与左侧返回入口同一视觉行，但不绘制横向工具栏。 */
   padding: 76px 48px 56px;
 }
 
@@ -209,25 +157,10 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.pageContent,
-.sectionContent {
+.pageContent {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-/* 搜索结果分组 */
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.sectionTitle {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 /* 成一组的设置行：白底卡片 + 行间发丝分隔线。 */
@@ -321,6 +254,9 @@
 }
 
 .profileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 15px;
   line-height: 20px;
   font-weight: 600;
@@ -355,14 +291,6 @@
 
 .logoutLink:hover {
   background: var(--dsw-alias-interactive-bg-hover-danger);
-}
-
-/* 搜索无匹配空态 */
-.empty {
-  padding: 56px 0;
-  text-align: center;
-  font-size: 13px;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ============ 控件 ============ */

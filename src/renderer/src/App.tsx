@@ -382,33 +382,34 @@ function LoginPanel() {
             </button>
 
             <div className={styles.formFooter}>
-              <div className={styles.footerChecks}>
-                <label className={styles.checkbox}>
-                  <input
-                    type="checkbox"
-                    data-testid="remember-password"
-                    checked={isRememberPassword}
-                    onChange={(event) => toggleRememberPassword(event.target.checked)}
-                  />
-                  记住密码
-                </label>
-                <label className={styles.checkbox}>
-                  <input
-                    type="checkbox"
-                    data-testid="auto-login-checkbox"
-                    checked={isAutoLogin}
-                    disabled={!isRememberPassword}
-                    onChange={(event) => toggleAutoLogin(event.target.checked)}
-                  />
-                  自动登录
-                </label>
-              </div>
-              {mode === 'sms' && (
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  data-testid="remember-password"
+                  checked={isRememberPassword}
+                  onChange={(event) => toggleRememberPassword(event.target.checked)}
+                />
+                记住密码
+              </label>
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  data-testid="auto-login-checkbox"
+                  checked={isAutoLogin}
+                  disabled={!isRememberPassword}
+                  onChange={(event) => toggleAutoLogin(event.target.checked)}
+                />
+                自动登录
+              </label>
+            </div>
+
+            {mode === 'sms' && (
+              <div className={styles.footerLinkRow}>
                 <button type="button" className={styles.linkButton} onClick={handleBackToPassword}>
                   重新登录
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </form>
         )}
 

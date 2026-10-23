@@ -3,7 +3,7 @@ import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
  * 真机验证：主窗壳左侧竖向标签栏（rail，唯一布局）。
  * 断言：rail 根容器与竖向形态、侧栏拖宽/双击复位、双标签打开与激活、
  * 用户卡片（打开/账套列表/当前账套打勾）、设置页（打开/返回，标签不丢；
- * 设置导航复用最左 rail：分类切换、搜索过滤与无匹配空态、主题控件 testid）；
+ * 设置导航复用最左 rail：分类切换、主题控件 testid；设置态隐藏底部用户行与齿轮）；
  * Chrome 式浏览器工具栏：宽高、侧栏收起/展开、前进/后退/刷新/主页按钮紧邻地址栏。
  * 注意：ERP 标签是渲染层 <webview>（guest target type=webview），playwright-core 1.64 只把
  * type=page 收进 pages()，ERP 页对 playwright 不可见——第二标签的 window.open 改走原生 CDP。
@@ -387,13 +387,26 @@ check('设置页使用统一实底', settingsBackground !== 'rgba(0, 0, 0, 0)', 
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('设置页打开时标签保留', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6a. 设置导航收进最左 rail：搜索框 + 4 个分类；默认外观页主题控件齐全
+// 6a. 设置导航收进最左 rail：顶部只有返回入口 + 4 个分类；默认外观页主题控件齐全
 check(
   '设置导航位于最左 rail',
   (await shell.locator('[data-testid="tabstrip"] [data-testid="settings-rail"]').count()) === 1,
 );
 check('设置态隐藏标签列表', (await shell.locator('[data-testid="rail-tabs"]').count()) === 0);
-check('设置搜索框存在', (await shell.locator('[data-testid="settings-search"]').count()) === 1);
+check('设置页顶部只保留返回', (await shell.locator('[data-testid="settings-rail"] h1').count()) === 0);
+// 返回入口整行可点：命中区铺满 rail 宽度，文字之外（行两端）也能触发返回
+const settingsBackBox = await shell.locator('[data-testid="settings-back"]').boundingBox();
+check(
+  '返回入口整行可点',
+  Boolean(settingsBackBox) &&
+    Boolean(settingsRailBox) &&
+    settingsBackBox.x <= settingsRailBox.x + 1 &&
+    settingsBackBox.width >= settingsRailBox.width - 1,
+  `back.x=${settingsBackBox?.x} back.w=${settingsBackBox?.width} rail.w=${settingsRailBox?.width}`,
+);
+check('设置页无搜索框', (await shell.locator('[data-testid="settings-search"]').count()) === 0);
+check('设置页隐藏底部用户行', (await shell.locator('[data-testid="tabstrip"] [data-testid="user-chip"]').count()) === 0);
+check('设置页隐藏齿轮设置入口', (await shell.locator('[data-testid="open-settings"]').count()) === 0);
 const navCount = await shell.locator('[data-testid^="settings-nav-"]').count();
 check('设置导航 4 分类', navCount === 4, `nav=${navCount}`);
 check(
@@ -415,27 +428,15 @@ check('账号页 logout 入口', (await shell.locator('[data-testid="settings-pa
 check('账号页导航高亮', (await shell.locator('[data-testid="settings-nav-account"][aria-current="page"]').count()) === 1);
 check('切页后主题控件移除', (await shell.locator('[data-testid="settings-theme-system"]').count()) === 0);
 
-// 6c. 搜索过滤：输入「主题」只剩主题相关行与分类；无匹配出空态；清空恢复当前分类整页
-await shell.fill('[data-testid="settings-search"]', '主题');
-await shell.waitForTimeout(300);
-check('搜索后主题行保留', (await shell.locator('[data-testid="settings-theme-system"]').count()) === 1);
-check('搜索后导航过滤', (await shell.locator('[data-testid="settings-nav-account"]').count()) === 0);
-check('搜索后外观分类保留', (await shell.locator('[data-testid="settings-nav-appearance"]').count()) === 1);
-await shell.fill('[data-testid="settings-search"]', 'zzz-no-match');
-await shell.waitForTimeout(300);
-check('无匹配空态', (await shell.locator('[data-testid="settings-empty"]').count()) === 1);
-await shell.fill('[data-testid="settings-search"]', '');
-await shell.waitForTimeout(300);
-check('清空搜索恢复整页', (await shell.locator('[data-testid="settings-page"] [data-testid="logout"]').count()) === 1);
-
 await shell.click('[data-testid="settings-back"]');
 await shell.waitForTimeout(300);
 check('设置页返回', (await shell.locator('[data-testid="settings-page"]').count()) === 0);
 check('返回浏览页后恢复浏览器工具栏', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 1);
+check('返回后恢复底部用户行', (await shell.locator('[data-testid="user-chip"]').count()) === 1);
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('返回后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6d. 侧栏收起/展开：工具栏留在最上方，rail 从布局中移除，再点同一按钮恢复
+// 6c. 侧栏收起/展开：工具栏留在最上方，rail 从布局中移除，再点同一按钮恢复
 await shell.click('[data-testid="sidebar-toggle"]');
 await shell.waitForTimeout(300);
 check('收起侧栏后 rail 隐藏', (await shell.locator('[data-testid="tabstrip"]').count()) === 0);
