@@ -231,6 +231,12 @@ export interface TabsOpenRequestPayload {
 }
 
 /**
+ * feedback:capture-screenshot 返回：整窗截图已写入系统剪贴板。
+ * width/height 为截图尺寸（DIP，与窗口内容区一致；PNG 实际像素按设备缩放比为 1x/2x）。
+ */
+export type FeedbackScreenshotResult = { ok: true; width: number; height: number } | ApiFailure;
+
+/**
  * MQTT 未读通知链路状态（主进程 MqttService 对 renderer / e2e 暴露的只读摘要）。
  * broker/username/password 等连接凭据不下发 renderer，只回连接与订阅结果。
  */
@@ -331,4 +337,9 @@ export interface DitengApi {
   windowIsMaximized(): Promise<boolean>;
   /** 订阅主窗最大化状态变化（最大化/还原时推送），返回取消订阅函数 */
   onWindowMaximizedChanged(listener: (maximized: boolean) => void): () => void;
+  /**
+   * 一键反馈：把整个主窗（rail + caption 条 + 当前页，含 webview 页内合成内容）截图
+   * 写入系统剪贴板，壳据此提示用户直接粘贴给客服。
+   */
+  captureFeedbackScreenshot(): Promise<FeedbackScreenshotResult>;
 }

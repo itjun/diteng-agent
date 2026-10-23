@@ -1,6 +1,8 @@
 import {
   app,
   BrowserWindow,
+  ClipboardItem,
+  clipboard,
   ipcMain,
   nativeTheme,
   safeStorage,
@@ -35,6 +37,7 @@ import type {
   AppConfigPatch,
   ApiFailure,
   CorpAccount,
+  FeedbackScreenshotResult,
   LoginResult,
   MqttState,
   SavedAccountKey,
@@ -788,6 +791,37 @@ function readServerBase(request: unknown): string {
   return fromRequest || getConfig().serverBase;
 }
 
+/**
+ * 一键反馈：整窗截图写入系统剪贴板，用户直接粘贴给客服。
+ * 截图对象是主窗壳 webContents——rail/caption 条与 <webview> 标签页均为页内合成，一次 capturePage
+ * 即可拿到整幅画面；截图前的 macOS vibrancy 透明底处理由渲染层临时摘掉 data-platform 完成
+ * （见 Shell captureFeedback）。Electron 44 起图片写入改为异步 ClipboardItem，
+ * 旧的 clipboard.writeImage 已移除。
+ */
+async function captureFeedbackScreenshot(): Promise<FeedbackScreenshotResult> {
+  if (!mainWindow || mainWindow.isDestroyed()) return invalid('主窗口不可用，请重新登录后再试');
+  let png: Buffer;
+  let width = 0;
+  let height = 0;
+  try {
+    const image = await mainWindow.webContents.capturePage();
+    ({ width, height } = image.getSize());
+    png = image.toPNG();
+  } catch (error) {
+    console.warn('[feedback] 主窗截图失败：', error);
+    return invalid('截图失败，请重试');
+  }
+  if (width <= 0 || height <= 0 || png.length === 0) return invalid('截图失败，请重试');
+  try {
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
+  } catch (error) {
+    console.warn('[feedback] 截图写入系统剪贴板失败：', error);
+    return invalid('复制截图到剪贴板失败，请重试');
+  }
+  console.log(`[feedback] 整窗截图已写入系统剪贴板：${width}x${height}（PNG ${png.length} 字节）`);
+  return { ok: true, width, height };
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle('config:get', () => publicConfig());
 
@@ -935,6 +969,10 @@ function registerIpcHandlers(): void {
   });
 
   registerWindowIpcHandlers();
+
+  // 一键反馈：主窗整窗截图写剪贴板（渲染层负责入口与提示文案）
+  ipcMain.handle('feedback:capture-screenshot', () => captureFeedbackScreenshot());
+
   registerTabsIpcHandlers();
   registerNotifyIpcHandlers();
 }

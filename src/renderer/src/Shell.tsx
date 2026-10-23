@@ -8,7 +8,9 @@ import type {
 } from '../../shared/types';
 import type { WebviewDomEvent, WebviewElement } from './env';
 import {
+  AlertIcon,
   BackIcon,
+  CameraIcon,
   ChatIcon,
   CheckIcon,
   CloseIcon,
@@ -40,6 +42,23 @@ const RAIL_WIDTH_MAX = 480;
 interface NavigationState {
   canGoBack: boolean;
   canGoForward: boolean;
+}
+
+/** 一键反馈提示：成功时引导粘贴给客服，失败时展示主进程给出的原因 */
+interface FeedbackToast {
+  kind: 'ok' | 'fail';
+  title: string;
+  desc: string;
+}
+
+/**
+ * 等两帧再截图：摘掉 macOS vibrancy 透明分支后要先完成一次合成，
+ * 否则 capturePage 可能仍拿到半透明画面（粘贴到聊天窗口发黑/发白）。
+ */
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
 
 /** webview 尚未 dom-ready 时调用历史 API 可能抛错，工具栏状态统一安全读取 */
@@ -92,11 +111,14 @@ export function Shell() {
     canGoForward: false,
   });
   const [isRailDrag, setIsRailDrag] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState<FeedbackToast | null>(null);
   const nextIdRef = useRef(1);
   const webviewRefs = useRef(new Map<string, WebviewElement>());
   const activeTabIdRef = useRef('');
   activeTabIdRef.current = activeTabId;
   const sessionCorpNoRef = useRef('');
+  // 防重不落到 state：截图只有百毫秒级，处理中再点直接忽略，也避免禁用态被截进画面
+  const isFeedbackCapturingRef = useRef(false);
 
   /** 开新标签（URL 必须经主进程 resolve 拿到的最终值），并激活 */
   const openTab = useCallback((url: string, corpNo: string) => {
@@ -171,6 +193,40 @@ export function Shell() {
     setIsSettingsOpen(false);
     void resolveAndOpen({ ai: true });
   }, [resolveAndOpen]);
+
+  /**
+   * 一键反馈：主进程把整个主窗画面（rail + caption 条 + 当前页）截图写入系统剪贴板，
+   * 这里只负责入口、截图前的透明底处理与结果提示。
+   */
+  const captureFeedback = useCallback(async () => {
+    if (isFeedbackCapturingRef.current) return;
+    isFeedbackCapturingRef.current = true;
+    // 上一次提示不能留在画面里（用户可能连续反馈）
+    setFeedbackToast(null);
+    // macOS vibrancy 靠 data-platform 切透明分支：直接截图会带半透明像素，粘贴到
+    // 聊天窗口易发黑/发白。截图期间摘掉标记退化为实心底色，finally 立即恢复。
+    const root = document.documentElement;
+    const platformMarker = root.getAttribute('data-platform');
+    if (platformMarker) root.removeAttribute('data-platform');
+    try {
+      await waitForPaint();
+      const result = await window.diteng.captureFeedbackScreenshot();
+      setFeedbackToast(
+        result.ok
+          ? {
+              kind: 'ok',
+              title: '截图已复制到系统剪贴板',
+              desc: `打开客服会话，直接粘贴（${isMacPlatform ? '⌘V' : 'Ctrl+V'}）发送即可完成反馈`,
+            }
+          : { kind: 'fail', title: '截图复制失败', desc: result.message },
+      );
+    } catch {
+      setFeedbackToast({ kind: 'fail', title: '截图复制失败', desc: '复制截图到剪贴板失败，请重试' });
+    } finally {
+      if (platformMarker) root.setAttribute('data-platform', platformMarker);
+      isFeedbackCapturingRef.current = false;
+    }
+  }, []);
 
   // 挂载：会话/配置拉取、首个标签（登录落点）、guest 开标签请求、会话变化推送
   useEffect(() => {
@@ -304,6 +360,13 @@ export function Shell() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isSettingsOpen]);
 
+  // 反馈提示自动消失：成功留足阅读时间（引导粘贴给客服），失败略短；再次截图会先清掉旧提示
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timer = setTimeout(() => setFeedbackToast(null), feedbackToast.kind === 'ok' ? 10000 : 6000);
+    return () => clearTimeout(timer);
+  }, [feedbackToast]);
+
   // 底部用户行显示名：当前账套名称优先，名称未下发时回落账套代码
   const corpDisplayName = session?.corpName || session?.corpNo || '未登录';
 
@@ -325,7 +388,7 @@ export function Shell() {
       <div className={styles.workspace}>
         {!isRailCollapsed && (
           <aside className={styles.rail} data-testid="tabstrip" style={{ width: railWidth }}>
-            <RailHeader onToggleRail={toggleRail} />
+            <RailHeader onToggleRail={toggleRail} onFeedback={() => void captureFeedback()} />
             {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 300 */}
             <div
               className={styles.railResizeHandle}
@@ -433,6 +496,41 @@ export function Shell() {
           </div>
           {isSettingsOpen && (
             <SettingsPage session={session} activeCategory={settingsCategory} />
+          )}
+          {/* 一键反馈结果提示：成功引导用户直接粘贴给客服；浮在内容区底部，不占布局 */}
+          {feedbackToast && (
+            <div
+              className={styles.feedbackToast}
+              data-testid="feedback-toast"
+              data-state={feedbackToast.kind}
+              role="status"
+              aria-live="polite"
+            >
+              <span
+                className={[
+                  styles.feedbackToastIcon,
+                  feedbackToast.kind === 'fail' ? styles.feedbackToastIconFail : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                {feedbackToast.kind === 'ok' ? <CheckIcon /> : <AlertIcon />}
+              </span>
+              <div className={styles.feedbackToastBody}>
+                <div className={styles.feedbackToastTitle}>{feedbackToast.title}</div>
+                <div className={styles.feedbackToastDesc}>{feedbackToast.desc}</div>
+              </div>
+              <button
+                type="button"
+                className={styles.feedbackToastClose}
+                data-testid="feedback-toast-close"
+                aria-label="关闭提示"
+                title="关闭"
+                onClick={() => setFeedbackToast(null)}
+              >
+                <CloseIcon />
+              </button>
+            </div>
           )}
         </main>
       </div>
@@ -698,7 +796,7 @@ function ToolbarButton({
 }
 
 /** rail 顶栏（dsh 侧栏 logo 行）：左侧品牌标识（macOS 红绿灯让位由 CSS 处理），右端侧栏开关 */
-function RailHeader({ onToggleRail }: { onToggleRail: () => void }) {
+function RailHeader({ onToggleRail, onFeedback }: { onToggleRail: () => void; onFeedback: () => void }) {
   return (
     <div
       className={styles.railHeader}
@@ -710,6 +808,14 @@ function RailHeader({ onToggleRail }: { onToggleRail: () => void }) {
         <span className={styles.railBrandName}>diteng agent</span>
         <span className={styles.railBrandTag}>DESKTOP</span>
       </span>
+      <ToolbarButton
+        label="一键反馈：把当前画面截图复制到剪贴板，粘贴给客服即可"
+        testId="feedback-button"
+        className={styles.railToggleButton}
+        onClick={onFeedback}
+      >
+        <CameraIcon />
+      </ToolbarButton>
       <ToolbarButton
         label="收起侧栏"
         testId="sidebar-toggle"

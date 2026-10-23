@@ -778,6 +778,19 @@
   bottom: calc(100% + 8px);
 }
 
+.userCardLabel {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 账套组内滚动 */
+.userCardCorps {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .userCardRow {
   display: flex;
   align-items: center;
@@ -805,11 +818,70 @@
   cursor: default;
 }
 
+/* 当前账套行：品牌色强调 */
+.userCardRowCurrent {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 .userCardRowText {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 账套行首字符小圆点 */
+.userCardCorpDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.userCardCorpText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.userCardCorpName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.userCardCorpNo {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.userCardCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* 设置行右侧浅灰快捷键提示 */
+.userCardKbd {
+  flex: none;
+  color: var(--dsw-alias-label-dimmed);
+  font-size: 11px;
 }
 
 /* 退出登录：destructive 语义色，仅文字/图标着色不铺底 */
@@ -822,3 +894,89 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.userCardDivider {
+  height: 0.5px;
+  margin: 6px 10px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.userCardHint {
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ============ 一键反馈提示 ============ */
+
+/* 截图完成/失败提示：浮在内容区底部居中，自动消失；z-index 盖过页内合成 webview */
+.feedbackToast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 350;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(520px, calc(100% - 32px));
+  padding: 10px 10px 10px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    0 12px 32px rgba(0, 0, 0, 0.14);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.feedbackToastIcon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.feedbackToastIconFail {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.feedbackToastBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.feedbackToastTitle {
+  font-weight: 600;
+}
+
+.feedbackToastDesc {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.feedbackToastClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin-top: -2px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.feedbackToastClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}

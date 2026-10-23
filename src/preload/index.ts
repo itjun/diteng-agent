@@ -39,6 +39,8 @@ const diteng: DitengApi = {
   getSession: () => ipcRenderer.invoke('session:get'),
   tabsResolve: (request) => ipcRenderer.invoke('tabs:resolve', request),
   tabsPopEntry: () => ipcRenderer.invoke('tabs:pop-entry'),
+  // 一键反馈：主进程截图并写入系统剪贴板，渲染层只负责入口与提示
+  captureFeedbackScreenshot: () => ipcRenderer.invoke('feedback:capture-screenshot'),
   getMqttState: () => ipcRenderer.invoke('mqtt:get-state'),
   notifyPopupLoad: () => ipcRenderer.invoke('notify-popup:get'),
   notifyPopupOpen: () => ipcRenderer.send('notify-popup:activate'),
