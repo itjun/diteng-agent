@@ -1,6 +1,6 @@
 # diteng agent
 
-帝擎 ERP 的 Electron 桌面壳客户端：账号密码登录（记住密码/自动登录双勾选，历史登录账号可下拉选择、逐条删除/清空）→ 内嵌 web ERP 多标签（左侧竖向标签栏，可拖宽、双击复位；账套切换统一在网页版内完成，切账套成功后自动关闭其他标签；网页版退出入口由外壳接管，直接回外壳登录窗）→ MQTT 消息系统通知/置顶弹窗/托盘；一键反馈：工具栏「反馈」把整窗画面（含当前页面）截图到系统剪贴板，直接粘贴给客服。UI 采用 deepseek-harness 桌面版设计语言（`--dsw-*` 主题 token，macOS 侧栏 vibrancy 毛玻璃）。
+帝擎 ERP 的 Electron 桌面壳客户端：账号密码登录（记住密码/自动登录双勾选，历史登录账号可下拉选择、逐条删除/清空）→ 内嵌 web ERP 多标签（左侧竖向标签栏，可拖宽、双击复位；账套切换统一在网页版内完成，切账套成功后自动关闭其他标签；网页版退出入口由外壳接管，直接回外壳登录窗）→ MQTT 消息系统通知/置顶弹窗/托盘；一键反馈：工具栏「反馈」把整窗画面（含当前页面）截图到系统剪贴板，直接粘贴给客服。快捷键：`⌘/Ctrl+B` 展开收起侧栏、`⌘/Ctrl+,` 进入设置页（webview 内焦点同样生效）。内容区是「地址栏 + 网页」同一张悬浮卡片（16px 圆角、四边 5px 外围色留白，上/下/右等宽），地址栏底色自动跟随网页内容取色（Dia 式），工具栏 Chat 图标按外围颜色着色。UI 采用 deepseek-harness 桌面版设计语言（`--dsw-*` 主题 token，macOS 侧栏 vibrancy 毛玻璃）。
 
 ## 技术栈
 
@@ -28,11 +28,12 @@ node scripts/e2e-nav-ai.mjs        # 同域链接补 sid + AI 对话跳转
 node scripts/e2e-web-logout.mjs    # 网页版退出入口 → 外壳退出回登录窗；E2E_MOCK=1 走本地 mock
 node scripts/e2e-corp-sync-run.mjs # 网页版切账套 mock 编排（会话同步 + 关闭其他标签；自动备份/还原 config）
 node scripts/e2e-feedback.mjs      # 一键反馈：整窗截图 → 剪贴板 image/png（隔离 userData + 独立 9224，校验含 webview 且不透明）
+node scripts/e2e-page-chrome.mjs   # 悬浮卡片几何（四边 5px/16px 圆角）+ 地址栏跟随网页底色（隔离 9228 + 全 mock）
 node scripts/e2e-notify.mjs        # MQTT 通知 + 置顶弹窗
 node scripts/verify-vibrancy.mjs   # 毛玻璃透光差分（黄/蓝背景板）
 ```
 
-注意：脚本会接管运行中的应用环境（按需自动重启 vite/electron）。`e2e-account-history.mjs` 使用临时 userData 与独立 CDP 端口 9224，不会接管 9223 上的真实 dev 应用、也不改写真实 `config.json`。`e2e-corp-sync-run.mjs` 会临时改写真实 `config.json`（先备份到 /tmp，结束后原样还原并校验 sha256）并重启 9223 应用；期间所有登录/换票请求只发往本地 mock。`e2e-feedback.mjs` 同样用临时 userData + 9224 隔离实例，会临时占用系统剪贴板（结束后尽力还原），并用主进程 inspector（9230）读回剪贴板图片做不透明度与 webview 内容校验。
+注意：脚本会接管运行中的应用环境（按需自动重启 vite/electron）。`e2e-account-history.mjs` 使用临时 userData 与独立 CDP 端口 9224，不会接管 9223 上的真实 dev 应用、也不改写真实 `config.json`。`e2e-corp-sync-run.mjs` 会临时改写真实 `config.json`（先备份到 /tmp，结束后原样还原并校验 sha256）并重启 9223 应用；期间所有登录/换票请求只发往本地 mock。`e2e-feedback.mjs` 同样用临时 userData + 9224 隔离实例，会临时占用系统剪贴板（结束后尽力还原），并用主进程 inspector（9230）读回剪贴板图片做不透明度与 webview 内容校验。`e2e-page-chrome.mjs` 用临时 userData + 独立 CDP 9228/主进程 inspector 9231，自起本地 mock 并自动 tsc/拉起 electron，不访问生产、不占用 9223。
 
 ## 结构
 

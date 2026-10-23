@@ -1,7 +1,7 @@
 {
   "name": "diteng-agent",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "帝擎 ERP Electron 桌面壳客户端",
   "main": "dist/main/index.js",
   "scripts": {

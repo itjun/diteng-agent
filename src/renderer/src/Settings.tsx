@@ -5,8 +5,8 @@ import { useThemeSetting } from './use-theme';
 import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
 import styles from './Settings.module.css';
 
-/** 应用版本（package.json version，v1 固定展示） */
-const APP_VERSION = '0.1.0';
+/** 应用版本（与 package.json version 同步；发版时一起改） */
+const APP_VERSION = '0.2.2';
 
 /**
  * AI 站点展示推导：与主进程 config.ts resolveAiBase 同规则（仅设置页展示用；
