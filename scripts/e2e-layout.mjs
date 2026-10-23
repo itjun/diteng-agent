@@ -3,7 +3,8 @@ import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
  * 真机验证：主窗壳左侧竖向标签栏（rail，唯一布局）。
  * 断言：rail 根容器与竖向形态、侧栏拖宽/双击复位、双标签打开与激活、
  * 用户卡片（打开/账套列表/当前账套打勾）、设置页（打开/返回，标签不丢；
- * Cursor 式左右布局：分类导航切换、搜索过滤与无匹配空态、主题控件 testid）。
+ * 设置导航复用最左 rail：分类切换、搜索过滤与无匹配空态、主题控件 testid）；
+ * Chrome 式浏览器工具栏：宽高、侧栏收起/展开、前进/后退/刷新/主页按钮紧邻地址栏。
  * 注意：ERP 标签是渲染层 <webview>（guest target type=webview），playwright-core 1.64 只把
  * type=page 收进 pages()，ERP 页对 playwright 不可见——第二标签的 window.open 改走原生 CDP。
  * 前置：vite(5173) 和 electron(--remote-debugging-port=9223) 已运行。
@@ -222,6 +223,33 @@ async function tabstripBox() {
 }
 
 check('根容器 shell-rail', (await shell.locator('[data-testid="shell-rail"]').count()) === 1);
+const toolbarBox = await shell.locator('[data-testid="browser-toolbar"]').boundingBox();
+check(
+  'Chrome 式工具栏宽高',
+  Boolean(toolbarBox) && toolbarBox.width >= 600 && toolbarBox.height >= 40 && toolbarBox.height <= 46,
+  `w=${toolbarBox?.width} h=${toolbarBox?.height}`,
+);
+for (const testid of ['sidebar-toggle', 'nav-back', 'nav-forward', 'nav-reload', 'nav-home']) {
+  check(`工具栏按钮 ${testid}`, (await shell.locator(`[data-testid="${testid}"]`).count()) === 1);
+}
+check(
+  '侧栏开关保留在左栏',
+  (await shell.locator('[data-testid="sidebar-toolbar"] [data-testid="sidebar-toggle"]').count()) === 1,
+);
+const navBackBox = await shell.locator('[data-testid="nav-back"]').boundingBox();
+const navHomeBox = await shell.locator('[data-testid="nav-home"]').boundingBox();
+const urlBarBox = await shell.locator('[data-testid="url-bar"]').boundingBox();
+const navAddressGap =
+  navHomeBox && urlBarBox ? urlBarBox.x - (navHomeBox.x + navHomeBox.width) : Number.NaN;
+check(
+  '导航组紧邻地址栏',
+  Boolean(navBackBox) &&
+    Boolean(urlBarBox) &&
+    navBackBox.x > toolbarBox.x &&
+    navAddressGap >= 0 &&
+    navAddressGap <= 12,
+  `nav-back.x=${navBackBox?.x} nav-address.gap=${navAddressGap}`,
+);
 const railConfig = await shell.evaluate(() => window.diteng.getConfig());
 const expectedRailWidth = (railConfig.railWidth >= 200 && railConfig.railWidth <= 480) ? railConfig.railWidth : 300;
 const box = await tabstripBox();
@@ -323,14 +351,45 @@ await shell.keyboard.press('Escape');
 await shell.waitForTimeout(300);
 check('ESC 关闭卡片', (await shell.locator('[data-testid="user-card"]').count()) === 0);
 
-// 6. 设置页：rail 底部齿轮进入，内容区被设置页替换，返回后标签不丢
+// 6. 设置页：rail 底部齿轮进入，rail 原地换成设置导航，内容区被设置页替换，返回后标签不丢
 await shell.click('[data-testid="user-chip"] [data-testid="open-settings"]');
 await shell.waitForSelector('[data-testid="settings-page"]', { timeout: 5_000 });
 check('settings-page 打开（齿轮入口）', (await shell.locator('[data-testid="settings-page"]').count()) === 1);
+check('设置页不显示地址输入条', (await shell.locator('[data-testid="url-bar"]').count()) === 0);
+check('设置页不显示地址复制按钮', (await shell.locator('[data-testid="url-bar-copy"]').count()) === 0);
+check('设置页不显示浏览器工具栏', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 0);
+check('设置页不显示 Chat 工具栏按钮', (await shell.locator('[data-testid="toolbar-chat"]').count()) === 0);
+const settingsPageBox = await shell.locator('[data-testid="settings-page"]').boundingBox();
+const settingsRailBox = await shell.locator('[data-testid="settings-rail"]').boundingBox();
+check(
+  '设置页从 rail 右侧直接铺开',
+  Boolean(settingsPageBox) &&
+    Boolean(settingsRailBox) &&
+    settingsPageBox.x >= settingsRailBox.x + settingsRailBox.width - 1 &&
+    settingsPageBox.y <= 1,
+  `page.x=${settingsPageBox?.x} y=${settingsPageBox?.y} rail.right=${settingsRailBox ? settingsRailBox.x + settingsRailBox.width : undefined}`,
+);
+const settingsContentBox = await shell.locator('[data-testid="settings-content"]').boundingBox();
+check(
+  '设置正文贴近左栏',
+  Boolean(settingsContentBox) &&
+    Boolean(settingsRailBox) &&
+    settingsContentBox.x - (settingsRailBox.x + settingsRailBox.width) <= 2,
+  `content.x=${settingsContentBox?.x} rail.right=${settingsRailBox ? settingsRailBox.x + settingsRailBox.width : undefined}`,
+);
+const settingsBackground = await shell
+  .locator('[data-testid="settings-page"]')
+  .evaluate((element) => getComputedStyle(element).backgroundColor);
+check('设置页使用统一实底', settingsBackground !== 'rgba(0, 0, 0, 0)', `background=${settingsBackground}`);
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('设置页打开时标签保留', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6a. Cursor 式左右布局：搜索框 + 4 个分类导航；默认外观页主题控件齐全
+// 6a. 设置导航收进最左 rail：搜索框 + 4 个分类；默认外观页主题控件齐全
+check(
+  '设置导航位于最左 rail',
+  (await shell.locator('[data-testid="tabstrip"] [data-testid="settings-rail"]').count()) === 1,
+);
+check('设置态隐藏标签列表', (await shell.locator('[data-testid="rail-tabs"]').count()) === 0);
 check('设置搜索框存在', (await shell.locator('[data-testid="settings-search"]').count()) === 1);
 const navCount = await shell.locator('[data-testid^="settings-nav-"]').count();
 check('设置导航 4 分类', navCount === 4, `nav=${navCount}`);
@@ -369,8 +428,18 @@ check('清空搜索恢复整页', (await shell.locator('[data-testid="settings-p
 await shell.click('[data-testid="settings-back"]');
 await shell.waitForTimeout(300);
 check('设置页返回', (await shell.locator('[data-testid="settings-page"]').count()) === 0);
+check('返回浏览页后恢复浏览器工具栏', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 1);
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('返回后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
+
+// 6d. 侧栏收起/展开：工具栏留在最上方，rail 从布局中移除，再点同一按钮恢复
+await shell.click('[data-testid="sidebar-toggle"]');
+await shell.waitForTimeout(300);
+check('收起侧栏后 rail 隐藏', (await shell.locator('[data-testid="tabstrip"]').count()) === 0);
+check('收起侧栏后工具栏保留', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 1);
+await shell.click('[data-testid="sidebar-toggle"]');
+await shell.waitForTimeout(300);
+check('展开侧栏后 rail 恢复', (await shell.locator('[data-testid="tabstrip"]').count()) === 1);
 
 // 7. 关闭一个标签（rail 项 hover 显关闭 ×，click 会先 hover 再点）
 const firstTabId = state.tabs[0].id;

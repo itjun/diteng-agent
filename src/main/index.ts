@@ -263,7 +263,7 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
     ...(process.platform === 'darwin' && {
       titleBarStyle: 'hiddenInset' as const,
-      trafficLightPosition: { x: 16, y: 18 },
+      trafficLightPosition: { x: 16, y: 16 },
       vibrancy: 'sidebar' as const,
       // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）
       visualEffectState: 'active' as const,

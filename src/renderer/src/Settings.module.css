@@ -1,25 +1,25 @@
-/* 设置独立页面：Cursor 式左右布局——左栏（返回/标题/搜索/分类导航）+ 右栏（分类页行式设置项）。
+/* 设置页：分类导航复用主窗 rail，正文直接铺在内容区并独立滚动。
    颜色一律走 --dsw-* token，深色由 body[data-ds-dark-theme] 自动切换。 */
 
-/* 铺满内容区（webview 区域整体替换）：与新建标签页同款实底覆盖 */
+/* 设置页接管整个内容区；实底避免毛玻璃与页面内容形成分段色块。 */
 .page {
-  position: absolute;
-  inset: 0;
+  position: relative;
   display: flex;
-  background: var(--dsw-alias-bg-base);
+  flex: 1;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
 }
 
-/* ============ 左栏：分类导航（与 rail 同款侧栏底色，发丝边框分隔） ============ */
+/* ============ rail 内设置导航 ============ */
 
-.sidebar {
+.settingsRail {
   display: flex;
   flex-direction: column;
-  flex: none;
-  width: 200px;
+  flex: 1;
+  min-height: 0;
   box-sizing: border-box;
-  background: var(--dsw-specific-sidebar-fill);
-  border-right: 0.5px solid var(--dsw-alias-border-l2);
   user-select: none;
 }
 
@@ -166,24 +166,32 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* ============ 右栏：分类内容（滚动区） ============ */
+/* ============ 内容区：分类内容（滚动区） ============ */
 
 .main {
+  display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
 }
 
-/* 内容列限宽左对齐，宽窗不摊大 */
+/* 内容列贴近左侧导航，宽窗不把标题推到窗口中央。 */
 .mainInner {
-  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: min(860px, 100%);
+  max-width: 860px;
+  margin: 0;
   box-sizing: border-box;
-  padding: 28px 36px 48px;
+  /* 与左侧「设置」标题同一视觉基线，但不绘制横向工具栏。 */
+  padding: 76px 48px 56px;
 }
 
 /* 分类页大标题 + 副标题：字号明显大于行名（Cursor 层级） */
 .pageHead {
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 .pageTitle {
@@ -195,22 +203,39 @@
 }
 
 .pageDesc {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
 }
 
+.pageContent,
+.sectionContent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 /* 搜索结果分组 */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .sectionTitle {
-  margin: 16px 0 0;
+  margin: 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.section:first-child .sectionTitle {
-  margin-top: 0;
+/* 成一组的设置行：白底卡片 + 行间发丝分隔线。 */
+.rowGroup {
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 /* 行式设置项：左名称+描述、右控件，留白疏朗、弱分隔线 */
@@ -219,7 +244,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 13px 0;
+  padding: 13px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
@@ -259,7 +284,7 @@
 
 .profileCard {
   box-sizing: border-box;
-  margin-top: 12px;
+  margin-top: 0;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-layer-1);

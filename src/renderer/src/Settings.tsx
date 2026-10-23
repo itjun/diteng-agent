@@ -16,24 +16,26 @@ function deriveAiBase(config: AppConfig): string {
   return config.serverBase.includes('cdcp.site') ? 'https://ai.cdcp.site' : 'http://127.0.0.1:3060';
 }
 
-/** 设置分类（Cursor 式左栏导航）：key 同时用于 data-testid=settings-nav-{key} */
-type CategoryKey = 'account' | 'appearance' | 'connection' | 'about';
+/** 设置分类：key 同时用于 data-testid=settings-nav-{key} */
+export type SettingsCategoryKey = 'account' | 'appearance' | 'connection' | 'about';
 
-interface CategoryDef {
-  key: CategoryKey;
+export interface SettingsCategoryDef {
+  key: SettingsCategoryKey;
   name: string;
   desc: string;
 }
 
+export const DEFAULT_SETTINGS_CATEGORY: SettingsCategoryKey = 'appearance';
+
 /** 导航顺序即展示顺序：账号 / 外观 / 连接 / 关于 */
-const CATEGORIES: CategoryDef[] = [
+const CATEGORIES: SettingsCategoryDef[] = [
   { key: 'account', name: '账号', desc: '登录身份与凭据' },
   { key: 'appearance', name: '外观', desc: '主题外观' },
   { key: 'connection', name: '连接', desc: '服务器与 AI 站点' },
   { key: 'about', name: '关于', desc: '版本与更新' },
 ];
 
-function categoryOf(key: CategoryKey): CategoryDef {
+function categoryOf(key: SettingsCategoryKey): SettingsCategoryDef {
   const found = CATEGORIES.find((cat) => cat.key === key);
   return found ?? CATEGORIES[0];
 }
@@ -72,8 +74,46 @@ function isRowHit(row: SettingRowDef, query: string): boolean {
   return isHit(query, row.title, row.desc ?? '', row.keywords ?? '');
 }
 
+/** rail 导航搜索索引：包含各分类下设置行与账号卡片的搜索词，避免导航和内容过滤结果不一致 */
+const CATEGORY_SEARCH_TERMS: Record<SettingsCategoryKey, string[]> = {
+  account: [
+    '设备码',
+    '设备在服务端的唯一标识（展示前 8 位）',
+    '当前账套',
+    '当前登录的 ERP 账套',
+    '用户名',
+    '账号代码',
+    '退出登录',
+    '头像',
+  ],
+  appearance: ['主题', '跟随系统深浅色或固定外观', '深色', '浅色', '外观', 'dark', 'light'],
+  connection: ['服务器地址', '修改后需重新登录', 'AI 站点', '未手动设置时按服务器地址推导', 'server'],
+  about: ['版本', '软件更新', '当前安装包未签名', '检查更新', 'version'],
+};
+
+/** 搜索态下 rail 可见分类：分类标题/描述或分类内任一设置项命中 */
+export function getVisibleSettingsCategories(
+  query: string,
+  userDisplayName = '',
+  userCode = '',
+): SettingsCategoryDef[] {
+  return CATEGORIES.filter((cat) =>
+    isHit(
+      query,
+      cat.name,
+      cat.desc,
+      ...CATEGORY_SEARCH_TERMS[cat.key],
+      ...(cat.key === 'account' ? [userDisplayName, userCode] : []),
+    ),
+  );
+}
+
 /** 搜索态下某分类的可见行：分类名命中时整组展示，否则按行过滤；空查询即整组 */
-function visibleRowsOf(cat: CategoryDef, rows: SettingRowDef[], query: string): SettingRowDef[] {
+function visibleRowsOf(
+  cat: SettingsCategoryDef,
+  rows: SettingRowDef[],
+  query: string,
+): SettingRowDef[] {
   if (isHit(query, cat.name)) return rows;
   return rows.filter((row) => isRowHit(row, query));
 }
@@ -94,6 +134,72 @@ function SearchIcon() {
       <circle cx="11" cy="11" r="7" />
       <path d="M16.5 16.5L21 21" />
     </svg>
+  );
+}
+
+/**
+ * 设置态 rail 导航：复用主窗口最左侧侧栏，不再在内容区额外占一列。
+ * 返回/标题、搜索和分类列表均收进 rail；内容区只保留当前分类的设置项。
+ */
+export function SettingsRail({
+  categories,
+  activeCategory,
+  query,
+  onQueryChange,
+  onSelectCategory,
+  onBack,
+}: {
+  categories: SettingsCategoryDef[];
+  activeCategory: SettingsCategoryKey;
+  query: string;
+  onQueryChange: (query: string) => void;
+  onSelectCategory: (category: SettingsCategoryKey) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className={styles.settingsRail} data-testid="settings-rail">
+      <div className={styles.sidebarHead}>
+        <button type="button" className={styles.back} data-testid="settings-back" onClick={onBack}>
+          <ArrowLeftIcon />
+          <span>返回</span>
+        </button>
+        <h1 className={styles.title}>设置</h1>
+      </div>
+      <div className={styles.searchWrap}>
+        <div className={styles.searchBox}>
+          <span className={styles.searchIcon} aria-hidden="true">
+            <SearchIcon />
+          </span>
+          <input
+            type="text"
+            className={styles.searchInput}
+            data-testid="settings-search"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="搜索设置项"
+            aria-label="搜索设置项"
+            spellCheck={false}
+            autoComplete="off"
+            autoFocus
+          />
+        </div>
+      </div>
+      <nav className={styles.nav} aria-label="设置分类">
+        {categories.map((cat) => (
+          <button
+            key={cat.key}
+            type="button"
+            data-testid={`settings-nav-${cat.key}`}
+            className={cat.key === activeCategory ? styles.navItemActive : styles.navItem}
+            aria-current={cat.key === activeCategory ? 'page' : undefined}
+            onClick={() => onSelectCategory(cat.key)}
+          >
+            <span className={styles.navName}>{cat.name}</span>
+            <span className={styles.navDesc}>{cat.desc}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
 
@@ -145,6 +251,18 @@ function SettingRowView({ row }: { row: SettingRowDef }) {
   );
 }
 
+/** 一组设置行共用一张卡片，避免行内容直接散落在整页背景上。 */
+function SettingRows({ rows }: { rows: SettingRowDef[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className={styles.rowGroup}>
+      {rows.map((row) => (
+        <SettingRowView key={row.key} row={row} />
+      ))}
+    </div>
+  );
+}
+
 /** 账号页顶部大卡片：圆形头像 + 用户名/账号代码，底部「退出登录」红字链接（走现有 auth:logout 链路） */
 function ProfileCard({ userDisplayName, userCode }: { userDisplayName: string; userCode: string }) {
   return (
@@ -176,23 +294,22 @@ function ProfileCard({ userDisplayName, userCode }: { userDisplayName: string; u
 }
 
 /**
- * 设置独立页面（壳内视图，替换内容区；rail/tab 条保留，ESC/返回回标签视图）——Cursor 式左右布局：
- * 左栏 200px（返回入口 + 标题「设置」+ 搜索框 + 分类导航，当前分类品牌蓝竖条高亮），
- * 右栏滚动区（分类大标题 + 副标题 + 行式设置项）；搜索同时过滤导航分类与右侧设置行，无匹配出空态。
+ * 设置内容区（壳内视图，替换 webview 区域；左侧 rail 由 SettingsRail 复用）：
+ * 分类大标题 + 副标题 + 行式设置项居中展示；搜索同时过滤 rail 分类与内容区设置行，无匹配出空态。
  * v1 内容：账号（大卡片 + 设备码/账套）、外观（主题）、连接（只读，变更入口统一在登录页）、关于。
  */
 export function SettingsPage({
   session,
   userDisplayName,
-  onBack,
+  activeCategory,
+  query,
 }: {
   session: SessionSummary | null;
   userDisplayName: string;
-  onBack: () => void;
+  activeCategory: SettingsCategoryKey;
+  query: string;
 }) {
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [activeCategory, setActiveCategory] = useState<CategoryKey>('appearance');
-  const [query, setQuery] = useState('');
   const { themeSetting, setTheme } = useThemeSetting();
 
   useEffect(() => {
@@ -203,12 +320,7 @@ export function SettingsPage({
   const userCode = session?.userCode ?? '';
   const activeCat = categoryOf(activeCategory);
 
-  /** 账号大卡片搜索词：用户名/账号代码收进卡片不出独立行，靠这些词参与命中 */
-  function isAccountCardHit(): boolean {
-    return isHit(query, '用户名 账号代码 退出登录 头像', userDisplayName, userCode);
-  }
-
-  const rowsByCategory: Record<CategoryKey, SettingRowDef[]> = {
+  const rowsByCategory: Record<SettingsCategoryKey, SettingRowDef[]> = {
     account: [
       {
         key: 'device',
@@ -274,71 +386,24 @@ export function SettingsPage({
     ],
   };
 
-  /** 搜索态下导航可见分类：任一行命中、分类名/描述命中，账号页大卡片也算一组可命中内容 */
-  const visibleCategories = CATEGORIES.filter(
-    (cat) =>
-      visibleRowsOf(cat, rowsByCategory[cat.key], query).length > 0 ||
-      (cat.key === 'account' && isAccountCardHit()),
-  );
+  /** 与 rail 导航共用同一搜索索引，保证两侧可见分类一致 */
+  const visibleCategories = getVisibleSettingsCategories(query, userDisplayName, userCode);
 
-  /** 搜索态下账号卡片是否展示：账号分类名命中，或卡片自身关键词命中 */
+  /** 搜索态下账号卡片是否展示：分类信息或卡片自身关键词命中 */
   const accountCat = categoryOf('account');
-  const isAccountCardVisible = isHit(query, accountCat.name) || isAccountCardHit();
-
-  /** 点分类：清搜索并切页（整页可见） */
-  function selectCategory(key: CategoryKey) {
-    setQuery('');
-    setActiveCategory(key);
-  }
+  const isAccountCardVisible = isHit(
+    query,
+    accountCat.name,
+    accountCat.desc,
+    ...CATEGORY_SEARCH_TERMS.account,
+    userDisplayName,
+    userCode,
+  );
 
   return (
     <div className={styles.page} data-testid="settings-page">
-      <aside className={styles.sidebar}>
-        <div className={styles.sidebarHead}>
-          <button type="button" className={styles.back} data-testid="settings-back" onClick={onBack}>
-            <ArrowLeftIcon />
-            <span>返回</span>
-          </button>
-          <h1 className={styles.title}>设置</h1>
-        </div>
-        <div className={styles.searchWrap}>
-          <div className={styles.searchBox}>
-            <span className={styles.searchIcon} aria-hidden="true">
-              <SearchIcon />
-            </span>
-            <input
-              type="text"
-              className={styles.searchInput}
-              data-testid="settings-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索设置项"
-              aria-label="搜索设置项"
-              spellCheck={false}
-              autoComplete="off"
-              autoFocus
-            />
-          </div>
-        </div>
-        <nav className={styles.nav} aria-label="设置分类">
-          {visibleCategories.map((cat) => (
-            <button
-              key={cat.key}
-              type="button"
-              data-testid={`settings-nav-${cat.key}`}
-              className={cat.key === activeCategory ? styles.navItemActive : styles.navItem}
-              aria-current={cat.key === activeCategory ? 'page' : undefined}
-              onClick={() => selectCategory(cat.key)}
-            >
-              <span className={styles.navName}>{cat.name}</span>
-              <span className={styles.navDesc}>{cat.desc}</span>
-            </button>
-          ))}
-        </nav>
-      </aside>
-
       <main className={styles.main}>
-        <div className={styles.mainInner}>
+        <div className={styles.mainInner} data-testid="settings-content">
           {isSearching ? (
             visibleCategories.length === 0 ? (
               <div className={styles.empty} data-testid="settings-empty">
@@ -348,27 +413,29 @@ export function SettingsPage({
               visibleCategories.map((cat) => (
                 <section key={cat.key} className={styles.section}>
                   <h3 className={styles.sectionTitle}>{cat.name}</h3>
-                  {cat.key === 'account' && isAccountCardVisible && (
-                    <ProfileCard userDisplayName={userDisplayName} userCode={userCode} />
-                  )}
-                  {visibleRowsOf(cat, rowsByCategory[cat.key], query).map((row) => (
-                    <SettingRowView key={row.key} row={row} />
-                  ))}
+                  <div className={styles.sectionContent}>
+                    {cat.key === 'account' && isAccountCardVisible && (
+                      <ProfileCard userDisplayName={userDisplayName} userCode={userCode} />
+                    )}
+                    <SettingRows rows={visibleRowsOf(cat, rowsByCategory[cat.key], query)} />
+                  </div>
                 </section>
               ))
             )
           ) : (
             <>
               <header className={styles.pageHead}>
-                <h2 className={styles.pageTitle}>{activeCat.name}</h2>
+                <h2 className={styles.pageTitle} data-testid="settings-page-title">
+                  {activeCat.name}
+                </h2>
                 <p className={styles.pageDesc}>{activeCat.desc}</p>
               </header>
-              {activeCategory === 'account' && (
-                <ProfileCard userDisplayName={userDisplayName} userCode={userCode} />
-              )}
-              {rowsByCategory[activeCategory].map((row) => (
-                <SettingRowView key={row.key} row={row} />
-              ))}
+              <div className={styles.pageContent}>
+                {activeCategory === 'account' && (
+                  <ProfileCard userDisplayName={userDisplayName} userCode={userCode} />
+                )}
+                <SettingRows rows={rowsByCategory[activeCategory]} />
+              </div>
             </>
           )}
         </div>

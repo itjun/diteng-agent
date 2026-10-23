@@ -19,6 +19,9 @@ export interface WebviewElement extends HTMLElement {
   reload(): void;
   goBack(): void;
   goForward(): void;
+  canGoBack(): boolean;
+  canGoForward(): boolean;
+  loadURL(url: string): Promise<void>;
   getURL(): string;
 }
 

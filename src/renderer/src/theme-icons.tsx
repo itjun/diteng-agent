@@ -115,6 +115,145 @@ export function ArrowLeftIcon() {
   );
 }
 
+/** 浏览器工具栏：收起/展开左侧栏 */
+export function SidebarToggleIcon({ collapsed = false }: { collapsed?: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9 4v16" />
+      <path d={collapsed ? 'M12.5 9.5l3 2.5-3 2.5' : 'M15.5 9.5l-3 2.5 3 2.5'} />
+    </svg>
+  );
+}
+
+/** 浏览器后退 */
+export function BackIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19 12H5M11 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+/** 浏览器前进 */
+export function ForwardIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+/** 浏览器刷新 */
+export function ReloadIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 7v5h-5" />
+      <path d="M19 12a7 7 0 1 0-2.1 5" />
+    </svg>
+  );
+}
+
+/** 浏览器主页 */
+export function HomeIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 10.5L12 3l8.5 7.5" />
+      <path d="M5.5 9.5V21h13V9.5M9.5 21v-6h5v6" />
+    </svg>
+  );
+}
+
+/** Ravenclaw Chat 入口：对话气泡 */
+export function ChatIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5.5 18.5l-2 2.5 5-.8A8 8 0 1 0 4.4 8.3a8 8 0 0 0 1.1 10.2z" />
+      <path d="M8.5 9.5h7M8.5 13h4.5" />
+    </svg>
+  );
+}
+
+/** 地址栏复制 */
+export function CopyIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+    </svg>
+  );
+}
+
 export function MoonIcon() {
   return (
     <svg
