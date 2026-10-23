@@ -395,15 +395,23 @@ try {
   await sleep(500);
   const chatAccent = await shell.evaluate(() => {
     const icon = document.querySelector('[data-testid="toolbar-chat"] span');
+    const svg = icon?.querySelector('svg');
     return {
       accent: getComputedStyle(document.documentElement).getPropertyValue('--dsw-chrome-accent').trim(),
       iconColor: icon ? getComputedStyle(icon).color : '',
+      iconFill: svg ? getComputedStyle(svg).fill : '',
+      iconStroke: svg ? getComputedStyle(svg).stroke : '',
     };
   });
   check(
     'Chat 图标颜色跟随外围颜色（海蓝 #3b6fd4）',
     chatAccent.accent === '#3b6fd4' && chatAccent.iconColor === 'rgb(59, 111, 212)',
     `accent=${chatAccent.accent} icon=${chatAccent.iconColor}`,
+  );
+  check(
+    'Chat 图标为实心填充（fill 用图标色、无描边）',
+    chatAccent.iconFill === chatAccent.iconColor && chatAccent.iconStroke === 'none',
+    `fill=${chatAccent.iconFill} stroke=${chatAccent.iconStroke}`,
   );
 
   // 4. 收起侧栏：卡片满宽仍四边 5px

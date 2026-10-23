@@ -211,22 +211,17 @@ export function HomeIcon() {
   );
 }
 
-/** Ravenclaw Chat 入口：对话气泡 */
+/**
+ * Ravenclaw Chat 入口：实心对话气泡，颜色随 currentColor（外壳强调色），两条对话线镂空露出胶囊底色。
+ * 轮廓取自原线框气泡并放大 8%，实心后视觉尺寸与工具栏其他 16px 图标一致。
+ */
 export function ChatIcon() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5.5 18.5l-2 2.5 5-.8A8 8 0 1 0 4.4 8.3a8 8 0 0 0 1.1 10.2z" />
-      <path d="M8.5 9.5h7M8.5 13h4.5" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path
+        fillRule="evenodd"
+        d="M4.98 19.1l-2.16 2.7 5.4-.86A8.64 8.64 0 1 0 3.79 8.08a8.64 8.64 0 0 0 1.19 11.02zM8.22 8.41h7.56a.97.97 0 0 1 0 1.94H8.22a.97.97 0 0 1 0-1.94zM8.22 12.19h4.86a.97.97 0 0 1 0 1.94H8.22a.97.97 0 0 1 0-1.94z"
+      />
     </svg>
   );
 }
