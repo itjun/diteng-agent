@@ -188,7 +188,7 @@ export interface TabsResolveRequest {
 
 /**
  * tabs:resolve 返回：
- * - in-app：最终可加载 URL（同域自动补 sid/CLIENTID/device 已在主进程完成）与标签归属账套
+ * - in-app：最终可加载 URL（ERP 站点家族自动补 sid/CLIENTID/device 已在主进程完成）与标签归属账套
  * - external：外域地址，主进程已转系统浏览器打开，渲染层不建标签
  */
 export type TabsResolveResult =

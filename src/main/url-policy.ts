@@ -8,7 +8,37 @@ import type { SessionInfo } from '../shared/types';
 
 export type UrlKind = 'same-server' | 'ai-site' | 'external' | 'blocked';
 
-/** 与登录 serverBase 同 host（含端口）视为站内；AI 站同 host 视为站内白名单；非 http/https 一律拦截 */
+/** 生产 ERP 使用同一根域名下的 m/std/... 多站点，菜单链接会跨子域但不能交给系统浏览器 */
+const ERP_SITE_ROOTS = ['cdcp.site', 'diteng.vip'] as const;
+
+function isHostWithinRoot(hostname: string, root: string): boolean {
+  return hostname === root || hostname.endsWith(`.${root}`);
+}
+
+/**
+ * 是否属于当前 ERP 站点家族：
+ * - 登录 serverBase 完全同 host；
+ * - 登录站点位于已确认的生产根域时，同根域、同协议、同端口的兄弟子域。
+ * 本地地址仍只允许完全同 host，避免把任意 localhost/测试域名扩大为站内。
+ */
+function isErpSite(url: URL, serverBase: string): boolean {
+  let base: URL;
+  try {
+    base = new URL(serverBase);
+  } catch {
+    return false;
+  }
+  if (url.host === base.host) return true;
+  const root = ERP_SITE_ROOTS.find((candidate) => isHostWithinRoot(base.hostname, candidate));
+  return Boolean(
+    root &&
+      url.protocol === base.protocol &&
+      url.port === base.port &&
+      isHostWithinRoot(url.hostname, root),
+  );
+}
+
+/** 登录 ERP 站点家族视为站内；AI 站同 host 视为站内白名单；非 http/https 一律拦截 */
 export function classifyUrl(url: string, session: SessionInfo | null, aiBase: string): UrlKind {
   let parsed: URL;
   try {
@@ -21,7 +51,7 @@ export function classifyUrl(url: string, session: SessionInfo | null, aiBase: st
     try {
       if (parsed.host === new URL(session.serverBase).host) return 'same-server';
     } catch {
-      // serverBase 非法时按外域处理
+      // serverBase 非法时继续按已知 AI 站与 ERP 根域判断
     }
   }
   try {
@@ -29,21 +59,22 @@ export function classifyUrl(url: string, session: SessionInfo | null, aiBase: st
   } catch {
     // aiBase 非法时按外域处理
   }
+  if (session && isErpSite(parsed, session.serverBase)) return 'same-server';
   return 'external';
 }
 
-/** URL 是否进应用内标签（同 serverBase 或 AI 站）；供地址栏入口共用外链拦截口径 */
+/** URL 是否进应用内标签（ERP 站点家族或 AI 站）；供地址栏入口共用外链拦截口径 */
 export function isInAppUrl(url: string, session: SessionInfo | null, aiBase: string): boolean {
   const kind = classifyUrl(url, session, aiBase);
   return kind === 'same-server' || kind === 'ai-site';
 }
 
 /**
- * 同 serverBase 且未带 sid 的 URL 自动补 sid/CLIENTID/device：
+ * ERP 站点家族内且未带 sid 的 URL 自动补 sid/CLIENTID/device：
  * ERP 页 window.open 的站内相对地址不带凭据，直接打开会被后端判为未登录；
  * 已带 sid 的 URL 与 AI 站地址（自行携带会话，AI 页无需补全）原样返回。
  */
-export function withSessionParams(rawUrl: string, session: SessionInfo | null): string {
+export function withSessionParams(rawUrl: string, session: SessionInfo | null, aiBase: string): string {
   if (!session) return rawUrl;
   let url: URL;
   try {
@@ -53,10 +84,11 @@ export function withSessionParams(rawUrl: string, session: SessionInfo | null): 
   }
   if (url.searchParams.has('sid')) return rawUrl;
   try {
-    if (url.host !== new URL(session.serverBase).host) return rawUrl;
+    if (url.host === new URL(aiBase).host) return rawUrl;
   } catch {
-    return rawUrl;
+    // aiBase 非法时不影响 ERP 补参
   }
+  if (!isErpSite(url, session.serverBase)) return rawUrl;
   url.searchParams.set('sid', session.token);
   url.searchParams.set('CLIENTID', session.machineCode);
   url.searchParams.set('device', 'pc');

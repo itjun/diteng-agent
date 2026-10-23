@@ -699,7 +699,7 @@ function registerTabsIpcHandlers(): void {
 
   /**
    * 开 URL 统一入口（地址栏 / guest window.open / 消息中心 / 快捷入口）：
-   * URL 策略归主进程——分类（同 serverBase / AI 站 / 外域 / 拦截）与同域补 sid/CLIENTID/device
+   * URL 策略归主进程——分类（ERP 站点家族 / AI 站 / 外域 / 拦截）与站内补 sid/CLIENTID/device
    * 都在此完成，渲染层拿到最终 URL 才创建 <webview>；外域由主进程转系统浏览器。
    */
   ipcMain.handle('tabs:resolve', (_event, request: unknown) => {
@@ -730,7 +730,12 @@ function registerTabsIpcHandlers(): void {
       return { ok: true as const, action: 'external' as const };
     }
     const corpNo = readString(typed.corpNo).trim() || session.corpNo;
-    return { ok: true as const, action: 'in-app' as const, url: withSessionParams(rawUrl, session), corpNo };
+    return {
+      ok: true as const,
+      action: 'in-app' as const,
+      url: withSessionParams(rawUrl, session, currentAiBase()),
+      corpNo,
+    };
   });
 
   // 壳挂载时取首个标签（登录落点），消费一次；壳整页刷新后不再重复打开
@@ -754,9 +759,9 @@ app.whenReady().then(() => {
 
 /**
  * webview guest（ERP/AI 标签页）统一拦截，规则与壳导航锁同一 URL 策略：
- * - window.open / target=_blank：同 serverBase 与 AI 站转壳新标签（tabs:open-request，
+ * - window.open / target=_blank：ERP 站点家族与 AI 站转壳新标签（tabs:open-request，
  *   壳经 tabs:resolve 补参后建 <webview>），外域走系统浏览器，应用内一律不开新窗；
- * - 页内导航/重定向：同 serverBase 与 AI 站放行（正常业务跳转），外域拦下转系统浏览器。
+ * - 页内导航/重定向：ERP 站点家族与 AI 站放行（正常业务跳转），外域拦下转系统浏览器。
  */
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
