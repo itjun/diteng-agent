@@ -51,7 +51,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { configVersion: CONFIG_VERSION, serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -178,6 +178,8 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
     railWidth,
     rememberPassword,
     autoLogin,
+    systemNotifications: typeof input?.systemNotifications === 'boolean' ? input.systemNotifications : true,
+    importantPopups: typeof input?.importantPopups === 'boolean' ? input.importantPopups : true,
     savedAccounts: normalizeSavedAccounts(input?.savedAccounts, { serverBase, savedLoginId, savedPassword }),
   };
 }
@@ -243,6 +245,8 @@ export function updateConfig(patch: AppConfigPatch): StoredAppConfig {
     config.railWidth = patch.railWidth;
   if (typeof patch.rememberPassword === 'boolean') config.rememberPassword = patch.rememberPassword;
   if (typeof patch.autoLogin === 'boolean') config.autoLogin = patch.autoLogin;
+  if (typeof patch.systemNotifications === 'boolean') config.systemNotifications = patch.systemNotifications;
+  if (typeof patch.importantPopups === 'boolean') config.importantPopups = patch.importantPopups;
   writeToDisk(config);
   return config;
 }

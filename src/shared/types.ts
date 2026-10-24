@@ -53,6 +53,9 @@ export interface AppConfig {
   rememberPassword: boolean;
   /** 登录页「自动登录」勾选状态；仅在记住密码勾选时可开，默认 true */
   autoLogin: boolean;
+  /** 新客户端独立的系统通知与紧急置顶开关，不修改旧终端设置。 */
+  systemNotifications: boolean;
+  importantPopups: boolean;
 }
 
 /** 主窗尺寸记录（只记宽高，不记位置） */
@@ -66,7 +69,7 @@ export interface WindowBounds {
  * 不在渲染层可写范围内；machineCode/windowBounds 同样仅主进程维护。
  */
 export type AppConfigPatch = Partial<
-  Pick<AppConfig, 'serverBase' | 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin'>
+  Pick<AppConfig, 'serverBase' | 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups'>
 >;
 
 /**
@@ -170,7 +173,7 @@ export interface SessionSummary {
   /** 当前账套名称（账套列表 ShortName_ 优先、否则 Name_）；空串表示未知，渲染层可回落 corpNo */
   corpName: string;
   homeForm: string;
-  /** 用户显示名（账号级、账套无关）；空串表示主进程尚未取到。壳内身份展示用 corpName，此字段保留供会话展示 */
+  /** 登录用户显示名；空串表示主进程尚未取到 */
   userName: string;
   /** 当前子账号代码（当前 token 绑定的子账号）；空串表示未知 */
   userCode: string;
@@ -208,10 +211,11 @@ export interface TabsState {
 }
 
 /**
- * tabs:resolve 请求（URL 策略归主进程）：url / home / ai 三选一。
+ * tabs:resolve 请求（URL 策略归主进程）：url / home / ai / page 选择一种。
  * - url：任意地址（地址栏、guest window.open、消息中心入口）
  * - home：当前会话 ERP 首页（{corpNo}/{homeForm}）
  * - ai：AI 对话页（{aiBase}/{corpNo}/chat）
+ * - page：当前账套的选择账套页或消息中心，由主进程生成路由
  * corpNo 缺省取当前会话账套，用于渲染层给标签记账套。
  */
 export interface TabsResolveRequest {
@@ -259,6 +263,11 @@ export type FeedbackScreenshotResult = { ok: true; width: number; height: number
  * broker/username/password 等连接凭据不下发 renderer，只回连接与订阅结果。
  */
 export interface MqttState {
+  connectionStatus: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'unavailable';
+  /** 最近成功同步未读数的时间；失败时保留旧值并附带错误状态 */
+  unreadUpdatedAt: number | null;
+  unreadError: boolean;
+  systemNotificationSupported: boolean;
   /** 是否已连接 broker */
   connected: boolean;
   /** 当前订阅的 topic（{userId}/unreadMessage）；未启动为空串 */
@@ -282,13 +291,15 @@ export interface MqttBrokerConfig {
   password: string;
 }
 
-/** 账套切换已提交，壳据此保留发起页面并关闭旧标签。 */
+/** preload 暴露给渲染层的最小 API（window.diteng） */
 export interface CorpSwitchCommitted {
   sourceWebContentsId: number | null;
   generation: number;
   session: SessionSummary;
   url?: string;
 }
+
+export interface NotificationPopupContent { title: string; body: string; corpName: string; pendingCount: number; }
 
 export interface DitengApi {
   tabsSetActiveGuest(id: number | null): void;
@@ -341,10 +352,14 @@ export interface DitengApi {
   tabsPopEntry(): Promise<TabsEntry | null>;
   /** MQTT 未读通知链路状态（连接/订阅/未读/最近通知；不含 broker 凭据） */
   getMqttState(): Promise<MqttState>;
+  refreshMessages(): Promise<MqttState>;
+  /** 仅向本机发送测试通知，不创建服务端消息或改变未读数 */
+  testSystemNotification(): Promise<ApiCallResult<null>>;
   /** 订阅 MQTT 状态推送（连接、未读、通知触发时），返回取消订阅函数 */
   onMqttChanged(listener: (state: MqttState) => void): () => void;
   /** 重要消息置顶弹窗页（#/notify-popup）加载时拉取当前弹窗内容 */
-  notifyPopupLoad(): Promise<{ title: string; body: string } | null>;
+  notifyPopupLoad(): Promise<NotificationPopupContent | null>;
+  onNotifyPopupChanged(listener: () => void): () => void;
   /** 弹窗主体被点击：聚焦主窗并打开消息中心 */
   notifyPopupOpen(): void;
   /** 关闭置顶弹窗 */

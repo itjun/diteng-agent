@@ -7,6 +7,7 @@ import {
   webContents,
   ipcMain,
   Menu,
+  Notification,
   nativeTheme,
   safeStorage,
   screen,
@@ -76,6 +77,7 @@ let pendingEntry: { url: string; corpNo: string } | null = null;
 // 托盘退出（托盘菜单/Dock 退出）时置位，主窗 close 拦截据此放行真正关闭
 let isQuitting = false;
 let isLoggingOut = false;
+let testNotification: Notification | null = null;
 
 /** 壳页面入口加载：dev 走 vite dev server，打包后加载本地 index.html；hash 区分页面角色 */
 function loadShellEntry(window: BrowserWindow, hash: string): void {
@@ -229,14 +231,26 @@ function installContextMenu(contents: Electron.WebContents): void {
  * 注意不是 FrmMessages：其 execute 已停止使用（仅剩 unreadTotal/mqttConfig 等子接口）。
  * 标签状态在渲染层：URL 交给壳走 tabs:resolve 流程开 <webview>。
  */
-function openMessageCenter(): void {
-  const session = getSession();
-  if (!session) {
-    focusMainWindow();
-    return;
-  }
+async function openMessageCenter(payload?: UnreadMessagePayload): Promise<boolean> {
+  let session = getSession();
+  if (!session) return false;
   focusMainWindow();
-  sendToShell('tabs:open-request', { url: buildErpUrl(session, 'FrmMyMessage') });
+  if (payload) {
+    const target = getCorpList().find((corp) => corp.corpNo === payload.corpNo && (!payload.userCode || corp.code === payload.userCode));
+    if (!target) { reportSwitchError('该消息所属账套的访问权限已变更，请刷新登录后重试'); return false; }
+    if (session.corpNo !== target.corpNo || session.userCode !== target.code) {
+      if (!await switchCorp({ corpNo: target.corpNo, userCode: target.code, sourceWebContentsId: null })) return false;
+      session = getSession();
+      if (!session) return false;
+    }
+  }
+  const url = new URL(buildErpUrl(session, payload ? 'FrmMyMessage.desktopNotification' : 'FrmMyMessage'));
+  if (payload) {
+    url.searchParams.set('uid', payload.uid);
+    url.searchParams.set('messageUser', payload.userCode);
+  }
+  sendToShell('tabs:open-request', { url: url.toString() });
+  return true;
 }
 
 function reportSwitchError(message: string): void {
@@ -312,6 +326,11 @@ const mqttService = new MqttService({
   readSession: getSession,
   onUnreadChange: (count) => trayService.setUnread(count),
   onMessage: (payload: UnreadMessagePayload) => importantNotifier.show(payload),
+  readPreferences: getConfig,
+  getStoreDirectory: () => join(app.getPath('userData'), 'notifications'),
+  isAuthorized: (payload) => getCorpList().some((corp) => corp.corpNo === payload.corpNo && corp.code === payload.userCode),
+  corpName: (corpNo) => resolveCorpName(corpNo, getCorpList()),
+  onRestorePending: (items) => importantNotifier.replacePending(items),
   openMessageCenter,
   onStateChanged: broadcastMqttState,
 });
@@ -321,6 +340,7 @@ const importantNotifier = new ImportantNotifier({
   getOwnerWindow: () => mainWindow,
   openMessageCenter,
   onShown: (title) => mqttService.reportPopupShown(title),
+  onDismiss: (uid) => mqttService.dismiss(uid),
 });
 
 const trayService = new TrayService({
@@ -644,6 +664,7 @@ async function keepSession(serverBase: string, result: LoginResult): Promise<voi
   session.corpName = resolveCorpName(session.corpNo, getCorpList());
   saveSession(session);
   corpSwitch.reset();
+  importantNotifier.setEnabled(getConfig().importantPopups);
   // forceRedirect + 绝对 URL（服务端显式指定落点）优先；否则开当前账套首页表单
   const forcedUrl =
     result.forceRedirect && /^https?:\/\//i.test(result.redirectUrl) ? result.redirectUrl : '';
@@ -704,6 +725,8 @@ function performLogout(): void {
   // 退出登录只清自动登录凭据（下次冷启动不再自动登录）；savedLoginId 保留供登录页预填账号，
   // 历史账号及其密码密文保留，登录页下拉仍可选中账号并回填密码
   clearAutoLoginCredential();
+  testNotification?.close();
+  testNotification = null;
   mqttService.stop('logout');
   importantNotifier.close('logout');
   trayService.destroy();
@@ -927,6 +950,7 @@ function registerIpcHandlers(): void {
     applyNativeTheme(getConfig());
     applyWindowTheme();
     broadcastThemeState();
+    importantNotifier.setEnabled(getConfig().importantPopups);
     return publicConfig();
   });
 
@@ -1075,26 +1099,44 @@ function registerIpcHandlers(): void {
 
 /** MQTT 状态与重要消息置顶弹窗 IPC */
 function registerNotifyIpcHandlers(): void {
-  ipcMain.handle('mqtt:get-state', () => mqttService.getState());
+  ipcMain.handle('mqtt:get-state', (event) => {
+    if (event.sender !== mainWindow?.webContents || !isShellUrl(event.sender.getURL())) throw new Error('无权读取消息状态');
+    return mqttService.getState();
+  });
+  ipcMain.handle('mqtt:refresh', async (event) => {
+    if (event.sender !== mainWindow?.webContents || !isShellUrl(event.sender.getURL())) throw new Error('无权刷新消息状态');
+    await mqttService.refreshUnread();
+    return mqttService.getState();
+  });
+  ipcMain.handle('notifications:test', (event) => {
+    if (event.sender !== mainWindow?.webContents || !isShellUrl(event.sender.getURL()) || !getSession()) return invalid('仅登录后的客户端可测试通知');
+    if (!Notification.isSupported()) return invalid('当前系统不支持桌面通知');
+    try {
+      testNotification?.close();
+      const notification = new Notification({ title: '帝擎 · 测试通知', body: '看到这条通知，说明本机系统通知可以显示。此测试不会产生业务消息。' });
+      testNotification = notification;
+      const release = () => { if (testNotification === notification) testNotification = null; };
+      notification.on('close', release);
+      notification.on('failed', release);
+      notification.show();
+      return { ok: true, data: null };
+    } catch { return invalid('无法请求系统通知，请检查系统通知设置'); }
+  });
 
-  ipcMain.handle('notify-popup:get', () => {
+  ipcMain.handle('notify-popup:get', (event) => {
+    if (!importantNotifier.isSender(event.sender)) return null;
     const payload = importantNotifier.getPayload();
     if (!payload) return null;
-    // 弹窗文案与系统通知同源：标题=摘要（缺省"紧急消息"），正文=发送人+内容摘要（去 HTML）
     return {
       title: payload.subject || '紧急消息',
-      body: payload.senderName
-        ? `${payload.senderName}：${toPlainExcerpt(payload.subject || payload.content)}`
-        : toPlainExcerpt(payload.subject || payload.content),
+      body: `${payload.senderName ? `${payload.senderName}：` : ''}${toPlainExcerpt(payload.content || payload.subject)}`,
+      corpName: resolveCorpName(payload.corpNo, getCorpList()) || payload.corpNo,
+      pendingCount: importantNotifier.getPendingCount(),
     };
   });
+  ipcMain.on('notify-popup:activate', (event) => { if (importantNotifier.isSender(event.sender)) void importantNotifier.activate(); });
+  ipcMain.on('notify-popup:close', (event) => { if (importantNotifier.isSender(event.sender)) importantNotifier.dismiss(); });
 
-  ipcMain.on('notify-popup:activate', () => importantNotifier.activate());
-  ipcMain.on('notify-popup:close', () => importantNotifier.close('user'));
-  ipcMain.on('notify-popup:hover', (_event, value: unknown) => {
-    if (value === true) importantNotifier.pauseAutoClose();
-    else importantNotifier.armAutoClose();
-  });
 }
 
 /** 主窗壳 tabs / session IPC；标签状态在渲染层，主进程只做会话与 URL 策略 */

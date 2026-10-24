@@ -1,4 +1,5 @@
 import { Notification } from 'electron';
+import { NotificationStore } from './notification-store';
 import { connect, type MqttClient } from 'mqtt';
 import * as serverApi from './api';
 import type { MqttState, SessionInfo } from '../shared/types';
@@ -83,7 +84,12 @@ export interface MqttServiceHooks {
   /** 收到一条消息（已通过关键字段校验），驱动重要消息置顶弹窗 */
   onMessage: (payload: UnreadMessagePayload) => void;
   /** 用户点击通知/弹窗：聚焦主窗并打开消息中心标签 */
-  openMessageCenter: () => void;
+  openMessageCenter: (payload: UnreadMessagePayload) => Promise<boolean>;
+  readPreferences: () => { systemNotifications: boolean; importantPopups: boolean };
+  getStoreDirectory: () => string;
+  isAuthorized: (payload: UnreadMessagePayload) => boolean;
+  corpName: (corpNo: string) => string;
+  onRestorePending: (items: UnreadMessagePayload[]) => void;
   /** 状态变化广播（renderer 经 mqtt:changed 收到同一结构） */
   onStateChanged: (state: MqttState) => void;
 }
@@ -103,6 +109,9 @@ export class MqttService {
   private password = '';
   private topic = '';
   private isConnected = false;
+  private connectionStatus: MqttState['connectionStatus'] = 'idle';
+  private unreadUpdatedAt: number | null = null;
+  private isUnreadError = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempt = 0;
   private generation = 0;
@@ -110,6 +119,12 @@ export class MqttService {
   private unread = -1;
   private lastNotification: MqttState['lastNotification'] = null;
   private lastPopupTitle: string | null = null;
+  private store: NotificationStore | null = null;
+  private scope = '';
+  private isRecovering = false;
+  private unreadRefresh: Promise<void> | null = null;
+  private pollTimer: NodeJS.Timeout | null = null;
+  private readonly notifications = new Set<Notification>();
 
   constructor(hooks: MqttServiceHooks) {
     this.hooks = hooks;
@@ -117,6 +132,10 @@ export class MqttService {
 
   getState(): MqttState {
     return {
+      connectionStatus: this.connectionStatus,
+      unreadUpdatedAt: this.unreadUpdatedAt,
+      unreadError: this.isUnreadError,
+      systemNotificationSupported: Notification.isSupported(),
       connected: this.isConnected,
       topic: this.topic,
       unread: this.unread,
@@ -128,14 +147,34 @@ export class MqttService {
   /** 登录成功后启动：拉 mqttConfig → 连接 → 订阅；重复调用幂等（已连且 topic 未变时跳过） */
   async start(session: SessionInfo): Promise<void> {
     const topic = `${session.userId}/unreadMessage`;
-    if (this.client && topic === this.topic) return;
+    if (this.client && topic === this.topic && this.scope === `${session.serverBase}\n${session.userId}`) return;
     this.stop('restart');
+    if (!session.userId) return;
     this.topic = topic;
+    this.connectionStatus = 'connecting';
+    this.pushState();
+    this.scope = `${session.serverBase}
+${session.userId}`;
+    this.store = new NotificationStore(this.hooks.getStoreDirectory(), this.scope);
+    this.hooks.onRestorePending(this.store.getPending().filter(this.hooks.isAuthorized));
+    // HTTP 补查独立于 broker 配置/连接，离线登录后仍能在网络恢复时补回消息。
+    this.pollTimer = setInterval(() => { void this.refreshUnread(); void this.recoverUnread(); }, 30_000);
+    void this.refreshUnread();
+    void this.recoverUnread();
+    const generation = this.generation;
     const config = await serverApi.getMqttConfig(session.serverBase, session.corpNo, session.token, session.machineCode);
+    if (this.generation !== generation || this.hooks.readSession()?.userId !== session.userId) return;
     if (!config.ok) {
       console.warn(`[mqtt] mqttConfig 获取失败，未读通知停用：${config.message}`);
       this.topic = '';
+      this.connectionStatus = 'unavailable';
       this.pushState();
+      return;
+    }
+    if (!config.data.broker) {
+      this.connectionStatus = 'unavailable';
+      this.pushState();
+      void this.refreshUnread();
       return;
     }
     this.broker = config.data.broker;
@@ -149,7 +188,21 @@ export class MqttService {
   /** 断开并复位；登出/退出时调用 */
   stop(reason: string): void {
     this.generation += 1;
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    this.isRecovering = false;
+    this.unreadRefresh = null;
+    for (const notification of this.notifications) notification.close();
+    this.notifications.clear();
+    this.store = null;
+    this.scope = '';
+    this.unread = -1;
+    this.unreadUpdatedAt = null;
+    this.isUnreadError = false;
+    this.lastNotification = null;
+    this.lastPopupTitle = null;
     this.isConnected = false;
+    this.connectionStatus = 'idle';
     this.topic = '';
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
@@ -166,9 +219,18 @@ export class MqttService {
    * REST 拉取未读总数并广播（登录/收到消息/切换账套后调用）。
    * 切换账套只换 token：topic 按主账号订阅与账套无关，无需重连。
    */
-  async refreshUnread(): Promise<void> {
+  refreshUnread(): Promise<void> {
+    if (this.unreadRefresh) return this.unreadRefresh;
+    const pending = this.readUnread();
+    this.unreadRefresh = pending;
+    void pending.finally(() => { if (this.unreadRefresh === pending) this.unreadRefresh = null; });
+    return pending;
+  }
+
+  private async readUnread(): Promise<void> {
     const session = this.hooks.readSession();
     if (!session) return;
+    const generation = this.generation;
     const result = await serverApi.getUnreadMessage(
       session.serverBase,
       session.corpNo,
@@ -176,11 +238,48 @@ export class MqttService {
       session.machineCode,
       session.userId,
     );
+    if (generation !== this.generation) return;
+    if (this.hooks.readSession() !== session) return;
     if (!result.ok) {
       console.warn(`[mqtt] 未读数拉取失败：${result.message}`);
+      this.isUnreadError = true;
+      this.pushState();
       return;
     }
+    this.isUnreadError = false;
+    this.unreadUpdatedAt = Date.now();
     this.setUnread(result.data);
+  }
+
+  dismiss(uid: string): void { this.store?.dismiss(uid); }
+
+  /** 断网与重启补查：普通历史消息静默，紧急消息进入同一持久队列，最多20页一轮。 */
+  async recoverUnread(): Promise<void> {
+    const session = this.hooks.readSession();
+    const store = this.store;
+    if (!session || !store || this.isRecovering) return;
+    this.isRecovering = true;
+    const generation = this.generation;
+    try {
+      let cursor = '';
+      const resume = store.getCursor();
+      for (let page = 0; page < 20; page += 1) {
+        const result = await serverApi.getDesktopNotifications(session, cursor);
+        if (generation !== this.generation || this.hooks.readSession() !== session) return;
+        if (!result.ok) {
+          console.warn(`[mqtt] 通知补查失败：${result.message}`);
+          return;
+        }
+        for (const payload of result.data.items) this.deliver(payload, true);
+        const next = result.data.nextCursor;
+        if (!next) { store.checkpoint(''); return; }
+        // 恢复时先看第一页的新消息，再继续上次中断的历史扫描。
+        cursor = page === 0 && resume ? resume : next;
+        store.checkpoint(cursor);
+      }
+    } catch {
+      console.warn('[mqtt] 通知补查或本地保存未完成，将在下次轮询重试');
+    } finally { if (generation === this.generation) this.isRecovering = false; }
   }
 
   /** 记录置顶弹窗已触发（ImportantNotifier 弹窗后回调，进状态供 e2e 断言） */
@@ -190,22 +289,26 @@ export class MqttService {
   }
 
   private setUnread(count: number): void {
-    if (this.unread === count) return;
+    const isChanged = this.unread !== count;
     this.unread = count;
-    this.hooks.onUnreadChange(count);
+    if (isChanged) this.hooks.onUnreadChange(count);
     this.pushState();
   }
 
   /** 连接参数对齐 im-client message-mqtt-client.ts / ERP UIMqttConnect：v5、keepalive 60、clean、clientId 加时间戳后缀 */
   private open(): void {
     const generation = ++this.generation;
+    this.unreadRefresh = null;
+    this.isRecovering = false;
+    this.connectionStatus = 'connecting';
+    this.pushState();
     const client = connect(this.broker, {
       protocolVersion: 5,
       keepalive: 60,
       reconnectPeriod: 0,
       connectTimeout: 30_000,
       clean: true,
-      clientId: `${this.hooks.readSession()?.machineCode ?? 'agent'}_${Date.now()}`,
+      clientId: `diteng-agent-${this.hooks.readSession()?.machineCode ?? 'desktop'}-${Date.now()}`,
       username: this.username,
       password: this.password,
     });
@@ -223,10 +326,15 @@ export class MqttService {
         if (error) {
           console.warn(`[mqtt] 订阅失败：${error.message}`);
           this.isConnected = false;
+          this.connectionStatus = 'reconnecting';
+          this.pushState();
           this.scheduleReconnect();
         } else {
           this.isConnected = true;
+          this.connectionStatus = 'connected';
           this.pushState();
+          void this.refreshUnread();
+          void this.recoverUnread();
         }
       });
     });
@@ -246,6 +354,7 @@ export class MqttService {
       if (!isCurrent()) return;
       this.client = null;
       this.isConnected = false;
+      this.connectionStatus = 'reconnecting';
       this.pushState();
       this.scheduleReconnect();
     });
@@ -267,28 +376,33 @@ export class MqttService {
       console.warn('[mqtt] unreadMessage payload 缺少关键字段，已忽略');
       return;
     }
-    // 先记录再展示：e2e 断言"已调用通知"这一内部事件，不依赖系统授权弹窗
+    this.deliver(payload, false);
+    void this.refreshUnread();
+  }
+
+  private deliver(payload: UnreadMessagePayload, isRecovery: boolean): void {
+    const store = this.store;
+    if (!payload.uid || !store || !this.hooks.isAuthorized(payload)) return;
+    const preferences = this.hooks.readPreferences();
+    try { if (!store.accept(payload, preferences.importantPopups)) return; }
+    catch { console.warn('[mqtt] 通知本地保存失败，未占用去重标记，等待补查重试'); return; }
+    if (preferences.importantPopups && payload.level === 2) this.hooks.onMessage(payload);
+    // 历史积压不逐条轰炸系统通知；紧急消息仍在一个窗口排队，关闭不会标为业务已读。
+    if (isRecovery || !preferences.systemNotifications) return;
+    const corpName = this.hooks.corpName(payload.corpNo) || payload.corpNo;
     this.lastNotification = {
-      title: payload.senderName || '帝擎消息',
+      title: `${corpName} · ${payload.senderName || '帝擎消息'}`,
       body: toPlainExcerpt(payload.subject || payload.content) || '您有一条新的未读消息',
       at: Date.now(),
     };
     this.pushState();
-    if (Notification.isSupported()) {
-      const notification = new Notification({
-        title: this.lastNotification.title,
-        body: this.lastNotification.body,
-      });
-      notification.on('click', () => this.hooks.openMessageCenter());
-      notification.show();
-    } else {
-      // 系统通知不可用（授权被拒/平台不支持）时降级：普通消息仅剩角标变化，重要消息仍有置顶弹窗
-      console.log('[mqtt] 系统通知不可用，仅更新未读角标');
-    }
-    console.log(`[mqtt] 未读通知已触发：${this.lastNotification.title} - ${this.lastNotification.body.slice(0, 40)}`);
-    this.hooks.onMessage(payload);
-    // 消息本体不含全量未读数，REST 校准（与 ERP 端 refreshMessageBadge 口径一致）
-    void this.refreshUnread();
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({ title: this.lastNotification.title, body: this.lastNotification.body });
+    this.notifications.add(notification);
+    notification.on('click', () => { void this.hooks.openMessageCenter(payload); });
+    notification.on('close', () => this.notifications.delete(notification));
+    notification.on('failed', () => this.notifications.delete(notification));
+    notification.show(); // 仅表示调用通知API；系统权限/专注模式仍可阻止实际展示。
   }
 
   /** 断线退避重连：1s 起指数退避 + 少量抖动，封顶 30s */

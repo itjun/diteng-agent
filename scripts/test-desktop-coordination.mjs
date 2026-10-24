@@ -18,6 +18,7 @@ function load(file, stubs = {}) {
   return module.exports;
 }
 const { CorpSwitchCoordinator } = load('src/main/corp-switch.ts');
+const { NotificationStore } = load('src/main/notification-store.ts');
 const { isShellEntryUrl } = load('src/main/shell-origin.ts');
 const base = () => ({ serverBase: 'https://erp.example.test', token: 'test-sid', rootToken: 'test-sid', userId: 'account-a', userCode: 'a1', corpNo: '100001', corpName: '甲账套', homeForm: 'FrmDefault', machineCode: 'test-device', userName: '测试用户' });
 const target = { corpNo: '100002', userCode: 'a2', sourceWebContentsId: 42 };
@@ -151,4 +152,86 @@ test('原换票请求只放行一次，目标导航带新票核验，旧guest与
   assert.equal(headers.requestHeaders['X-Diteng-Expected-Corp-No'],'100002');
   assert.equal((await request({id:3,webContentsId:43,url:`${current.serverBase}/100001/FrmDefault`})).cancel,true);
   coordinator.reset(); gate.reset();
+});
+
+const message = (uid, level = 2) => ({ uid, level, corpNo: '100002', userCode: 'a2', subject: `消息${uid}`, content: '内容', senderName: '测试', sendTime: '2026-10-24T10:00:00+08:00' });
+
+test('UID去重与紧急队列跨重启保存，账号隔离，关闭不伪造业务已读', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'diteng-notify-test-'));
+  try {
+    const store = new NotificationStore(dir, 'server/account-a');
+    assert.equal(store.accept(message('1'), true), true);
+    assert.equal(store.accept(message('1'), true), false);
+    store.accept(message('2', 3), true);
+    const restarted = new NotificationStore(dir, 'server/account-a');
+    assert.deepEqual(restarted.getPending().map((item) => item.uid), ['1']);
+    assert.equal(restarted.has('2'), true);
+    restarted.dismiss('1');
+    assert.equal(new NotificationStore(dir, 'server/account-a').getPending().length, 0);
+    assert.equal(new NotificationStore(dir, 'server/account-a').has('1'), true);
+    assert.equal(new NotificationStore(dir, 'server/account-b').has('1'), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('通知落盘失败不占去重，恢复存储后同UID可以补回', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'diteng-notify-disk-test-'));
+  try {
+    const store = new NotificationStore(dir, 'test');
+    rmSync(dir, { recursive: true });
+    assert.throws(() => store.accept(message('disk-failed'), true));
+    assert.equal(store.has('disk-failed'), false);
+    assert.equal(store.getPending().length, 0);
+    mkdirSync(dir);
+    assert.equal(store.accept(message('disk-failed'), true), true);
+    assert.equal(new NotificationStore(dir, 'test').getPending().length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+class FakeWindow extends EventEmitter {
+  static windows = [];
+  isDead = false;
+  webContents = new EventEmitter();
+  constructor(options) { super(); this.options = options; this.webContents.send = () => {}; FakeWindow.windows.push(this); }
+  setAlwaysOnTop() {} setPosition() {} showInactive() { this.isShownInactive = true; }
+  isDestroyed() { return this.isDead; } destroy() { this.isDead = true; this.emit('closed'); }
+}
+
+test('只有Grave置顶且持久排队；取消跨账套打开保留提醒，新消息不覆盖', async () => {
+  const dismissed = [];
+  let isOpened = false;
+  const { ImportantNotifier, isImportantMessage } = load('src/main/important-notifier.ts', { electron: { BrowserWindow: FakeWindow, screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1000, height: 800 } }) } } });
+  const notifier = new ImportantNotifier({ loadEntry: () => {}, getOwnerWindow: () => null, openMessageCenter: async () => isOpened, onShown: () => {}, onDismiss: (uid) => dismissed.push(uid) });
+  assert.equal(isImportantMessage(message('logger', 3)), false);
+  notifier.show(message('1')); notifier.show(message('2')); notifier.show(message('3', 3));
+  assert.equal(notifier.getPayload().uid, '1'); assert.equal(notifier.getPendingCount(), 2);
+  const window = FakeWindow.windows.at(-1); window.emit('ready-to-show'); assert.equal(window.isShownInactive, true);
+  await notifier.activate(); assert.equal(notifier.getPayload().uid, '1');
+  isOpened = true; await notifier.activate(); assert.equal(notifier.getPayload().uid, '2');
+  assert.deepEqual(dismissed, ['1']); notifier.close('quit');
+});
+
+test('断线补回未收到紧急内容，历史普通消息不逐条系统通知，重放UID不重复', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'diteng-mqtt-test-'));
+  const clients = [], popup = [], system = [];
+  class FakeNotification extends EventEmitter { static isSupported() { return true; } constructor(options) { super(); this.options = options; } show() { system.push(this.options); } close() {} }
+  const connect = (_broker, options) => { const client = new EventEmitter(); client.options = options; client.end = () => {}; client.subscribe = (_topic, _options, callback) => callback(); clients.push(client); return client; };
+  const toRaw = (item) => ({ UID_: item.uid, CorpNo_: item.corpNo, UserCode_: item.userCode, Level_: item.level, Subject_: item.subject, Content_: item.content });
+  const session = base();
+  const api = { getMqttConfig: async () => ({ ok: true, data: { broker: 'ws://mock', username: '', password: '' } }), getUnreadMessage: async () => ({ ok: true, data: 4 }),
+    getDesktopNotifications: async () => ({ ok: true, data: { items: [message('missed-urgent'), message('history', 0), message('logger', 3)], nextCursor: null } }) };
+  const { MqttService } = load('src/main/mqtt-service.ts', { electron: { Notification: FakeNotification }, mqtt: { connect }, './api': api });
+  const hooks = { readSession: () => session, readPreferences: () => ({ systemNotifications: true, importantPopups: true }), getStoreDirectory: () => dir,
+    isAuthorized: (item) => item.corpNo === '100002', corpName: () => '乙账套', onRestorePending: (items) => popup.push(...items), onUnreadChange: () => {}, onMessage: (item) => popup.push(item), openMessageCenter: async () => true, onStateChanged: () => {} };
+  const service = new MqttService(hooks);
+  try {
+    await service.start(session); await service.recoverUnread();
+    assert.deepEqual(popup.map((item) => item.uid), ['missed-urgent']); assert.equal(system.length, 0);
+    assert.match(clients[0].options.clientId, /^diteng-agent-/);
+    clients[0].emit('message', `${session.userId}/unreadMessage`, Buffer.from(JSON.stringify(toRaw(message('live', 0)))));
+    clients[0].emit('message', `${session.userId}/unreadMessage`, Buffer.from(JSON.stringify(toRaw(message('live', 0)))));
+    assert.equal(system.length, 1); assert.match(system[0].title, /乙账套/);
+    await service.recoverUnread(); assert.equal(popup.length, 1);
+    service.stop('test'); const restart = new MqttService(hooks); await restart.start(session); await restart.recoverUnread();
+    assert.deepEqual(popup.map((item) => item.uid), ['missed-urgent', 'missed-urgent']); restart.stop('test');
+  } finally { service.stop('test'); rmSync(dir, { recursive: true, force: true }); }
 });

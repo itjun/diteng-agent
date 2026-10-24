@@ -450,3 +450,41 @@ export async function getUnreadMessage(
   if (typeof result.data.unread === 'number') return { ok: true, data: result.data.unread };
   return { ok: false, code: 0, message: '未读数返回格式无法解析' };
 }
+
+/** 仅查询本人全部授权账套的旧消息未读记录，UID 游标由服务端生成；不修改已读。 */
+export async function getDesktopNotifications(
+  session: import('../shared/types').SessionInfo,
+  cursor = '',
+): Promise<ApiCallResult<{ items: import('./mqtt-service').UnreadMessagePayload[]; nextCursor: string | null }>> {
+  const url = new URL(`${session.serverBase.replace(/\/+$/, '')}/public/desktop-agent/notifications`);
+  url.searchParams.set('limit', '100');
+  if (cursor) url.searchParams.set('cursor', cursor);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'X-Diteng-Sid': session.token,
+        'X-Diteng-Client-Id': session.machineCode,
+        'X-Diteng-Expected-Corp-No': session.corpNo,
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) return toFailure(response);
+    const raw = await response.json() as Record<string, unknown>;
+    if (!Array.isArray(raw.items)) return { ok: false, code: 0, message: '通知补查返回格式不正确' };
+    const items: import('./mqtt-service').UnreadMessagePayload[] = [];
+    for (const value of raw.items) {
+      if (!value || typeof value !== 'object') continue;
+      const item = value as Record<string, unknown>;
+      if (typeof item.uid !== 'string' || !item.uid || typeof item.corpNo !== 'string' || typeof item.userCode !== 'string') continue;
+      items.push({
+        uid: item.uid, corpNo: item.corpNo, userCode: item.userCode,
+        level: typeof item.level === 'number' ? item.level : 0,
+        subject: typeof item.subject === 'string' ? item.subject : '',
+        content: typeof item.content === 'string' ? item.content : '',
+        senderName: typeof item.senderName === 'string' ? item.senderName : '',
+        sendTime: typeof item.sendTime === 'string' ? item.sendTime : '',
+      });
+    }
+    return { ok: true, data: { items, nextCursor: typeof raw.nextCursor === 'string' && raw.nextCursor ? raw.nextCursor : null } };
+  } catch (error) { return networkFailure(error); }
+}
