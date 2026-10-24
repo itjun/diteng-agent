@@ -120,7 +120,6 @@ export function Shell() {
   const webviewRefs = useRef(new Map<string, WebviewElement>());
   const activeTabIdRef = useRef('');
   activeTabIdRef.current = activeTabId;
-  const sessionCorpNoRef = useRef('');
   const blankTabIdRef = useRef('');
   blankTabIdRef.current = tabs.find((tab) => tab.id === activeTabId && !tab.url)?.id ?? '';
   // 防重不落到 state：截图只有百毫秒级，处理中再点直接忽略，也避免禁用态被截进画面
@@ -181,12 +180,15 @@ export function Shell() {
     } else {
       webviewRefs.current.delete(id);
     }
-    if (id === activeTabIdRef.current) setNavigationState(navigationStateOf(webview ?? undefined));
+    if (id === activeTabIdRef.current) {
+      setNavigationState(navigationStateOf(webview ?? undefined));
+      try { window.diteng.tabsSetActiveGuest(webview?.getWebContentsId() ?? null); } catch { window.diteng.tabsSetActiveGuest(null); }
+    }
   }, []);
 
   /** 仅当前可见标签的历史状态驱动工具栏前进/后退按钮 */
   const handleNavigationState = useCallback((id: string, state: NavigationState) => {
-    if (id === activeTabIdRef.current) setNavigationState(state);
+    if (id === activeTabIdRef.current) {setNavigationState(state);try { window.diteng.tabsSetActiveGuest(webviewRefs.current.get(id)?.getWebContentsId() ?? null); } catch { /* guest 未 ready */ }}
   }, []);
 
   /** 网页顶部底色回写（同色重复上报不触发重渲染，避免每次加载都抖一下） */
@@ -304,14 +306,20 @@ export function Shell() {
   // 网页版切账套：主进程完成会话同步后推送 session:changed，账套号变化即意味着旧账套标签
   // 在新 token 下已无访问权。切换发生在当前可见标签，故保留该标签、关闭其余全部标签（含 AI 标签）；
   // 首次拿到会话与仅名称/用户信息回填（账套号不变）不动标签。
-  useEffect(() => {
-    const corpNo = session?.corpNo ?? '';
-    const previousCorpNo = sessionCorpNoRef.current;
-    sessionCorpNoRef.current = corpNo;
-    if (!previousCorpNo || !corpNo || corpNo === previousCorpNo) return;
-    const activeId = activeTabIdRef.current;
-    setTabs((prev) => prev.filter((tab) => tab.id === activeId).map((tab) => ({ ...tab, corpNo })));
-  }, [session?.corpNo]);
+  useEffect(() => window.diteng.onCorpSwitchCommitted(payload => {
+    const source = [...webviewRefs.current.entries()].find(([,view]) => {
+      try { return view.getWebContentsId() === payload.sourceWebContentsId; } catch { return false; }
+    })?.[0];
+    setSession(payload.session);
+    if (source) {
+      setTabs(previous => previous.filter(tab => tab.id === source).map(tab => ({ ...tab, corpNo: payload.session.corpNo, url: payload.url || tab.url })));
+      setActiveTabId(source);
+      if(payload.url) void webviewRefs.current.get(source)?.loadURL(payload.url).catch(() => undefined);
+    } else {
+      setTabs([]);setActiveTabId('');
+      if(payload.url) openTab(payload.url,payload.session.corpNo);else void resolveAndOpen({home:true});
+    }
+  }), [openTab,resolveAndOpen]);
 
   // 激活态自愈：激活 tab 被关掉后落到剩余最后一个（与旧主进程实现一致），全关则空（新建标签页）
   useEffect(() => {
@@ -324,6 +332,7 @@ export function Shell() {
   // 切标签后立即同步历史可用状态；webview 首次挂载还会由 registerWebview 再同步一次
   useEffect(() => {
     setNavigationState(navigationStateOf(webviewRefs.current.get(activeTabId)));
+    try { window.diteng.tabsSetActiveGuest(webviewRefs.current.get(activeTabId)?.getWebContentsId() ?? null); } catch { window.diteng.tabsSetActiveGuest(null); }
   }, [activeTabId]);
 
   // 页面底色只保留仍存在的标签（关标签 / 切账套只保留当前标签）

@@ -3,6 +3,8 @@ import {
   BrowserWindow,
   ClipboardItem,
   clipboard,
+  dialog,
+  webContents,
   ipcMain,
   Menu,
   nativeTheme,
@@ -29,11 +31,14 @@ import {
 } from './saved-accounts';
 import * as serverApi from './api';
 import { clearSession, getCorpList, getSession, getSessionSummary, saveCorpList, saveSession } from './session-store';
-import { buildAiUrl, buildErpUrl, classifyUrl, isErpLogoutUrl, readErpCorpNo, withSessionParams } from './url-policy';
+import { buildAiUrl, buildErpUrl, classifyUrl, isErpLogoutUrl, withSessionParams } from './url-policy';
 import { installErpMenuNewTabPatch } from './erp-menu-newtab';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
+import { CorpSwitchCoordinator, type CorpSwitchTarget } from './corp-switch';
+import { ErpRequestGate } from './erp-request-gate';
+import { isShellEntryUrl } from './shell-origin';
 import type {
   AppConfig,
   AppConfigPatch,
@@ -49,7 +54,7 @@ import type {
   ThemeState,
 } from '../shared/types';
 
-const DEV_SERVER_URL = 'http://127.0.0.1:5173';
+const DEV_SERVER_URL = process.env.DITENG_AGENT_DEV_URL || 'http://127.0.0.1:5173';
 // 对应 --dsw-static-neutral-bluish-950 / 00，避免深色主题下窗口底色闪白
 const THEME_DARK_BACKGROUND = '#151517';
 const THEME_LIGHT_BACKGROUND = '#ffffff';
@@ -70,6 +75,7 @@ let mainWindow: BrowserWindow | null = null;
 let pendingEntry: { url: string; corpNo: string } | null = null;
 // 托盘退出（托盘菜单/Dock 退出）时置位，主窗 close 拦截据此放行真正关闭
 let isQuitting = false;
+let isLoggingOut = false;
 
 /** 壳页面入口加载：dev 走 vite dev server，打包后加载本地 index.html；hash 区分页面角色 */
 function loadShellEntry(window: BrowserWindow, hash: string): void {
@@ -233,6 +239,68 @@ function openMessageCenter(): void {
   sendToShell('tabs:open-request', { url: buildErpUrl(session, 'FrmMyMessage') });
 }
 
+function reportSwitchError(message: string): void {
+  const isUncertain = corpSwitch.isUncertain();
+  const options: Electron.MessageBoxOptions = { type: 'warning', title: '账套切换', message, buttons: isUncertain ? ['稍后重试', '重新核验'] : ['知道了'], defaultId: 0, cancelId: 0, noLink: true };
+  if (mainWindow && !mainWindow.isDestroyed()) void dialog.showMessageBox(mainWindow, options).then((result) => {
+    if (isUncertain && result.response === 1) void corpSwitch.retryVerification();
+  });
+}
+
+const corpSwitch = new CorpSwitchCoordinator({
+  getSession,
+  confirm: async (target) => {
+    const name = resolveCorpName(target.corpNo, getCorpList()) || target.corpNo;
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning', title: '切换账套', message: `切换到「${name}」？`,
+      detail: '请先返回页面保存需要保留的表单。继续将放弃其它标签未保存的内容。客户端不能自动保存网页表单。',
+      buttons: ['取消，返回保存', '放弃未保存内容并切换'], defaultId: 0, cancelId: 0, noLink: true,
+    };
+    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options);
+    return result.response === 1;
+  },
+  isSourceAlive: (id) => id === null || Boolean(webContents.fromId(id) && !webContents.fromId(id)?.isDestroyed()),
+  verify: async (ticket, token) => {
+    const base = ticket.session;
+    const nextToken = token || base.token;
+    const info = await serverApi.getTokenInfo(base.serverBase, base.machineCode, nextToken);
+    if (!info.ok || !info.data.corpNo || !info.data.userCode || info.data.userId !== base.userId) return null;
+    if (!getCorpList().some((corp) => corp.corpNo === info.data.corpNo && corp.code === info.data.userCode)) return null;
+    return { ...base, token: nextToken, corpNo: info.data.corpNo, userCode: info.data.userCode, userId: info.data.userId,
+      corpName: resolveCorpName(info.data.corpNo, getCorpList()), userName: info.data.userName || info.data.userCode, homeForm: 'FrmDefault' };
+  },
+  commit: (session, target, generation) => {
+    saveSession(session);
+    requestGate.commit(target.sourceWebContentsId, session, generation);
+    pushSessionChanged();
+    sendToShell('corp-switch:committed', {
+      sourceWebContentsId: target.sourceWebContentsId, generation, session: getSessionSummary(),
+      url: buildErpUrl(session, session.homeForm),
+    });
+    void mqttService.refreshUnread();
+  },
+  report: reportSwitchError,
+});
+
+const requestGate = new ErpRequestGate({ coordinator: corpSwitch, getSession, getCorps: getCorpList,
+  aiBase: currentAiBase, getOwner: () => mainWindow?.webContents || null, switchTo: switchCorp,
+  verifyNavigation: async (target, token) => {
+    const ticket = await corpSwitch.begin(target);
+    if (!ticket || !corpSwitch.markSent(ticket)) return false;
+    return (await corpSwitch.complete(ticket, token)).ok;
+  },
+});
+
+async function switchCorp(target: CorpSwitchTarget): Promise<boolean> {
+  const ticket = await corpSwitch.begin(target);
+  if (!ticket || !corpSwitch.markSent(ticket)) return false;
+  const session = ticket.session;
+  const exchanged = await serverApi.getNuewToken(session.serverBase, session.token, session.rootToken || session.token, session.machineCode, target.corpNo);
+  const result = await corpSwitch.complete(ticket, exchanged.ok ? exchanged.data : undefined);
+  if (!result.ok && !corpSwitch.isUncertain()) reportSwitchError(result.message);
+  return result.ok;
+}
+
 /** MQTT 状态推送到壳 renderer（e2e/后续 UI 消费） */
 function broadcastMqttState(state: MqttState): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -257,10 +325,7 @@ const importantNotifier = new ImportantNotifier({
 
 const trayService = new TrayService({
   showMainWindow: focusMainWindow,
-  quitApp: () => {
-    isQuitting = true;
-    app.quit();
-  },
+  quitApp: () => app.quit(),
 });
 
 function isDevMode(): boolean {
@@ -369,14 +434,7 @@ function createLoginWindow(): void {
 
 /** 壳页面自身允许加载的 URL：dev 为 vite 入口，打包后为本地 index.html（含 #main hash 切换） */
 function isShellUrl(url: string): boolean {
-  if (isDevMode()) {
-    try {
-      return new URL(url).origin === new URL(DEV_SERVER_URL).origin;
-    } catch {
-      return false;
-    }
-  }
-  return url.startsWith('file://') && url.endsWith('index.html');
+  return isShellEntryUrl(url, join(__dirname, '../renderer/index.html'), isDevMode() ? DEV_SERVER_URL : undefined);
 }
 
 /**
@@ -441,7 +499,10 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   mainWindow.webContents.on('will-attach-webview', (_event, webPreferences) => {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
   });
+  mainWindow.webContents.on('did-attach-webview', (_event, contents) => requestGate.register(contents));
 
   // 壳导航锁死：壳页面只允许自己的 dev/prod 入口，ERP 页把壳顶掉或开新窗一律拒绝
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -582,6 +643,7 @@ async function keepSession(serverBase: string, result: LoginResult): Promise<voi
   // 账套名称只依赖账套列表：即使 getTokenInfo 失败也尽量补上
   session.corpName = resolveCorpName(session.corpNo, getCorpList());
   saveSession(session);
+  corpSwitch.reset();
   // forceRedirect + 绝对 URL（服务端显式指定落点）优先；否则开当前账套首页表单
   const forcedUrl =
     result.forceRedirect && /^https?:\/\//i.test(result.redirectUrl) ? result.redirectUrl : '';
@@ -601,10 +663,11 @@ async function keepSession(serverBase: string, result: LoginResult): Promise<voi
 async function resolveUserDisplay(session: SessionInfo): Promise<void> {
   const patch = await resolveTokenSessionPatch(session, session.token, session.corpNo);
   // 等待网络期间会话可能已被替换（登出/重新登录），旧会话对象不得再写回 store
-  if (getSession() !== session) return;
+  if (getSession() !== session || corpSwitch.isBlocked()) return;
   if (patch) {
     applyTokenSessionPatch(session, patch);
     saveSession(session);
+    void mqttService.start(session);
     pushSessionChanged();
     return;
   }
@@ -628,7 +691,11 @@ async function resolveUserDisplay(session: SessionInfo): Promise<void> {
  */
 function performLogout(): void {
   const session = getSession();
-  if (!session) return; // 未登录（重复触发）：登录窗已存在，避免开出第二扇
+  if (!session || isLoggingOut) return;
+  if (corpSwitch.getActive()) { reportSwitchError('正在核验账套切换，请稍候再退出'); return; }
+  isLoggingOut = true;
+  corpSwitch.reset();
+  requestGate.reset(); // 未登录（重复触发）：登录窗已存在，避免开出第二扇
   void serverApi.logout(session.serverBase, session.token).then((result) => {
     if (result.ok) console.log('[auth] 服务端登出成功');
     else console.warn(`[auth] 服务端登出失败（不阻塞本地登出）：${result.message}`);
@@ -641,6 +708,7 @@ function performLogout(): void {
   importantNotifier.close('logout');
   trayService.destroy();
   createLoginWindow();
+  isLoggingOut = false;
   const closing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (!closing) return;
   if (loginWindow) loginWindow.once('ready-to-show', () => closing.close());
@@ -753,123 +821,6 @@ function applyTokenSessionPatch(session: SessionInfo, patch: TokenSessionPatch):
   if (patch.userId) session.userId = patch.userId;
 }
 
-/** 切换/登录流程表单页不作为账套同步依据：TFrmChooseAccount 本身挂在 000000 下，浏览切换页不等于已切换 */
-const CORP_SYNC_SKIP_FORMS = /(TFrmChooseAccount|FrmLogin|TFrmLogin|FrmLogout|TFrmLogout|FrmVerifyClient)/;
-
-// 页内导航账套同步的并发控制：pendingNavKey 记录在途同步的去重键（sid 或账套号），
-// 同一键的连续事件只处理一次；navSyncSeq 保证「后发起的导航优先」——快速连续切账套时，
-// 先发起但慢返回的结果若已不是最新序号则丢弃，避免旧账套覆盖新账套。
-let pendingNavKey = '';
-let navSyncSeq = 0;
-
-/** 开始一次导航同步：同一去重键在途时返回 false（跳过重复事件），否则占用该键并推进序号 */
-function beginNavSync(key: string): boolean {
-  if (key === pendingNavKey) return false;
-  pendingNavKey = key;
-  navSyncSeq += 1;
-  return true;
-}
-
-/** 结束导航同步：只有该键仍归本次同步时才释放（已被更新导航接管则保留，避免破坏后来者去重） */
-function finishNavSync(key: string): void {
-  if (pendingNavKey === key) pendingNavKey = '';
-}
-
-/** 导航同步成功后收尾：落库 + 日志 + 重拉未读（凭证已换） + 推送会话摘要（壳/设置页刷新账套与子账号） */
-function commitNavigationSession(session: SessionInfo, source: string): void {
-  saveSession(session);
-  console.log(
-    `[auth] 同步网页切换账套 corpNo=${session.corpNo} corpName=${session.corpName || '(未知)'} ` +
-      `userCode=${session.userCode || '(未知)'} token=${session.token.slice(0, 8)}… 来源=${source}`,
-  );
-  // MQTT topic 按主账号订阅与账套无关，无需重连；凭证已换，重拉未读刷新角标
-  void mqttService.refreshUnread();
-  pushSessionChanged();
-}
-
-/**
- * ERP 页内账套同步：网页版切换账套（页头账套卡片 TFrmChooseAccount.switchUser，按目标
- * 子账号代码切换）发生在 webview 内部，主进程会话不随之更新，壳与设置页的账套号、账套名称、
- * 子账号会滞后。以 getTokenInfo 为权威来源分两条路径同步：
- * - URL 带 sid：直接用该 sid 查 getTokenInfo。经典页切账套只刷新同一 token 的会话选项
- *   （refreshUser 不换 token）再整页跳转，所以「同 sid + 新账套号」也必须重新确认；
- * - URL 不带 sid（SPA 切账套剥掉 URL 凭证）：用 rootToken 免密换票（getNuewToken，
- *   与网页版换票链路一致），再对新 token 查 getTokenInfo。
- * 账套号/子账号/用户名一律取 getTokenInfo 返回值（corpNo 缺失时回落 URL 首段账套号，两者一致）；
- * 账套名称按账套列表解析。成功后经 session:changed 下发，壳据此关闭旧账套的其他标签；
- * AI 站页面不参与同步。
- */
-async function syncSessionCorpFromNavigation(rawUrl: string): Promise<void> {
-  const session = getSession();
-  if (!session) return;
-  if (classifyUrl(rawUrl, session, currentAiBase()) !== 'same-server') return;
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return;
-  }
-  if (CORP_SYNC_SKIP_FORMS.test(parsed.pathname)) return;
-  const urlCorpNo = readErpCorpNo(rawUrl);
-  const sid = parsed.searchParams.get('sid') || '';
-
-  if (sid) {
-    // ① URL 带 sid：以该 token 的 getTokenInfo 为权威。同一凭证且 URL 账套未变 = 普通导航
-    // （同账套换表单）无需同步；同一凭证但 URL 账套变了必须同步——经典页切账套走的就是这条路。
-    if (sid === session.token && (!urlCorpNo || urlCorpNo === session.corpNo)) return;
-    const key = `sid:${sid}`;
-    if (!beginNavSync(key)) return;
-    const seq = navSyncSeq;
-    let patch: TokenSessionPatch | null = null;
-    try {
-      patch = await resolveTokenSessionPatch(session, sid, urlCorpNo);
-    } finally {
-      finishNavSync(key); // 异常路径同样释放去重键，避免后续导航被永久跳过
-    }
-    // await 期间会话被替换（登出/重新登录）或有更新的导航时放弃本次写入
-    if (seq !== navSyncSeq || getSession() !== session || !patch) return;
-    applyTokenSessionPatch(session, patch);
-    session.token = sid;
-    // 切账套固定进 FrmDefault，不走喜好页（对齐 TFrmChooseAccount 切换语义）
-    session.homeForm = 'FrmDefault';
-    commitNavigationSession(session, 'sid');
-    return;
-  }
-
-  // ② 无 sid（SPA 切账套被剥掉 URL 凭证）：仅当首段账套号与当前会话不同才换票
-  if (!urlCorpNo || urlCorpNo === session.corpNo) return;
-  const key = `corp:${urlCorpNo}`;
-  if (!beginNavSync(key)) return;
-  const seq = navSyncSeq;
-  let nextToken = '';
-  let patch: TokenSessionPatch | null = null;
-  try {
-    const exchanged = await serverApi.getNuewToken(
-      session.serverBase,
-      session.token,
-      session.rootToken || session.token,
-      session.machineCode,
-      urlCorpNo,
-    );
-    // 换票失败只告警、不写会话：页面可能还没切完，留待下一次导航重试
-    if (!exchanged.ok) {
-      console.warn(
-        `[auth] 网页切换账套 ${session.corpNo}->${urlCorpNo} 换票失败，会话保持不变：${exchanged.message}`,
-      );
-      return;
-    }
-    nextToken = exchanged.data;
-    patch = await resolveTokenSessionPatch(session, nextToken, urlCorpNo);
-  } finally {
-    finishNavSync(key);
-  }
-  if (seq !== navSyncSeq || getSession() !== session || !patch) return;
-  applyTokenSessionPatch(session, patch);
-  session.token = nextToken;
-  session.homeForm = 'FrmDefault';
-  commitNavigationSession(session, 'exchange');
-}
-
 /** IPC 入参做最小类型校验，非法输入按失败返回而不是让 handler 抛异常 */
 function readString(source: unknown): string {
   return typeof source === 'string' ? source : '';
@@ -970,7 +921,8 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('theme:get', () => currentThemeState());
 
-  ipcMain.handle('config:set', (_event, patch: unknown) => {
+  ipcMain.handle('config:set', (event, patch: unknown) => {
+    if (!isShellUrl(event.sender.getURL())) throw new Error('无权更改客户端配置');
     updateConfig((patch ?? {}) as AppConfigPatch);
     applyNativeTheme(getConfig());
     applyWindowTheme();
@@ -978,7 +930,9 @@ function registerIpcHandlers(): void {
     return publicConfig();
   });
 
-  ipcMain.handle('auth:login', async (_event, request: unknown) => {
+  ipcMain.handle('auth:login', async (event, request: unknown) => {
+    if (event.sender !== loginWindow?.webContents || !isShellUrl(event.sender.getURL())) return invalid('仅登录窗口可执行认证');
+    if (getSession()) return invalid('当前已经登录');
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
     const password = readString((request as { password?: unknown } | null)?.password);
     // 设备验证登录（-8 后）携带 6 位短信验证码，同接口完成验证并登录
@@ -1009,7 +963,8 @@ function registerIpcHandlers(): void {
   });
 
   // 发送登录短信验证码（SvrUserLogin.getToken verifyCode 指令；服务端 5 分钟冷却）
-  ipcMain.handle('auth:login-send-code', async (_event, request: unknown) => {
+  ipcMain.handle('auth:login-send-code', async (event, request: unknown) => {
+    if (event.sender !== loginWindow?.webContents || !isShellUrl(event.sender.getURL())) return invalid('仅登录窗口可发送验证码');
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
     const password = readString((request as { password?: unknown } | null)?.password);
     if (!loginId || !password) return invalid('账号和密码不能为空');
@@ -1017,12 +972,15 @@ function registerIpcHandlers(): void {
   });
 
   // 登录窗自绘 × 关闭按钮（macOS 隐藏原生红绿灯后唯一的关闭入口）
-  ipcMain.handle('app:close-login', () => {
+  ipcMain.handle('app:close-login', (event) => {
+    if (event.sender !== loginWindow?.webContents) return;
     loginWindow?.close();
   });
 
   // 自动登录：config 保存的账号 + safeStorage 密文密码走 SvrUserLogin.getToken，成功复用 keepSession 开窗
-  ipcMain.handle('auth:auto-login', async () => {
+  ipcMain.handle('auth:auto-login', async (event) => {
+    if (event.sender !== loginWindow?.webContents) return invalid('仅登录窗口可执行认证');
+    if (getSession()) return invalid('当前已经登录');
     const config = getConfig();
     if (!config.autoLogin) {
       return { ok: false as const, code: 0, message: '自动登录未开启' };
@@ -1103,7 +1061,8 @@ function registerIpcHandlers(): void {
   });
 
   // 退出登录：本地登出必然完成（服务端失败不阻塞）；主窗随即销毁，回包不保证送达
-  ipcMain.handle('auth:logout', () => {
+  ipcMain.handle('auth:logout', (event) => {
+    if (event.sender !== mainWindow?.webContents || !isShellUrl(event.sender.getURL())) return;
     performLogout();
   });
 
@@ -1141,13 +1100,23 @@ function registerNotifyIpcHandlers(): void {
 /** 主窗壳 tabs / session IPC；标签状态在渲染层，主进程只做会话与 URL 策略 */
 function registerTabsIpcHandlers(): void {
   ipcMain.handle('session:get', () => getSessionSummary());
+  ipcMain.on('tabs:active-guest', (event, id: unknown) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    if (id === null || (typeof id === 'number' && Number.isInteger(id))) requestGate.setActive(id);
+  });
+  ipcMain.handle('corp-switch:retry', async (event) => {
+    if (event.sender !== mainWindow?.webContents) return invalid('无权核验会话');
+    return corpSwitch.retryVerification();
+  });
 
   /**
    * 开 URL 统一入口（地址栏 / guest window.open / 消息中心 / 快捷入口）：
    * URL 策略归主进程——分类（ERP 站点家族 / AI 站 / 外域 / 拦截）与站内补 sid/CLIENTID/device
    * 都在此完成，渲染层拿到最终 URL 才创建 <webview>；外域由主进程转系统浏览器。
    */
-  ipcMain.handle('tabs:resolve', (_event, request: unknown) => {
+  ipcMain.handle('tabs:resolve', async (event, request: unknown) => {
+    if (event.sender !== mainWindow?.webContents) return invalid('无权打开页面');
+    if (corpSwitch.isBlocked()) return invalid('正在切换或核验账套，请稍后重试');
     const typed = (request ?? {}) as TabsResolveRequest;
     const session = getSession();
     if (!session) return invalid('尚未登录');
@@ -1200,6 +1169,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([]) : null);
   // 必须在创建任何窗口前同步应用主题，首帧的 vibrancy 才不会先取系统外观。
   applyNativeTheme(getConfig());
+  requestGate.install();
   registerIpcHandlers();
   nativeTheme.on('updated', () => {
     applyWindowTheme();
@@ -1259,18 +1229,21 @@ app.on('web-contents-created', (_event, contents) => {
   // 退出入口若绕过 will-navigate（如 SPA pushState），在导航落定后同样改走壳退出。
   contents.on('did-navigate', (_event, url) => {
     if (handleWebLogout(url)) return;
-    void syncSessionCorpFromNavigation(url);
+    // 身份变更由请求闸门核验并提交；导航完成不能自行修改主进程会话。
   });
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (!isMainFrame) return;
     if (handleWebLogout(url)) return;
-    void syncSessionCorpFromNavigation(url);
+    // 身份变更由请求闸门核验并提交；导航完成不能自行修改主进程会话。
   });
 });
 
 // 真正退出前统一收尾：断开 MQTT、关置顶弹窗、销毁托盘
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (corpSwitch.getActive()) { event.preventDefault(); reportSwitchError('正在核验账套切换，请稍候再退出'); return; }
   isQuitting = true;
+  corpSwitch.reset();
+  requestGate.reset();
   mqttService.stop('quit');
   importantNotifier.close('quit');
   trayService.destroy();

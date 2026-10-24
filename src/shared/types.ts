@@ -282,8 +282,18 @@ export interface MqttBrokerConfig {
   password: string;
 }
 
-/** preload 暴露给渲染层的最小 API（window.diteng） */
+/** 账套切换已提交，壳据此保留发起页面并关闭旧标签。 */
+export interface CorpSwitchCommitted {
+  sourceWebContentsId: number | null;
+  generation: number;
+  session: SessionSummary;
+  url?: string;
+}
+
 export interface DitengApi {
+  tabsSetActiveGuest(id: number | null): void;
+  onCorpSwitchCommitted(listener: (payload: CorpSwitchCommitted) => void): () => void;
+  retryCorpVerification(): Promise<{ ok: boolean; message?: string }>;
   /** preload 加载时同步取得的主题快照，供 React 首帧直接使用，避免先闪系统主题 */
   initialThemeState: ThemeState;
   getConfig(): Promise<AppConfig>;

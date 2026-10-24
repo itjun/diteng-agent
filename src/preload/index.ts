@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   MqttState,
+  CorpSwitchCommitted,
   SessionSummary,
   ShortcutAction,
   TabsOpenRequestPayload,
@@ -15,6 +16,13 @@ const initialThemeState = ipcRenderer.sendSync('theme:get-sync') as ThemeState;
 
 const diteng: DitengApi = {
   initialThemeState,
+  tabsSetActiveGuest: (id) => ipcRenderer.send('tabs:active-guest', id),
+  retryCorpVerification: () => ipcRenderer.invoke('corp-switch:retry'),
+  onCorpSwitchCommitted: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: CorpSwitchCommitted) => listener(value);
+    ipcRenderer.on('corp-switch:committed', handler);
+    return () => ipcRenderer.removeListener('corp-switch:committed', handler);
+  },
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   getThemeState: () => ipcRenderer.invoke('theme:get'),

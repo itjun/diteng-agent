@@ -23,6 +23,7 @@ export interface WebviewElement extends HTMLElement {
   canGoForward(): boolean;
   loadURL(url: string): Promise<void>;
   getURL(): string;
+  getWebContentsId(): number;
   /** guest 页内执行脚本（地址栏跟随网页底色的采样用） */
   executeJavaScript<T>(code: string, userGesture?: boolean): Promise<T>;
 }
