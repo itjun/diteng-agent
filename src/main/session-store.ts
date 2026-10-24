@@ -21,6 +21,7 @@ export function getSessionSummary(): SessionSummary | null {
   if (!currentSession) return null;
   return {
     serverBase: currentSession.serverBase,
+    loginId: currentSession.loginId,
     userId: currentSession.userId,
     corpNo: currentSession.corpNo,
     corpName: currentSession.corpName,

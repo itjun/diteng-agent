@@ -132,13 +132,13 @@
 .mainInner {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
   width: min(860px, 100%);
   max-width: 860px;
   margin: 0 auto;
   box-sizing: border-box;
   /* 与左侧返回入口同一视觉行，但不绘制横向工具栏。 */
-  padding: 48px clamp(20px, 4vw, 48px) 40px;
+  padding: 36px clamp(20px, 4vw, 48px) 40px;
 }
 
 /* 分类页大标题 + 副标题：字号明显大于行名（Cursor 层级） */
@@ -164,7 +164,7 @@
 .pageContent {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 
 /* 成一组的设置行：白底卡片 + 行间发丝分隔线。 */
@@ -191,6 +191,7 @@
 }
 
 .rowMain {
+  flex: 1;
   min-width: 0;
 }
 
@@ -319,8 +320,8 @@
 
 .swatch,
 .swatchActive {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   flex: none;
   padding: 0;
   border: none;
@@ -367,3 +368,28 @@
 .settingsRailCompact .nav { padding-inline: 8px; }
 .settingsRailCompact .navItem,
 .settingsRailCompact .navItemActive { padding: 10px 4px; align-items: center; }
+
+/* 外壳与设置统一使用轻边框、同一字号与 32px 操作控件。 */
+.section,
+.notificationSettings { display: flex; flex-direction: column; gap: 12px; }
+.notificationSettings { gap: 24px; }
+.sectionTitle { margin: 0; font-size: 12px; line-height: 18px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.sectionNote { margin: 0; font-size: 12px; line-height: 20px; color: var(--dsw-alias-label-secondary); }
+.rowActions { display: flex; align-items: center; flex: none; gap: 12px; }
+.rowActions .rowValue { max-width: none; }
+.actionButton { display: inline-flex; align-items: center; justify-content: center; flex: none; min-height: 32px; padding: 0 12px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.actionButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.actionButton:disabled { opacity: 0.5; cursor: default; }
+.switch { position: relative; flex: none; width: 38px; height: 24px; padding: 2px; border: 0; border-radius: 14px; background: var(--dsw-alias-label-tertiary); cursor: pointer; }
+.switch::after { content: ''; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 120ms ease; }
+.switch[aria-checked='true'] { background: var(--dsw-alias-state-business-primary); }
+.switch[aria-checked='true']::after { transform: translateX(14px); }
+.switch:disabled { opacity: 0.45; cursor: default; }
+.statusConnected,
+.statusWaiting { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.statusConnected::before,
+.statusWaiting::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
+.statusConnected::before { background: #3f8f6b; }
+.error { margin: 0; font-size: 12px; line-height: 20px; color: var(--dsw-alias-label-primary); padding: 10px 12px; border-left: 2px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.page button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }

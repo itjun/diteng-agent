@@ -77,6 +77,7 @@ let pendingEntry: { url: string; corpNo: string } | null = null;
 // 托盘退出（托盘菜单/Dock 退出）时置位，主窗 close 拦截据此放行真正关闭
 let isQuitting = false;
 let isLoggingOut = false;
+let isConfirmingRelogin = false;
 let testNotification: Notification | null = null;
 
 /** 壳页面入口加载：dev 走 vite dev server，打包后加载本地 index.html；hash 区分页面角色 */
@@ -444,9 +445,10 @@ function createLoginWindow(): void {
   });
   // macOS 隐藏原生红绿灯后由页面自绘 × 关闭按钮（app:close-login）
   if (process.platform === 'darwin') loginWindow.setWindowButtonVisibility(false);
-  loginWindow.once('ready-to-show', () => loginWindow?.show());
-  loginWindow.on('closed', () => {
-    loginWindow = null;
+  const createdLoginWindow = loginWindow;
+  createdLoginWindow.once('ready-to-show', () => { if (!createdLoginWindow.isDestroyed()) createdLoginWindow.show(); });
+  createdLoginWindow.on('closed', () => {
+    if (loginWindow === createdLoginWindow) loginWindow = null;
   });
   if (isDevMode()) void loginWindow.loadURL(DEV_SERVER_URL);
   else void loginWindow.loadFile(join(__dirname, '../renderer/index.html'));
@@ -542,9 +544,11 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     if (!isShellUrl(url)) event.preventDefault();
   });
 
+  const createdMainWindow = mainWindow;
+  const previousLoginWindow = loginWindow;
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-    loginWindow?.close();
+    if (getSession() && !createdMainWindow.isDestroyed()) createdMainWindow.show();
+    if (previousLoginWindow && !previousLoginWindow.isDestroyed()) previousLoginWindow.close();
   });
   if (process.platform === 'darwin') {
     // 最小化/隐藏（托盘）/还原/显示期间切换背景态，见 applyMacMainWindowBackdrop 注释
@@ -580,7 +584,7 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   });
   mainWindow.on('closed', () => {
     pendingEntry = null;
-    mainWindow = null;
+    if (mainWindow === createdMainWindow) mainWindow = null;
   });
   loadShellEntry(mainWindow, MAIN_WINDOW_HASH);
 }
@@ -611,10 +615,11 @@ function applyWindowTheme(): void {
  * userId/用户名/子账号、经 listMyLivingUsers 取账套名称并暖账套列表缓存；失败不阻断登录
  * （userId 空时未读通知降级，resolveUserDisplay 兜底重试；corpName 空时渲染层回落账套号）。
  */
-async function keepSession(serverBase: string, result: LoginResult): Promise<void> {
+async function keepSession(serverBase: string, result: LoginResult, loginId: string): Promise<void> {
   const config = getConfig();
   const session: SessionInfo = {
     serverBase,
+    loginId,
     token: result.token,
     // 原始登录 token：账套切换始终用它换新 token（getNuewToken 换出的永久 token 不能再作换票凭据）
     rootToken: result.token,
@@ -734,7 +739,7 @@ function performLogout(): void {
   isLoggingOut = false;
   const closing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (!closing) return;
-  if (loginWindow) loginWindow.once('ready-to-show', () => closing.close());
+  if (loginWindow) loginWindow.once('ready-to-show', () => { if (!closing.isDestroyed()) closing.close(); });
   else closing.close();
 }
 
@@ -981,7 +986,7 @@ function registerIpcHandlers(): void {
         console.warn('[auth] 记录历史账号失败（不影响登录）：', error);
       }
       // 竞态守卫：等待期间可能已有会话（如自动登录先成功开窗），迟到的成功不再开第二扇主窗
-      if (!getSession()) await keepSession(serverBase, result.data);
+      if (!getSession()) await keepSession(serverBase, result.data, loginId);
     }
     return result;
   });
@@ -1034,7 +1039,7 @@ function registerIpcHandlers(): void {
       } catch (error) {
         console.warn('[auth] 刷新历史账号最近登录时间失败（不影响登录）：', error);
       }
-      if (!getSession()) await keepSession(config.serverBase, result.data);
+      if (!getSession()) await keepSession(config.serverBase, result.data, config.savedLoginId);
     }
     return result;
   });
@@ -1088,6 +1093,28 @@ function registerIpcHandlers(): void {
   ipcMain.handle('auth:logout', (event) => {
     if (event.sender !== mainWindow?.webContents || !isShellUrl(event.sender.getURL())) return;
     performLogout();
+  });
+
+  ipcMain.handle('auth:relogin', async (event) => {
+    const owner = mainWindow;
+    if (!owner || event.sender !== owner.webContents || !isShellUrl(event.sender.getURL())) return invalid('无权重新登录');
+    if (isConfirmingRelogin || isLoggingOut) return invalid('正在处理重新登录，请稍候');
+    if (corpSwitch.getActive()) return invalid('正在切换或核验账套，请稍后重试');
+    const session = getSession();
+    if (!session) return invalid('当前登录已结束');
+    isConfirmingRelogin = true;
+    try {
+      const result = await dialog.showMessageBox(owner, {
+        type: 'warning', title: '重新登录', message: '返回登录页？',
+        detail: '请先保存需要保留的表单。继续将关闭全部业务标签并退出当前登录，随后可更换账号或服务器。网络不可用时也会完成本地退出。',
+        buttons: ['取消，返回保存', '退出并重新登录'], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      if (result.response !== 1) return { ok: true, data: false };
+      if (getSession() !== session || owner.isDestroyed()) return invalid('登录状态已变化，请重试');
+      if (corpSwitch.getActive()) return invalid('正在切换或核验账套，请稍后重试');
+      performLogout();
+      return { ok: true, data: true };
+    } finally { isConfirmingRelogin = false; }
   });
 
   // 一键反馈：主窗整窗截图写剪贴板（渲染层负责入口与提示文案）
@@ -1165,6 +1192,8 @@ function registerTabsIpcHandlers(): void {
     let rawUrl = '';
     if (typed.home === true) {
       rawUrl = buildErpUrl(session, session.homeForm);
+    } else if (typed.page === 'accounts' || typed.page === 'messages') {
+      rawUrl = buildErpUrl(session, typed.page === 'accounts' ? 'TFrmChooseAccount' : 'FrmMyMessage');
     } else if (typed.ai === true) {
       rawUrl = buildAiUrl(session, currentAiBase());
     } else {

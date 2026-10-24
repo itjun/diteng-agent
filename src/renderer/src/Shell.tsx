@@ -10,6 +10,7 @@ import type {
 import type { WebviewDomEvent, WebviewElement } from './env';
 import {
   AlertIcon,
+  AccountBookIcon,
   BackIcon,
   CameraIcon,
   ChatIcon,
@@ -47,7 +48,7 @@ interface NavigationState {
   canGoForward: boolean;
 }
 
-/** 一键反馈提示：成功时引导粘贴给客服，失败时展示主进程给出的原因 */
+/** 反馈提示：成功时引导粘贴到聊天窗口，失败时展示主进程给出的原因 */
 interface FeedbackToast {
   kind: 'ok' | 'fail';
   title: string;
@@ -102,6 +103,11 @@ export function Shell() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [activeTabId, setActiveTabId] = useState('');
   const [session, setSession] = useState<SessionSummary | null>(null);
+  const [isReloggingIn, setIsReloggingIn] = useState(false);
+  const isReloggingInRef = useRef(false);
+  const isOpeningWorkspaceRef = useRef(false);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   // 0=未自定义；旧版手动保存的宽度继续尊重，双击恢复紧凑默认宽度。
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -239,11 +245,50 @@ export function Shell() {
     }
   }, [openTab, updateTab]);
 
-  /** 右上角 Chat 走真实 AI 助手路由；设置页中点击时先回到标签视图 */
-  const openChat = useCallback(() => {
-    setIsSettingsOpen(false);
-    void resolveAndOpen({ ai: true });
-  }, [resolveAndOpen]);
+  /** 固定入口复用当前账套已有页面；普通业务链接仍允许多标签。 */
+  const openWorkspace = useCallback(async (destination: 'ai' | 'accounts' | 'messages') => {
+    if (isOpeningWorkspaceRef.current) return;
+    isOpeningWorkspaceRef.current = true;
+    try {
+      const result = await window.diteng.tabsResolve(destination === 'ai' ? { ai: true } : { page: destination });
+      if (!result.ok) {
+        setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: result.message });
+        return;
+      }
+      if (result.action !== 'in-app') return;
+      const target = new URL(result.url);
+      const existing = tabsRef.current.find((tab) => {
+        if (!tab.url || tab.corpNo !== result.corpNo) return false;
+        try {
+          const url = new URL(tab.url);
+          return url.pathname === target.pathname && (destination !== 'ai' || url.origin === target.origin);
+        } catch { return false; }
+      });
+      setIsSettingsOpen(false);
+      if (existing) setActiveTabId(existing.id);
+      else openTab(result.url, result.corpNo);
+    } catch {
+      setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: '请检查登录状态后重试' });
+    } finally { isOpeningWorkspaceRef.current = false; }
+  }, [openTab]);
+
+  const openChat = useCallback(() => { void openWorkspace('ai'); }, [openWorkspace]);
+  const openAccounts = useCallback(() => { void openWorkspace('accounts'); }, [openWorkspace]);
+
+  const relogin = useCallback(async () => {
+    if (isReloggingInRef.current) return;
+    isReloggingInRef.current = true;
+    setIsReloggingIn(true);
+    try {
+      const result = await window.diteng.relogin();
+      if (!result.ok) setFeedbackToast({ kind: 'fail', title: '无法重新登录', desc: result.message });
+    } catch {
+      setFeedbackToast({ kind: 'fail', title: '无法重新登录', desc: '请稍后重试' });
+    } finally {
+      isReloggingInRef.current = false;
+      setIsReloggingIn(false);
+    }
+  }, []);
 
   /**
    * 一键反馈：主进程把整个主窗画面（rail + 工具栏 + 当前页）截图写入系统剪贴板，
@@ -303,9 +348,6 @@ export function Shell() {
     };
   }, [openTab, resolveAndOpen]);
 
-  // 网页版切账套：主进程完成会话同步后推送 session:changed，账套号变化即意味着旧账套标签
-  // 在新 token 下已无访问权。切换发生在当前可见标签，故保留该标签、关闭其余全部标签（含 AI 标签）；
-  // 首次拿到会话与仅名称/用户信息回填（账套号不变）不动标签。
   useEffect(() => window.diteng.onCorpSwitchCommitted(payload => {
     const source = [...webviewRefs.current.entries()].find(([,view]) => {
       try { return view.getWebContentsId() === payload.sourceWebContentsId; } catch { return false; }
@@ -371,9 +413,12 @@ export function Shell() {
     };
   }, [tabs, activeTabId]);
 
-  /** 进设置页（rail 齿轮唯一入口；外观/主题等统一在设置页处理） */
+  /** 设置齿轮保留上次分类；身份入口直接进入账号分类。 */
   const openSettings = useCallback(() => {
-    setSettingsCategory(DEFAULT_SETTINGS_CATEGORY);
+    setIsSettingsOpen(true);
+  }, []);
+  const openAccountSettings = useCallback(() => {
+    setSettingsCategory('account');
     setIsSettingsOpen(true);
   }, []);
 
@@ -386,7 +431,7 @@ export function Shell() {
     setSettingsCategory(category);
   }, []);
 
-  // 应用快捷键由主进程统一拦截（含 webview guest 焦点），这里执行标签与设置动作。
+  // 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 进入设置页。
   useEffect(() => {
     const unsubscribe = window.diteng.onShortcut((action: ShortcutAction) => {
       if (action === 'toggle-rail') toggleRail();
@@ -465,8 +510,8 @@ export function Shell() {
     return () => clearTimeout(timer);
   }, [feedbackToast]);
 
-  // 底部用户行显示名：当前账套名称优先，名称未下发时回落账套代码
   const corpDisplayName = session?.corpName || session?.corpNo || '未登录';
+  const userDisplayName = session?.userName || session?.loginId || '登录用户';
 
   // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，地址栏显示新建标签页）
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -544,12 +589,22 @@ export function Shell() {
                 </div>
               </>
             )}
-            {/* 底部用户行只在标签视图出现：设置态 rail 由设置导航接管，账号卡片与齿轮都是重复入口 */}
-            {(!isSettingsOpen || isRailCollapsed) && (
-              <div className={styles.railFooter}>
-                <UserChip session={session} displayName={corpDisplayName} onOpenSettings={openSettings} />
+            <div className={styles.railFooter}>
+              <button type="button" className={styles.railAction} data-testid="switch-account" onClick={openAccounts}
+                title={`当前账套 ${corpDisplayName}（${session?.corpNo ?? ''}）· 切换账套`} aria-label={`当前账套 ${corpDisplayName}，切换账套`}>
+                <AccountBookIcon />
+                <span className={styles.railActionText}><small>当前账套 · {session?.corpNo || '—'}</small><strong>{corpDisplayName}</strong></span>
+                <span className={styles.railActionHint}>切换</span>
+              </button>
+              <div className={styles.identityRow}>
+                <button type="button" className={styles.identityButton} data-testid="user-chip" onClick={openAccountSettings}
+                  title={`登录用户 ${userDisplayName} · 账号与账套`} aria-label={`登录用户 ${userDisplayName}，查看账号与账套`}>
+                  <span className={styles.userAvatar} aria-hidden="true">{userDisplayName.charAt(0)}</span>
+                  <span className={styles.railActionText}><strong>{userDisplayName}</strong><small>{session?.loginId || '查看登录身份'}</small></span>
+                </button>
+                <button type="button" className={styles.settingsButton} data-testid="open-settings" onClick={openSettings} title="设置" aria-label="打开设置"><SettingsIcon /></button>
               </div>
-            )}
+            </div>
           </aside>
 
         {/* 设置页直接接管内容区，不再复用浏览器工具栏；返回标签视图后恢复 webview 内容 */}
@@ -599,12 +654,14 @@ export function Shell() {
               )}
             </div>
           </div>
+
           {isSettingsOpen && (
             <>
-              <SettingsPage session={session} activeCategory={settingsCategory} />
+              <SettingsPage session={session} activeCategory={settingsCategory}
+                onAccounts={openAccounts} onRelogin={() => void relogin()} isReloggingIn={isReloggingIn} />
             </>
           )}
-          {/* 一键反馈结果提示：成功引导用户直接粘贴给客服；浮在内容区底部，不占布局 */}
+          {/* 一键反馈结果提示：复制/启动聊天应用后引导粘贴；浮在内容区底部，不占布局 */}
           {feedbackToast && (
             <div
               className={styles.feedbackToast}
@@ -640,6 +697,7 @@ export function Shell() {
             </div>
           )}
         </main>
+
       </div>
     </div>
   );
@@ -830,23 +888,6 @@ function RailTab({ tab, label, isActive, onClose, onActivate, onReload, onCloseO
   );
 }
 
-/** 账户行直接打开设置；退出入口只在右侧网页版提供。 */
-function UserChip({ session, displayName, onOpenSettings }: {
-  session: SessionSummary | null;
-  displayName: string;
-  onOpenSettings: () => void;
-}) {
-  const corpLabel = session?.corpName ? `${session.corpName}（${session.corpNo}）` : (session?.corpNo ?? '未登录');
-  return (
-    <button type="button" className={`${styles.userChip} ${styles.userChipRail}`} data-testid="user-chip"
-      onClick={onOpenSettings} title={`当前账套 ${corpLabel} · 打开设置`} aria-label={`当前账套 ${corpLabel}，打开设置`}>
-      <span className={styles.userAvatar} aria-hidden="true">{displayName.charAt(0)}</span>
-      <span className={styles.userChipName}>{displayName}</span>
-      <span className={styles.userGear} data-testid="open-settings" aria-hidden="true"><SettingsIcon /></span>
-    </button>
-  );
-}
-
 /** 两栏工具栏图标按钮：32px 方形命中区，hover 才出现柔和底色 */
 function ToolbarButton({
   label,
@@ -1014,8 +1055,8 @@ function ContentToolbar({
         className={styles.toolbarFeedback}
         data-testid="feedback-button"
         onClick={onFeedback}
-        title="一键反馈：把当前画面截图复制到剪贴板，粘贴给客服即可"
-        aria-label="一键反馈（截图复制到剪贴板）"
+        title="一键反馈：截图后可标注，再复制并打开微信/企业微信粘贴发送"
+        aria-label="一键反馈（截图标注后复制给客服）"
       >
         <span className={styles.toolbarFeedbackIcon}>
           <CameraIcon />

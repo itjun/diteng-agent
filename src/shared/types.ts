@@ -150,6 +150,8 @@ export interface LoginSendCodeRequest {
  */
 export interface SessionInfo {
   serverBase: string;
+  /** 本次登录实际输入的账号，切账套后保留，不作为凭据使用 */
+  loginId?: string;
   token: string;
   /** 原始登录 token（账套切换的换票根凭据），登录时等于 token，切换后不变 */
   rootToken: string;
@@ -168,6 +170,7 @@ export interface SessionInfo {
 /** renderer 可见的会话摘要（不含 token 等凭据，仅展示用） */
 export interface SessionSummary {
   serverBase: string;
+  loginId?: string;
   userId: string;
   corpNo: string;
   /** 当前账套名称（账套列表 ShortName_ 优先、否则 Name_）；空串表示未知，渲染层可回落 corpNo */
@@ -222,6 +225,7 @@ export interface TabsResolveRequest {
   url?: string;
   home?: boolean;
   ai?: boolean;
+  page?: 'accounts' | 'messages';
   corpNo?: string;
 }
 
@@ -344,6 +348,8 @@ export interface DitengApi {
    * 清会话、断 MQTT、销毁托盘后关主窗回登录窗。主窗随即销毁，返回值不保证送达。
    */
   logout(): Promise<void>;
+  /** 主窗本地入口：确认放弃未保存页面后回登录窗；取消返回 false */
+  relogin(): Promise<ApiCallResult<boolean>>;
   /** 当前会话摘要；未登录返回 null */
   getSession(): Promise<SessionSummary | null>;
   /** 请求开 URL（地址栏 / guest window.open / 消息中心 / 快捷入口）：主进程做分类与补参 */

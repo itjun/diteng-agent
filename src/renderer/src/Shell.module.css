@@ -738,7 +738,11 @@
 /* 底部账套身份与设置入口 */
 .railFooter {
   flex: none;
-  padding: 8px 12px 12px;
+  padding: 10px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 /* ============ 底部用户行 + 用户卡片 ============ */
@@ -855,6 +859,34 @@
 
 .railCompact .railFooter { padding: 8px 14px 12px; }
 .railCompact .userChip { justify-content: center; }
+
+.railAction { display: flex; position: relative; align-items: center; gap: 10px; min-height: 50px; width: 100%; padding: 8px; border: 0; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; }
+.railAction > svg { flex: none; color: var(--dsw-alias-label-secondary); }
+.railAction:hover,
+.identityButton:hover,
+.settingsButton:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
+.railActionText { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.railActionText strong,
+.railActionText small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.railActionText strong { font-size: 12px; line-height: 17px; font-weight: 500; color: var(--dsw-alias-label-primary); }
+.railActionText small { font-size: 10px; line-height: 14px; font-weight: 400; color: var(--dsw-alias-label-secondary); }
+.railActionHint { flex: none; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.statusOnline,
+.statusPending { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); vertical-align: 1px; }
+.statusOnline { background: #3f8f6b; }
+.unreadBadge { flex: none; min-width: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--dsw-alias-state-business-primary); color: #fff; font-size: 10px; line-height: 17px; text-align: center; }
+.identityRow { display: flex; align-items: center; gap: 4px; padding-top: 6px; margin-top: 4px; border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.identityButton { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 42px; padding: 6px; border: none; border-radius: var(--dsw-radius-sm); background: transparent; text-align: left; cursor: pointer; }
+.settingsButton { display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.railCompact .railAction { justify-content: center; min-height: 38px; padding: 8px 0; }
+.railCompact .railActionText,
+.railCompact .railActionHint { display: none; }
+.railCompact .unreadBadge { position: absolute; top: 0; right: -5px; }
+.railCompact .identityRow { flex-direction: column; gap: 4px; }
+.railCompact .identityButton { flex: none; width: 32px; height: 32px; min-height: 32px; justify-content: center; padding: 0; }
+.railCompact .identityButton .userAvatar { display: inline-flex; }
+.newTabPage button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
+@media (max-height: 600px) { .railAction { min-height: 38px; } .railActionText small { display: none; } }
 
 .railTabSelect {
   display: flex;

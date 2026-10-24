@@ -1,3 +1,13 @@
+/** 外壳消息入口。 */
+export function BellIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>;
+}
+
+/** 当前账套与切换入口。 */
+export function AccountBookIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="3" width="15" height="18" rx="2" /><path d="M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5" /></svg>;
+}
+
 /** 主题切换图标：登录窗与主窗壳共用 */
 export function SunIcon() {
   return (

@@ -50,6 +50,7 @@ const diteng: DitengApi = {
   closeLoginWindow: () => ipcRenderer.invoke('app:close-login'),
   // 退出登录：主窗随即销毁，回包不保证送达，调用方无需等待结果
   logout: () => ipcRenderer.invoke('auth:logout'),
+  relogin: () => ipcRenderer.invoke('auth:relogin'),
   getSession: () => ipcRenderer.invoke('session:get'),
   tabsResolve: (request) => ipcRenderer.invoke('tabs:resolve', request),
   tabsPopEntry: () => ipcRenderer.invoke('tabs:pop-entry'),

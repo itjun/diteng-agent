@@ -4,9 +4,8 @@ import { ArrowLeftIcon } from './theme-icons';
 import { useThemeSetting } from './use-theme';
 import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
 import styles from './Settings.module.css';
-
-/** 应用版本（与 package.json version 同步；发版时一起改） */
-const APP_VERSION = '0.2.2';
+import { SettingRow } from './SettingRow';
+import { version as APP_VERSION } from '../../../package.json';
 
 /**
  * AI 站点展示推导：与主进程 config.ts resolveAiBase 同规则（仅设置页展示用；
@@ -18,7 +17,7 @@ function deriveAiBase(config: AppConfig): string {
 }
 
 /** 设置分类：key 同时用于 data-testid=settings-nav-{key} */
-export type SettingsCategoryKey = 'account' | 'appearance' | 'connection' | 'about';
+export type SettingsCategoryKey = 'account' | 'appearance' | 'connection' | 'notifications' | 'about';
 
 export interface SettingsCategoryDef {
   key: SettingsCategoryKey;
@@ -26,13 +25,13 @@ export interface SettingsCategoryDef {
   desc: string;
 }
 
-export const DEFAULT_SETTINGS_CATEGORY: SettingsCategoryKey = 'appearance';
+export const DEFAULT_SETTINGS_CATEGORY: SettingsCategoryKey = 'account';
 
-/** 导航顺序即展示顺序：账号 / 外观 / 连接 / 关于 */
+/** 导航顺序即展示顺序。 */
 const CATEGORIES: SettingsCategoryDef[] = [
-  { key: 'account', name: '账号', desc: '登录身份与凭据' },
+  { key: 'account', name: '账号', desc: '登录身份与当前账套' },
   { key: 'appearance', name: '外观', desc: '主题外观' },
-  { key: 'connection', name: '连接', desc: '服务器与 AI 站点' },
+  { key: 'connection', name: '连接', desc: '服务器与设备信息' },
   { key: 'about', name: '关于', desc: '版本与更新' },
 ];
 
@@ -172,15 +171,7 @@ function RowControlView({ control }: { control: RowControl }) {
 
 /** 行式设置项：左「名称 + 次级描述」、右控件，弱分隔线（Cursor 行距） */
 function SettingRowView({ row }: { row: SettingRowDef }) {
-  return (
-    <div className={styles.row}>
-      <div className={styles.rowMain}>
-        <div className={styles.rowTitle}>{row.title}</div>
-        {row.desc && <div className={styles.rowDesc}>{row.desc}</div>}
-      </div>
-      <RowControlView control={row.control} />
-    </div>
-  );
+  return <SettingRow title={row.title} desc={row.desc}><RowControlView control={row.control} /></SettingRow>;
 }
 
 /** 一组设置行共用一张卡片，避免行内容直接散落在整页背景上。 */
@@ -195,10 +186,9 @@ function SettingRows({ rows }: { rows: SettingRowDef[] }) {
   );
 }
 
-/** 账号页顶部大卡片：圆形头像 + 账套名称/账套代码，身份只读展示，退出入口统一保留在网页版 */
-function ProfileCard({ corpName, corpNo }: { corpName: string; corpNo: string }) {
-  // 账套名称由会话摘要下发，主进程尚未取到时回落账套号，避免大标题空白
-  const name = corpName || corpNo;
+/** 登录用户与账套独立展示，不把企业名称当成用户身份。 */
+function ProfileCard({ session }: { session: SessionSummary | null }) {
+  const name = session?.userName || session?.loginId || '登录用户';
   return (
     <div className={styles.profileCard}>
       <div className={styles.profileMain}>
@@ -206,11 +196,11 @@ function ProfileCard({ corpName, corpNo }: { corpName: string; corpNo: string })
           {name.charAt(0).toUpperCase()}
         </span>
         <div className={styles.profileMeta}>
-          <div className={styles.profileName} data-testid="settings-corp-name">
+          <div className={styles.profileName} data-testid="settings-user-name">
             {name || '—'}
           </div>
-          <div className={styles.profileCode} data-testid="settings-corp-no">
-            {corpNo || '—'}
+          <div className={styles.profileCode} data-testid="settings-login-id">
+            登录账号 · {session?.loginId || '暂未获取'}
           </div>
         </div>
       </div>
@@ -221,25 +211,30 @@ function ProfileCard({ corpName, corpNo }: { corpName: string; corpNo: string })
 /**
  * 设置内容区（壳内视图，替换 webview 区域；左侧 rail 由 SettingsRail 复用）：
  * 分类大标题 + 副标题 + 行式设置项居中展示。
- * v1 内容：账号（大卡片 + 设备码）、外观（主题）、连接（只读，变更入口统一在登录页）、关于。
+ * 登录身份与当前账套分别展示；会话恢复不依赖内嵌网页。
  */
 export function SettingsPage({
   session,
   activeCategory,
+  onAccounts,
+  onRelogin,
+  isReloggingIn,
 }: {
   session: SessionSummary | null;
   activeCategory: SettingsCategoryKey;
+  onAccounts: () => void;
+  onRelogin: () => void;
+  isReloggingIn: boolean;
 }) {
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configError, setConfigError] = useState('');
   const { themeSetting, setTheme } = useThemeSetting();
 
   // 账套名称随会话摘要下发；session:changed 推送后 Shell 更新 session，本页随之重渲染
   useEffect(() => {
-    void window.diteng.getConfig().then(setConfig);
+    void window.diteng.getConfig().then(setConfig).catch(() => setConfigError('无法读取客户端设置，请返回后重试'));
   }, []);
 
-  const corpName = session?.corpName ?? '';
-  const corpNo = session?.corpNo ?? '';
   const activeCat = categoryOf(activeCategory);
 
   /** 外围颜色：立即改 DOM（CSS 按 data-chrome-color 取混色）并落盘，无需重启 */
@@ -250,14 +245,7 @@ export function SettingsPage({
   }
 
   const rowsByCategory: Record<SettingsCategoryKey, SettingRowDef[]> = {
-    account: [
-      {
-        key: 'device',
-        title: '设备码',
-        desc: '设备在服务端的唯一标识（展示前 8 位）',
-        control: { kind: 'value', text: config ? config.machineCode.slice(0, 8) : '' },
-      },
-    ],
+    account: [],
     appearance: [
       {
         key: 'theme',
@@ -296,16 +284,21 @@ export function SettingsPage({
       {
         key: 'server-base',
         title: '服务器地址',
-        desc: '修改后需重新登录，请在登录页修改',
+        desc: '当前登录使用的服务器',
         control: { kind: 'value', testid: 'settings-server-base', text: config?.serverBase ?? '' },
       },
       {
         key: 'ai-base',
         title: 'AI 站点',
-        desc: '未手动设置时按服务器地址推导',
+        desc: '当前账套的 AI 助手站点',
         control: { kind: 'value', testid: 'settings-ai-base', text: config ? deriveAiBase(config) : '' },
       },
+      {
+        key: 'device', title: '设备标识', desc: '联系客服排查登录问题时使用（前 8 位）',
+        control: { kind: 'value', text: config ? config.machineCode.slice(0, 8) : '—' },
+      },
     ],
+    notifications: [],
     about: [
       {
         key: 'version',
@@ -332,8 +325,37 @@ export function SettingsPage({
             <p className={styles.pageDesc}>{activeCat.desc}</p>
           </header>
           <div className={styles.pageContent}>
-            {activeCategory === 'account' && <ProfileCard corpName={corpName} corpNo={corpNo} />}
+            {configError && <p className={styles.error} role="alert">{configError}</p>}
+            {activeCategory === 'account' && <>
+              <section className={styles.section} aria-label="登录身份">
+                <h3 className={styles.sectionTitle}>登录身份</h3>
+                <ProfileCard session={session} />
+              </section>
+              <section className={styles.section} aria-label="当前账套">
+                <h3 className={styles.sectionTitle}>当前账套</h3>
+                <div className={styles.rowGroup}>
+                  <SettingRow title={session?.corpName || session?.corpNo || '暂未获取账套'} desc={`账套编号 · ${session?.corpNo || '—'}`}>
+                    <button type="button" className={styles.actionButton} data-testid="settings-switch-account" onClick={onAccounts} disabled={!session}>切换账套</button>
+                  </SettingRow>
+                  <SettingRow title="账套账号"><span className={styles.rowValue} data-testid="settings-user-code">{session?.userCode || '—'}</span></SettingRow>
+                </div>
+                <p className={styles.sectionNote}>切换前请保存表单。切换成功后，只保留新账套页面，其余标签将关闭。</p>
+              </section>
+              <section className={styles.section} aria-label="登录管理">
+                <h3 className={styles.sectionTitle}>登录管理</h3>
+                <div className={styles.rowGroup}>
+                  <SettingRow title="重新登录" desc="更换账号，或在网页无法打开时恢复登录。">
+                    <button type="button" className={styles.actionButton} data-testid="settings-relogin" disabled={isReloggingIn} onClick={onRelogin}>{isReloggingIn ? '正在处理…' : '重新登录'}</button>
+                  </SettingRow>
+                </div>
+              </section>
+            </>}
             <SettingRows rows={rowsByCategory[activeCategory]} />
+            {activeCategory === 'connection' && <div className={styles.rowGroup}>
+              <SettingRow title="更换服务器" desc="先退出当前登录，再在登录页填写新的服务器地址。">
+                <button type="button" className={styles.actionButton} data-testid="settings-change-server" disabled={isReloggingIn} onClick={onRelogin}>更换服务器</button>
+              </SettingRow>
+            </div>}
           </div>
         </div>
       </main>
