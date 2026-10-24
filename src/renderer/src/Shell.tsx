@@ -37,9 +37,9 @@ import { pageLabel, shareablePageUrl, tabLabel } from './shell-presentation';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
-const DEFAULT_RAIL_WIDTH = 300;
-/** macOS 左栏要容纳红绿灯让位与整组导航按钮，避免窄栏裁切。 */
-const RAIL_WIDTH_MIN = isMacPlatform ? 272 : 200;
+const DEFAULT_RAIL_WIDTH = 224;
+/** 导航已移至内容区，侧栏只需容纳红绿灯和展开开关。 */
+const RAIL_WIDTH_MIN = 200;
 const RAIL_WIDTH_MAX = 480;
 
 interface NavigationState {
@@ -93,7 +93,7 @@ function corpNoOfUrl(url: string): string {
  * 主窗壳：左侧竖向标签栏（rail）+ 内容区都在渲染层，每 tab 一个 <webview>（页内合成，与 macOS 整窗 vibrancy 兼容）。
  * 标签状态（id/url/title/favicon/corpNo/isLoading）归渲染层，标题/favicon/loading 由 webview 元素事件维护；
  * URL 策略（分类 + 同域补 sid）归主进程：任何开标签入口先经 tabs:resolve 拿最终 URL 再建 webview。
- * 左栏拥有独立顶部工具区；右栏另起地址与 Chat，两栏从窗口顶部到底部完全分开。
+ * 左栏拥有独立顶部工具区；右栏另起页面信息与助手入口，两栏从窗口顶部到底部完全分开。
  * 壳内另有「设置页」视图：rail 原地切换为设置导航，内容区替换为设置项（webview 隐藏不销毁），
  * ESC/返回切回标签视图。
  * 关闭到 0 个 tab 时内容区被新建标签页覆盖，窗口不销毁。
@@ -102,8 +102,8 @@ export function Shell() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [activeTabId, setActiveTabId] = useState('');
   const [session, setSession] = useState<SessionSummary | null>(null);
-  // 侧栏宽度：默认 300 对齐 Cursor/VS Code 侧栏默认宽度；0=未自定义（双击手柄复位时写 0）
-  const [railWidth, setRailWidth] = useState(300);
+  // 0=未自定义；旧版手动保存的宽度继续尊重，双击恢复紧凑默认宽度。
+  const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsCategory, setSettingsCategory] =
     useState<SettingsCategoryKey>(DEFAULT_SETTINGS_CATEGORY);
@@ -398,7 +398,7 @@ export function Shell() {
 
   // ===== 侧栏宽度拖拽：拖拽期间盖全窗透明盾牌（z-index 高于一切，含 webview），
   // 否则指针移入 webview 区域后事件被路由进 guest 进程，宿主页收不到 move/up（真实拖拽同样会卡住）；
-  // 松手持久化；双击手柄复位默认 300（写 0=跟随默认） =====
+  // 松手持久化；双击手柄复位默认 224（写 0=跟随默认） =====
   const railDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // 手动双击识别：盾牌会让原生 dblclick 的两次 click 目标不一致（第二次被盾牌接走），不能依赖 onDoubleClick
   const railLastDownRef = useRef<{ x: number; t: number } | null>(null);
@@ -485,23 +485,23 @@ export function Shell() {
         />
       )}
       <div className={styles.workspace}>
-        {!isRailCollapsed && (
-          <aside className={styles.rail} data-testid="tabstrip" style={{ width: railWidth }}>
-            <SidebarToolbar onToggleRail={toggleRail} />
-            {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 300 */}
-            <div
+        <aside className={`${styles.rail} ${isRailCollapsed ? styles.railCompact : ''}`} data-testid="tabstrip" data-collapsed={isRailCollapsed} style={{ width: isRailCollapsed ? 76 : railWidth }}>
+            <SidebarToolbar isCollapsed={isRailCollapsed} onToggleRail={toggleRail} />
+            {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 224 */}
+            {!isRailCollapsed && <div
               className={styles.railResizeHandle}
               data-testid="rail-resize-handle"
               role="separator"
               aria-orientation="vertical"
               aria-label="调整标签栏宽度（双击恢复默认）"
               onPointerDown={handleRailResizeStart}
-            />
+            />}
             {isSettingsOpen ? (
               <SettingsRail
                 activeCategory={settingsCategory}
                 onSelectCategory={selectSettingsCategory}
                 onBack={closeSettings}
+                isCompact={isRailCollapsed}
               />
             ) : (
               <>
@@ -536,13 +536,12 @@ export function Shell() {
               </>
             )}
             {/* 底部用户行只在标签视图出现：设置态 rail 由设置导航接管，账号卡片与齿轮都是重复入口 */}
-            {!isSettingsOpen && (
+            {(!isSettingsOpen || isRailCollapsed) && (
               <div className={styles.railFooter}>
                 <UserChip session={session} displayName={corpDisplayName} onOpenSettings={openSettings} />
               </div>
             )}
           </aside>
-        )}
 
         {/* 设置页直接接管内容区，不再复用浏览器工具栏；返回标签视图后恢复 webview 内容 */}
         <main className={isSettingsOpen ? `${styles.body} ${styles.bodySettings}` : styles.body}>
@@ -559,8 +558,6 @@ export function Shell() {
               <ContentToolbar
                 url={activeTab?.url ?? ''}
                 pageTitle={activeTab?.title ?? ''}
-                showSidebarToggle={isRailCollapsed}
-                onToggleRail={toggleRail}
                 canGoBack={Boolean(activeTab) && navigationState.canGoBack}
                 canGoForward={Boolean(activeTab) && navigationState.canGoForward}
                 isLoading={Boolean(activeTab?.isLoading)}
@@ -595,13 +592,6 @@ export function Shell() {
           </div>
           {isSettingsOpen && (
             <>
-              {isRailCollapsed && (
-                <div className={styles.settingsRailToggle}>
-                  <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={toggleRail}>
-                    <SidebarToggleIcon />
-                  </ToolbarButton>
-                </div>
-              )}
               <SettingsPage session={session} activeCategory={settingsCategory} />
             </>
           )}
@@ -883,7 +873,7 @@ function ToolbarButton({
 }
 
 /** 左侧栏顶部只负责栏开关，按钮贴 rail 右上角（对齐 DeepSeek Harness 顶栏）；页面导航与地址栏留在右侧内容区。 */
-function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
+function SidebarToolbar({ onToggleRail, isCollapsed }: { onToggleRail: () => void; isCollapsed: boolean }) {
   return (
     <div
       className={styles.sidebarToolbar}
@@ -892,9 +882,9 @@ function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
       aria-label="侧栏工具栏"
     >
       <ToolbarButton
-        label="收起侧栏"
+        label={isCollapsed ? '展开侧栏' : '收起侧栏'}
         testId="sidebar-toggle"
-        pressed
+        pressed={!isCollapsed}
         className={styles.railToggleButton}
         onClick={onToggleRail}
       >
@@ -911,8 +901,6 @@ function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
 function ContentToolbar({
   url,
   pageTitle,
-  showSidebarToggle,
-  onToggleRail,
   canGoBack,
   canGoForward,
   isLoading,
@@ -927,8 +915,6 @@ function ContentToolbar({
 }: {
   url: string;
   pageTitle: string;
-  showSidebarToggle: boolean;
-  onToggleRail: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
   isLoading: boolean;
@@ -968,18 +954,11 @@ function ContentToolbar({
   const siteName = safeUrl ? new URL(safeUrl).host : '';
   return (
     <div
-      className={[styles.contentToolbar, showSidebarToggle ? styles.contentToolbarCollapsed : '']
-        .filter(Boolean)
-        .join(' ')}
+      className={styles.contentToolbar}
       data-testid="browser-toolbar"
       role="toolbar"
       aria-label="浏览器工具栏"
     >
-      {showSidebarToggle && (
-        <ToolbarButton label="展开侧栏" testId="sidebar-toggle" pressed={false} onClick={onToggleRail}>
-          <SidebarToggleIcon />
-        </ToolbarButton>
-      )}
       <div className={styles.toolbarNav}>
         <ToolbarButton label="后退" testId="nav-back" disabled={!canGoBack} onClick={onBack}>
           <BackIcon />

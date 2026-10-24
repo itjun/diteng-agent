@@ -8,7 +8,7 @@
  * 4. 深色网页自动切深色工具条文字（tone=dark），浅色网页用深色文字；
  * 5. 设置页卡片与网页卡片同规格（四边 5px）；
  * 6. Chat 图标颜色跟随外围颜色（设置页选海蓝 → 图标变 #3b6fd4）；
- * 7. 收起侧栏后卡片满宽仍四边 5px；
+ * 7. 收起侧栏后保留 76px 窄栏，卡片仍四边 5px；
  * 8. 多标签按标签缓存底色，切换标签即时换色。
  *
  * 安全边界（硬性）：
@@ -414,7 +414,7 @@ try {
     `fill=${chatAccent.iconFill} stroke=${chatAccent.iconStroke}`,
   );
 
-  // 4. 收起侧栏：卡片满宽仍四边 5px
+  // 4. 收起侧栏：保留窄栏，卡片仍四边 5px
   await shell.click('[data-testid="sidebar-toggle"]');
   await sleep(500);
   const collapsed = await shell.evaluate(() => {
@@ -426,7 +426,7 @@ try {
   check(
     '收起侧栏后卡片仍四边 5px',
     Boolean(collapsed) &&
-      Math.abs(collapsed.x - 5) < 1.5 &&
+      Math.abs(collapsed.x - 81) < 1.5 &&
       Math.abs(collapsed.y - 5) < 1.5 &&
       Math.abs(collapsed.width - collapsed.right - 5) < 1.5 &&
       Math.abs(collapsed.height - collapsed.bottom - 5) < 1.5,

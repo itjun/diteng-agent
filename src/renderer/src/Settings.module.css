@@ -98,13 +98,13 @@
 }
 
 .navItemActive {
-  background: var(--dsw-specific-sidebar-nav-item-active);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, var(--dsw-specific-sidebar-nav-item-active));
 }
 
 .navName {
   font-size: 13px;
   line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .navItem:hover .navName,
@@ -113,9 +113,9 @@
 }
 
 .navDesc {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 15px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* ============ 内容区：分类内容（滚动区） ============ */
@@ -138,7 +138,7 @@
   margin: 0 auto;
   box-sizing: border-box;
   /* 与左侧返回入口同一视觉行，但不绘制横向工具栏。 */
-  padding: 76px 48px 56px;
+  padding: 48px clamp(20px, 4vw, 48px) 40px;
 }
 
 /* 分类页大标题 + 副标题：字号明显大于行名（Cursor 层级） */
@@ -158,7 +158,7 @@
   margin: 4px 0 0;
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .pageContent {
@@ -202,9 +202,9 @@
 
 .rowDesc {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .rowValue {
@@ -270,7 +270,7 @@
 .profileCode {
   font-size: 12px;
   line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* ============ 控件 ============ */
@@ -352,3 +352,18 @@
   font-size: 12px;
   cursor: not-allowed;
 }
+
+.navItemActive .navName { font-weight: 600; }
+.settingsRail button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+@media (max-width: 1000px) {
+  .row { flex-wrap: wrap; gap: 12px; }
+  .rowValue { max-width: 100%; }
+  .swatches { flex-wrap: wrap; }
+}
+
+.settingsRailCompact .back { padding: 0; justify-content: center; }
+.settingsRailCompact .back span,
+.settingsRailCompact .navDesc { display: none; }
+.settingsRailCompact .nav { padding-inline: 8px; }
+.settingsRailCompact .navItem,
+.settingsRailCompact .navItemActive { padding: 10px 4px; align-items: center; }

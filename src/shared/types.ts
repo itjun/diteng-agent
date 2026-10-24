@@ -47,7 +47,7 @@ export interface AppConfig {
   chromeColor: ChromeColor;
   /** 上次关闭时的主窗大小；null = 从未记录（首启用主屏工作区 80% 作默认）。仅主进程读写 */
   windowBounds: WindowBounds | null;
-  /** 左侧标签栏宽度；0 = 未自定义（用默认 300，对齐 Cursor/VS Code 侧栏默认宽度）。仅渲染层使用 */
+  /** 左侧标签栏宽度；0 = 未自定义（用默认 224，保留旧版自定义宽度）。仅渲染层使用 */
   railWidth: number;
   /** 登录页「记住密码」勾选状态（通用软件两勾选设计），默认 true */
   rememberPassword: boolean;

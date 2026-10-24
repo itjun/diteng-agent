@@ -181,11 +181,6 @@
   padding-left: 84px;
 }
 
-/* rail 收起后，右侧工具栏临时提供展开入口，同时继续避开红绿灯 */
-:global(html[data-platform='darwin']) .contentToolbarCollapsed {
-  padding-left: 84px;
-}
-
 /* 32px 方形图标命中区：克制的 hover 底色，不用描边按钮 */
 .toolbarButton {
   display: inline-flex;
@@ -241,7 +236,7 @@
   gap: 4px;
   flex: 1;
   height: 32px;
-  min-width: 100px;
+  min-width: 0;
   margin: 0 8px 0 4px;
   padding: 0 4px 0 9px;
   box-sizing: border-box;
@@ -261,9 +256,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .toolbarCopy {
@@ -418,7 +413,7 @@
   border: none;
 }
 
-/* 新建标签页：0 个 tab 时覆盖内容区 */
+/* 新建标签页及关闭全部标签后的起始页 */
 .newTabPage {
   position: absolute;
   inset: 0;
@@ -463,7 +458,7 @@
 }
 
 .addressInput::placeholder {
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .addressGo {
@@ -559,7 +554,7 @@
   display: flex;
   flex-direction: column;
   flex: none;
-  /* 宽度由 Shell 按拖拽状态 inline 设置（默认 300，对齐 Cursor/VS Code 侧栏默认宽度） */
+  /* 宽度由 Shell 按拖拽状态 inline 设置（默认 224，保留自定义宽度） */
   box-sizing: border-box;
   background: var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill));
   /* 与右侧外围色同色，去掉竖向分隔线让 rail 与卡片外框连成一条连续边带 */
@@ -607,15 +602,6 @@
 /* 壳根透明让整窗 vibrancy 材质透出，内容区自己铺实底保持不透明（对齐 dsh AppFrame centerCol 做法） */
 :global(html[data-platform='darwin']) .shell {
   background: transparent;
-}
-
-/* 设置页收起 rail 后的唯一展开入口：浮在设置卡片右上角，不再生成通栏。 */
-.settingsRailToggle {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 20;
-  -webkit-app-region: no-drag;
 }
 
 /* 侧栏与卡片外框统一使用 sidebar-fill 实底色（与 Windows 版侧栏灰一致），macOS 不再叠加半透明 tint；
@@ -684,9 +670,9 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* 激活项：dsh 侧栏导航选中填充（比左侧强调条更贴既有设计语言） */
+/* 选中标签使用背景填充区分。 */
 .railTabActive {
-  background: var(--dsw-specific-sidebar-nav-item-active);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, var(--dsw-specific-sidebar-nav-item-active));
   color: var(--dsw-alias-label-primary);
 }
 
@@ -720,7 +706,7 @@
   text-align: left;
 }
 
-/* 关闭 ×：hover 才显（opacity 而非 visibility，保证 e2e 点击可定位） */
+/* 关闭按钮在悬停及键盘聚焦时显示。 */
 .railTabClose {
   display: inline-flex;
   align-items: center;
@@ -749,14 +735,13 @@
   opacity: 1;
 }
 
-/* rail 底部：用户行（Cursor 式，扁平无边框，点击弹用户卡片） */
+/* 底部账套身份与设置入口 */
 .railFooter {
   flex: none;
   padding: 8px 12px 12px;
 }
 
 /* ============ 底部用户行 + 用户卡片 ============ */
-
 
 .userChip {
   display: inline-flex;
@@ -823,13 +808,116 @@
   height: 22px;
   flex: none;
   border-radius: var(--dsw-radius-xs);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
 
 .userGear:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+
+/* 窄栏保留标签、助手和设置；macOS 红绿灯仍占据左上角第一行。 */
+.railCompact .sidebarToolbar,
+:global(html[data-platform='darwin']) .railCompact .sidebarToolbar {
+  height: 80px;
+  padding: 38px 0 0;
+  justify-content: center;
+}
+
+.railCompact .railNewTab {
+  justify-content: center;
+  margin: 2px 14px;
+  padding: 0;
+}
+
+.railCompact .railNewTab span,
+.railCompact .railTabTitle,
+.railCompact .userChipName,
+.railCompact .userAvatar {
+  display: none;
+}
+
+.railCompact .railTabSelect {
+  justify-content: center;
+  padding: 0;
+}
+
+.railCompact .railTabClose {
+  position: absolute;
+  right: 0;
+  top: -5px;
+  width: 22px;
+  height: 22px;
+  background: var(--dsw-specific-menu);
+}
+
+.railCompact .railFooter { padding: 8px 14px 12px; }
+.railCompact .userChip { justify-content: center; }
+
+.railTabSelect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.railNewTab { color: var(--dsw-alias-label-primary); }
+.railNewTab[aria-pressed='true'] { background: var(--dsw-specific-sidebar-nav-item-active); }
+
+.toolbarSite {
+  flex: 0 1 auto;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.tabMenu {
+  position: fixed;
+  z-index: 350;
+  width: 216px;
+  padding: 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 6px 24px #0003;
+}
+.tabMenu button {
+  display: block;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  text-align: left;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.tabMenu button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.tabMenu button:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
+.tabMenu [role='separator'] { height: 1px; margin: 4px; background: var(--dsw-alias-border-l2); }
+.rail button:focus-visible,
+.tabMenu button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+
+@media (max-width: 1050px) {
+  .toolbarSite { display: none; }
+  .toolbarAddress { margin-inline: 2px; padding-left: 4px; }
 }
 
 /* ============ 一键反馈提示 ============ */
@@ -905,64 +993,3 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
-
-.railTabSelect {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 4px 0 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.toolbarSite {
-  flex: 0 1 auto;
-  max-width: 35%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.tabMenu {
-  position: fixed;
-  z-index: 350;
-  width: 216px;
-  padding: 5px;
-  box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: 0 6px 24px #0003;
-}
-
-.tabMenu button {
-  display: block;
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  text-align: left;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  cursor: pointer;
-}
-
-.tabMenu button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-
-.tabMenu button:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
-
-.tabMenu [role='separator'] { height: 1px; margin: 4px; background: var(--dsw-alias-border-l2); }
-
-.rail button:focus-visible,
-.tabMenu button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }

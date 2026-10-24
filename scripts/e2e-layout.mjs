@@ -217,7 +217,7 @@ if (!shell) {
 }
 await shell.waitForSelector('[data-testid="tabstrip"]', { timeout: 30_000 });
 
-// 2. rail 形态断言：根容器存在，tabstrip 宽度=记忆值或默认 300（Cursor/VS Code 同款默认）
+// 2. rail 形态断言：根容器存在，tabstrip 宽度=记忆值或默认 224（保留自定义宽度）
 async function tabstripBox() {
   return shell.locator('[data-testid="tabstrip"]').boundingBox();
 }
@@ -255,7 +255,7 @@ check(
 const addressText = (await shell.locator('[data-testid="url-bar"]').innerText()).trim();
 check('页面信息有标题且不含会话参数', Boolean(addressText) && !/sid=|CLIENTID=/i.test(addressText));
 const railConfig = await shell.evaluate(() => window.diteng.getConfig());
-const expectedRailWidth = (railConfig.railWidth >= 200 && railConfig.railWidth <= 480) ? railConfig.railWidth : 300;
+const expectedRailWidth = (railConfig.railWidth >= 200 && railConfig.railWidth <= 480) ? railConfig.railWidth : 224;
 const box = await tabstripBox();
 check(
   'rail tabstrip 竖向侧栏',
@@ -263,14 +263,14 @@ check(
   `期望宽=${expectedRailWidth} 实际 x=${box?.x} y=${box?.y} w=${box?.width} h=${box?.height}`,
 );
 
-// 3.5 侧栏宽度：先双击复位到默认 300（消除历史记忆宽度，避开 480 上限钳制），再拖 +80 验证跟随与持久化，最后双击复位
+// 3.5 侧栏宽度：先双击复位到默认 224（消除历史记忆宽度，避开 480 上限钳制），再拖 +80 验证跟随与持久化，最后双击复位
 {
   const handle = shell.locator('[data-testid="rail-resize-handle"]');
   check('拖拽手柄存在', (await handle.count()) === 1);
   await shell.dblclick('[data-testid="rail-resize-handle"]', { position: { x: 3, y: 300 } });
   await shell.waitForTimeout(400);
   let box0 = await tabstripBox();
-  check('双击复位默认 300', Math.abs(box0.width - 300) <= 5, `w=${box0.width}`);
+  check('双击复位默认 224', Math.abs(box0.width - 224) <= 5, `w=${box0.width}`);
   const cfgReset = await shell.evaluate(() => window.diteng.getConfig());
   check('复位后 config.railWidth=0', cfgReset.railWidth === 0, `config.railWidth=${cfgReset.railWidth}`);
   const hb = await handle.boundingBox();
@@ -282,13 +282,13 @@ check(
   await shell.mouse.up();
   await shell.waitForTimeout(400);
   const afterDrag = await tabstripBox();
-  check('拖拽后宽度 +80', Math.abs(afterDrag.width - 380) <= 6, `w=${afterDrag.width} 期望=380`);
+  check('拖拽后宽度 +80', Math.abs(afterDrag.width - 304) <= 6, `w=${afterDrag.width} 期望=304`);
   const cfgAfterDrag = await shell.evaluate(() => window.diteng.getConfig());
   check('拖拽宽度已持久化', cfgAfterDrag.railWidth === Math.round(afterDrag.width), `config.railWidth=${cfgAfterDrag.railWidth}`);
   await shell.dblclick('[data-testid="rail-resize-handle"]', { position: { x: 3, y: 300 } });
   await shell.waitForTimeout(400);
   const afterReset = await tabstripBox();
-  check('再双击复位默认 300', Math.abs(afterReset.width - 300) <= 5, `w=${afterReset.width}`);
+  check('再双击复位默认 224', Math.abs(afterReset.width - 224) <= 5, `w=${afterReset.width}`);
 }
 
 let state = await shell.evaluate(() => window.__ditengTabsList());
@@ -430,10 +430,11 @@ check('返回后恢复底部用户行', (await shell.locator('[data-testid="user
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('返回后标签不丢', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6c. 侧栏收起/展开：工具栏留在最上方，rail 从布局中移除，再点同一按钮恢复
+// 6c. 侧栏收起/展开：窄栏保留标签、助手、设置入口。
 await shell.click('[data-testid="sidebar-toggle"]');
 await shell.waitForTimeout(300);
-check('收起侧栏后 rail 隐藏', (await shell.locator('[data-testid="tabstrip"]').count()) === 0);
+check('收起后保留 76px 窄栏', Math.abs((await tabstripBox()).width - 76) <= 1);
+check('窄栏保留标签与设置入口', (await shell.locator('[data-testid="rail-tabs"]').count()) === 1 && (await shell.locator('[data-testid="user-chip"]').count()) === 1);
 check('收起侧栏后工具栏保留', (await shell.locator('[data-testid="browser-toolbar"]').count()) === 1);
 await shell.click('[data-testid="sidebar-toggle"]');
 await shell.waitForTimeout(300);

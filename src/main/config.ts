@@ -144,7 +144,7 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
     ? (chromeColorRaw as ChromeColor)
     : 'auto';
   const windowBounds = normalizeWindowBounds(input?.windowBounds);
-  // 侧栏宽度：0=未自定义（渲染层用默认 300）；自定义值限 200~480 整数，越界视为未记录
+  // 侧栏宽度：0=未自定义（渲染层用默认 224）；自定义值限 200~480 整数，越界视为未记录
   const railWidthRaw = (input as { railWidth?: unknown } | undefined)?.railWidth;
   const railWidth =
     typeof railWidthRaw === 'number' && Number.isInteger(railWidthRaw) && railWidthRaw >= 200 && railWidthRaw <= 480

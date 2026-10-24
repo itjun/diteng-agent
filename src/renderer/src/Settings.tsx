@@ -82,14 +82,16 @@ export function SettingsRail({
   activeCategory,
   onSelectCategory,
   onBack,
+  isCompact = false,
 }: {
   activeCategory: SettingsCategoryKey;
   onSelectCategory: (category: SettingsCategoryKey) => void;
   onBack: () => void;
+  isCompact?: boolean;
 }) {
   return (
-    <div className={styles.settingsRail} data-testid="settings-rail">
-      <button type="button" className={styles.back} data-testid="settings-back" onClick={onBack}>
+    <div className={`${styles.settingsRail} ${isCompact ? styles.settingsRailCompact : ''}`} data-testid="settings-rail">
+      <button type="button" className={styles.back} data-testid="settings-back" aria-label="返回工作区" title="返回工作区" onClick={onBack}>
         <ArrowLeftIcon />
         <span>返回</span>
       </button>
@@ -100,6 +102,7 @@ export function SettingsRail({
             type="button"
             data-testid={`settings-nav-${cat.key}`}
             className={cat.key === activeCategory ? styles.navItemActive : styles.navItem}
+            title={`${cat.name}：${cat.desc}`}
             aria-current={cat.key === activeCategory ? 'page' : undefined}
             onClick={() => onSelectCategory(cat.key)}
           >
