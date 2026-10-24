@@ -251,14 +251,9 @@ check(
     navAddressGap <= 12,
   `nav-back.x=${navBackBox?.x} nav-address.gap=${navAddressGap}`,
 );
-// 地址栏展示页面原始地址（完整 URL），不再拼「域名 / 页面标题」摘要
-let addressText = '';
-for (let i = 0; i < 20; i++) {
-  addressText = (await shell.locator('[data-testid="url-bar"]').innerText()).trim();
-  if (/^https?:\/\//i.test(addressText)) break;
-  await shell.waitForTimeout(500);
-}
-check('地址栏显示页面原始地址', /^https?:\/\//i.test(addressText), `text=${addressText.slice(0, 120)}`);
+// 页面信息显示名称和域名，不把会话参数带入壳内文本与 tooltip。
+const addressText = (await shell.locator('[data-testid="url-bar"]').innerText()).trim();
+check('页面信息有标题且不含会话参数', Boolean(addressText) && !/sid=|CLIENTID=/i.test(addressText));
 const railConfig = await shell.evaluate(() => window.diteng.getConfig());
 const expectedRailWidth = (railConfig.railWidth >= 200 && railConfig.railWidth <= 480) ? railConfig.railWidth : 300;
 const box = await tabstripBox();

@@ -34,6 +34,7 @@ import { applyChromeColor } from './chrome-color';
 import { probePageSurface } from './page-surface';
 import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
+import { pageLabel, shareablePageUrl, tabLabel } from './shell-presentation';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
@@ -121,14 +122,23 @@ export function Shell() {
   const activeTabIdRef = useRef('');
   activeTabIdRef.current = activeTabId;
   const sessionCorpNoRef = useRef('');
+  const blankTabIdRef = useRef('');
+  blankTabIdRef.current = tabs.find((tab) => tab.id === activeTabId && !tab.url)?.id ?? '';
   // 防重不落到 state：截图只有百毫秒级，处理中再点直接忽略，也避免禁用态被截进画面
   const isFeedbackCapturingRef = useRef(false);
 
   /** 开新标签（URL 必须经主进程 resolve 拿到的最终值），并激活 */
   const openTab = useCallback((url: string, corpNo: string) => {
     const id = String(nextIdRef.current++);
-    setTabs((prev) => [...prev, { id, url, title: url, favicon: '', corpNo, isLoading: true }]);
-    setActiveTabId(id);
+    const activeId = activeTabIdRef.current;
+    const isBlank = blankTabIdRef.current === activeId && Boolean(activeId);
+    const targetId = isBlank ? activeId : id;
+    setTabs((prev) => {
+      const blank = prev.find((tab) => tab.id === targetId && !tab.url);
+      const next = { id: targetId, url, title: '', favicon: '', corpNo, isLoading: true };
+      return blank ? prev.map((tab) => tab.id === blank.id ? next : tab) : [...prev, next];
+    });
+    setActiveTabId(targetId);
   }, []);
 
   /** 经主进程开标签：in-app 拿最终 URL 建 webview；external 已由主进程转系统浏览器，返回结果供调用方提示 */
@@ -146,7 +156,15 @@ export function Shell() {
   }, []);
 
   const activateTab = useCallback((id: string) => {
+    setIsSettingsOpen(false);
     setActiveTabId(id);
+  }, []);
+
+  const createNewTab = useCallback(() => {
+    const id = `new-${nextIdRef.current++}`;
+    setTabs((prev) => [...prev, { id, url: '', title: '新建标签页', favicon: '', corpNo: '', isLoading: false }]);
+    setActiveTabId(id);
+    setIsSettingsOpen(false);
   }, []);
 
   /** webview 事件回写标签元数据（title/favicon/loading/url，导航跨账套时重记 corpNo） */
@@ -360,15 +378,24 @@ export function Shell() {
     setSettingsCategory(category);
   }, []);
 
-  // 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 进入设置页。
-  // 按键在主进程 before-input-event 统一拦截（含 webview guest 焦点），这里只执行 UI 动作。
+  // 应用快捷键由主进程统一拦截（含 webview guest 焦点），这里执行标签与设置动作。
   useEffect(() => {
     const unsubscribe = window.diteng.onShortcut((action: ShortcutAction) => {
       if (action === 'toggle-rail') toggleRail();
-      else openSettings();
+      else if (action === 'open-settings') openSettings();
+      else if (action === 'new-tab') createNewTab();
+      else if (action === 'close-tab') {
+        if (isSettingsOpen) closeSettings();
+        else closeTab(activeTabIdRef.current);
+      }
+      else if (action === 'next-tab' || action === 'previous-tab') {
+        const index = tabs.findIndex((tab) => tab.id === activeTabIdRef.current);
+        const next = tabs[(index + (action === 'next-tab' ? 1 : -1) + tabs.length) % tabs.length];
+        if (next) activateTab(next.id);
+      }
     });
     return unsubscribe;
-  }, [openSettings, toggleRail]);
+  }, [openSettings, closeSettings, toggleRail, createNewTab, closeTab, activateTab, tabs, isSettingsOpen]);
 
   // ===== 侧栏宽度拖拽：拖拽期间盖全窗透明盾牌（z-index 高于一切，含 webview），
   // 否则指针移入 webview 区域后事件被路由进 guest 进程，宿主页收不到 move/up（真实拖拽同样会卡住）；
@@ -483,18 +510,25 @@ export function Shell() {
                   type="button"
                   data-testid="new-tab"
                   className={styles.railNewTab}
-                  title="新建标签页（打开 ERP 首页）"
-                  onClick={() => void resolveAndOpen({ home: true })}
+                  title="新建标签页"
+                  aria-label="新建标签页"
+                  onClick={createNewTab}
                 >
                   <PlusIcon />
                   <span>新建标签</span>
                 </button>
-                <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="ERP 标签页">
+                <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="标签页">
                   {tabs.map((tab) => (
                     <RailTab
                       key={tab.id}
                       tab={tab}
+                      label={tabLabel(tab, tabs)}
                       isActive={tab.id === activeTabId}
+                      onReload={(id) => webviewRefs.current.get(id)?.reload()}
+                      onCloseOthers={(id) => { setTabs((prev) => prev.filter((item) => item.id === id)); activateTab(id); }}
+                      onCloseRight={(id) => setTabs((prev) => prev.slice(0, prev.findIndex((item) => item.id === id) + 1))}
+                      hasOthers={tabs.length > 1}
+                      hasRight={tabs[tabs.length - 1].id !== tab.id}
                       onClose={closeTab}
                       onActivate={activateTab}
                     />
@@ -544,7 +578,7 @@ export function Shell() {
             {/* webview 宿主：非激活标签 display:none 隐藏（保留 DOM，guest 不销毁不重载）；
                 新建标签页盖在地址栏下方的页面区域里，与网页共用同一张卡片 */}
             <div className={styles.viewport}>
-              {tabs.map((tab) => (
+              {tabs.filter((tab) => tab.url).map((tab) => (
                 <TabWebview
                   key={tab.id}
                   tab={tab}
@@ -555,8 +589,8 @@ export function Shell() {
                   onPageSurface={handlePageSurface}
                 />
               ))}
-              {!isSettingsOpen && tabs.length === 0 && (
-                <NewTabPage session={session} openViaMain={resolveAndOpen} />
+              {!isSettingsOpen && !activeTab?.url && (
+                <NewTabPage key={activeTabId} session={session} openViaMain={resolveAndOpen} onChat={openChat} />
               )}
             </div>
           </div>
@@ -721,53 +755,80 @@ function TabWebview({
   );
 }
 
-/** 左侧竖向标签项：favicon（无则首字符圆点）+ 单行省略标题 + hover 显关闭 × */
-function RailTab({
-  tab,
-  isActive,
-  onClose,
-  onActivate,
-}: {
+/** 标签选择与关闭是两个独立按钮，支持键盘、紧凑栏及专用标签菜单。 */
+function RailTab({ tab, label, isActive, onClose, onActivate, onReload, onCloseOthers, onCloseRight, hasOthers, hasRight }: {
   tab: TabInfo;
+  label: string;
   isActive: boolean;
   onClose: (id: string) => void;
   onActivate: (id: string) => void;
+  onReload: (id: string) => void;
+  onCloseOthers: (id: string) => void;
+  onCloseRight: (id: string) => void;
+  hasOthers: boolean;
+  hasRight: boolean;
 }) {
-  // 标题取不到时用 URL 首字符（去协议），保证圆点不空
-  const firstChar = (tab.title.trim() || tab.url.replace(/^https?:\/\//i, '')).charAt(0);
+  const [isMenuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 });
+  const [isCopyFailed, setCopyFailed] = useState(false);
+  const [failedFavicon, setFailedFavicon] = useState('');
+  const selectRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const dismissMenu = useCallback(() => { setMenuOpen(false); selectRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const resize = () => setMenuOpen(false);
+    document.addEventListener('pointerdown', dismiss);
+    window.addEventListener('resize', resize);
+    return () => { document.removeEventListener('pointerdown', dismiss); window.removeEventListener('resize', resize); };
+  }, [isMenuOpen]);
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(shareablePageUrl(tab.url)); dismissMenu(); }
+    catch { setCopyFailed(true); }
+  };
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={isActive}
-      data-testid={`tab-${tab.id}`}
-      className={isActive ? styles.railTabActive : styles.railTab}
-      onClick={() => onActivate(tab.id)}
-      title={tab.title || tab.url}
-    >
-      {tab.isLoading ? (
-        <span className={styles.spinner} aria-hidden="true" />
-      ) : tab.favicon ? (
-        <img src={tab.favicon} alt="" className={styles.railFavicon} />
-      ) : (
-        <span className={styles.railTabDot} aria-hidden="true">
-          {firstChar}
-        </span>
-      )}
-      <span className={styles.railTabTitle}>{tab.title || tab.url}</span>
-      <span
-        role="button"
-        aria-label="关闭标签页"
-        data-testid={`tab-close-${tab.id}`}
-        className={styles.railTabClose}
-        onClick={(event) => {
-          event.stopPropagation();
-          onClose(tab.id);
-        }}
-      >
-        <CloseIcon />
-      </span>
-    </button>
+    <div className={isActive ? styles.railTabActive : styles.railTab} role="presentation"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setCopyFailed(false);
+        setMenuPosition({ left: Math.max(8, Math.min(event.clientX || 8, window.innerWidth - 224)), top: Math.max(8, Math.min(event.clientY || 80, window.innerHeight - 228)) });
+        setMenuOpen(true);
+      }}>
+      <button type="button" role="tab" aria-selected={isActive} ref={selectRef}
+        data-testid={`tab-${tab.id}`} className={styles.railTabSelect} title={label} aria-label={label}
+        onClick={() => onActivate(tab.id)}
+        onKeyDown={(event) => { if (event.key === 'Delete') { event.preventDefault(); onClose(tab.id); } }}>
+        {tab.isLoading ? <span className={styles.spinner} aria-hidden="true" /> : tab.favicon && tab.favicon !== failedFavicon ?
+          <img src={tab.favicon} alt="" className={styles.railFavicon} onError={() => setFailedFavicon(tab.favicon)} /> :
+          <span className={styles.railTabDot} aria-hidden="true">{label.charAt(0)}</span>}
+        <span className={styles.railTabTitle}>{label}</span>
+      </button>
+      <button type="button" aria-label={`关闭标签页：${label}`} title={`关闭 ${label}`} data-testid={`tab-close-${tab.id}`}
+        className={styles.railTabClose} onClick={() => onClose(tab.id)}><CloseIcon /></button>
+      {isMenuOpen && <div ref={menuRef} role="menu" aria-label={`${label} 标签菜单`} className={styles.tabMenu} style={menuPosition}
+        onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenuOpen(false); }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); dismissMenu(); }
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+          }
+        }}>
+        <button type="button" role="menuitem" disabled={!tab.url} onClick={() => { onReload(tab.id); dismissMenu(); }}>刷新页面</button>
+        <button type="button" role="menuitem" disabled={!shareablePageUrl(tab.url)} onClick={() => void copyLink()}>{isCopyFailed ? '复制失败，请重试' : '复制页面链接'}</button>
+        <div role="separator" />
+        <button type="button" role="menuitem" onClick={() => onClose(tab.id)}>关闭标签页</button>
+        <button type="button" role="menuitem" disabled={!hasOthers} onClick={() => { onCloseOthers(tab.id); dismissMenu(); }}>关闭其他标签页</button>
+        <button type="button" role="menuitem" disabled={!hasRight} onClick={() => { onCloseRight(tab.id); dismissMenu(); }}>关闭右侧标签页</button>
+      </div>}
+    </div>
   );
 }
 
@@ -916,7 +977,7 @@ function SidebarToolbar({ onToggleRail }: { onToggleRail: () => void }) {
 
 /**
  * 右侧内容区工具栏：导航组紧贴地址栏左侧（Chrome 式）。
- * 地址栏只读展示页面原始地址（完整 URL，含 sid 等会话参数），复制按钮拷贝同一地址。仅浏览页使用，设置页不渲染。
+ * 展示页面名与域名；复制链接剥离会话参数，不修改真实导航地址。仅浏览页使用，设置页不渲染。
  */
 function ContentToolbar({
   url,
@@ -953,7 +1014,8 @@ function ContentToolbar({
 }) {
   // 复制反馈：ok 成功 / fail 剪贴板不可用，2 秒后还原
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const hasUrl = url.trim() !== '';
+  const safeUrl = shareablePageUrl(url);
+  const hasUrl = Boolean(safeUrl);
 
   useEffect(() => {
     if (copyState === 'idle') return;
@@ -964,7 +1026,7 @@ function ContentToolbar({
   async function copyUrl() {
     if (!hasUrl) return;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(safeUrl);
       setCopyState('ok');
     } catch {
       setCopyState('fail');
@@ -972,8 +1034,9 @@ function ContentToolbar({
   }
 
   const copyLabel =
-    copyState === 'ok' ? '已复制' : copyState === 'fail' ? '复制失败' : '复制当前网址';
-  const locationText = toolbarLocationText(url, pageTitle);
+    copyState === 'ok' ? '已复制' : copyState === 'fail' ? '复制失败' : '复制页面链接（不含登录凭据）';
+  const locationText = pageLabel(url, pageTitle);
+  const siteName = safeUrl ? new URL(safeUrl).host : '';
   return (
     <div
       className={[styles.contentToolbar, showSidebarToggle ? styles.contentToolbarCollapsed : '']
@@ -1008,10 +1071,9 @@ function ContentToolbar({
           <HomeIcon />
         </ToolbarButton>
       </div>
-      <div className={styles.toolbarAddress} data-testid="url-bar" role="group" aria-label="当前页面网址">
-        <span className={styles.toolbarAddressText} title={locationText}>
-          {locationText}
-        </span>
+      <div className={styles.toolbarAddress} data-testid="url-bar" role="group" aria-label="当前页面信息">
+        <span className={styles.toolbarAddressText} title={locationText}>{locationText}</span>
+        {siteName && <span className={styles.toolbarSite} title={safeUrl}>{siteName}</span>}
         <button
           type="button"
           className={[
@@ -1049,35 +1111,45 @@ function ContentToolbar({
         data-testid="toolbar-chat"
         disabled={chatDisabled}
         onClick={onChat}
-        title="打开 Ravenclaw AI 对话"
-        aria-label="打开 Ravenclaw AI 对话"
+        title="打开 AI 助手"
+        aria-label="打开 AI 助手"
       >
         <span className={styles.toolbarChatIcon}>
           <ChatIcon />
         </span>
-        <span>Chat</span>
+        <span>AI 助手</span>
       </button>
     </div>
   );
-}
-
-/** 地址栏文案：直接展示页面原始地址（完整 URL，含 sid 等会话参数）；无地址时回落页面标题或新建标签页占位 */
-function toolbarLocationText(url: string, title: string): string {
-  const address = url.trim();
-  if (address) return address;
-  return title.trim() || '新建标签页';
 }
 
 /** 新建标签页：地址栏 + 快捷入口（renderer 自绘，直接覆盖在 webview 宿主之上） */
 function NewTabPage({
   session,
   openViaMain,
+  onChat,
 }: {
   session: SessionSummary | null;
   openViaMain: (request: TabsResolveRequest) => Promise<TabsResolveResult>;
+  onChat: () => void;
 }) {
   const [address, setAddress] = useState('');
   const [hint, setHint] = useState('');
+  const [isOpening, setOpening] = useState(false);
+  const isOpeningRef = useRef(false);
+
+  async function openRequest(request: TabsResolveRequest) {
+    if (isOpeningRef.current) return;
+    isOpeningRef.current = true;
+    setOpening(true);
+    setHint('');
+    try {
+      const result = await openViaMain(request);
+      if (!result.ok) setHint(result.message);
+      else if (result.action === 'external') { setHint('外域地址已在系统浏览器打开'); setAddress(''); }
+    } catch { setHint('打开失败，请重试'); }
+    finally { isOpeningRef.current = false; setOpening(false); }
+  }
 
   function openAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1085,16 +1157,7 @@ function NewTabPage({
     if (!input) return;
     // 无协议时按 https 补全（浏览器地址栏同款容错）
     const url = /^https?:\/\//i.test(input) ? input : `https://${input}`;
-    setHint('');
-    void openViaMain({ url }).then((result) => {
-      if (!result.ok) setHint(result.message);
-      else if (result.action === 'external') {
-        setHint('外域地址已在系统浏览器打开');
-        setAddress('');
-      } else {
-        setAddress('');
-      }
-    });
+    void openRequest({ url });
   }
 
   return (
@@ -1106,12 +1169,14 @@ function NewTabPage({
             data-testid="address-input"
             value={address}
             onChange={(event) => setAddress(event.target.value)}
-            placeholder="输入 ERP 页面地址打开新标签"
+            aria-label="ERP 页面地址"
+            placeholder="输入 ERP 页面地址"
             spellCheck={false}
             autoComplete="off"
+            autoFocus
           />
         </div>
-        <button type="submit" className={styles.addressGo}>
+        <button type="submit" disabled={isOpening} className={styles.addressGo}>
           打开
         </button>
       </form>
@@ -1121,7 +1186,8 @@ function NewTabPage({
           type="button"
           className={styles.quicklink}
           data-testid="quicklink-erp"
-          onClick={() => void openViaMain({ home: true })}
+          disabled={isOpening || !session}
+          onClick={() => void openRequest({ home: true })}
         >
           <span className={styles.quicklinkTitle}>ERP 首页</span>
           <span className={styles.quicklinkDesc}>
@@ -1132,9 +1198,9 @@ function NewTabPage({
           type="button"
           className={styles.quicklink}
           data-testid="quicklink-ai"
-          onClick={() => void openViaMain({ ai: true })}
+          onClick={onChat}
         >
-          <span className={styles.quicklinkTitle}>AI 对话</span>
+          <span className={styles.quicklinkTitle}>AI 助手</span>
           <span className={styles.quicklinkDesc}>
             {session ? `${session.corpNo} 的 AI 助手` : '登录会话失效，请重新登录'}
           </span>

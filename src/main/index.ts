@@ -106,12 +106,20 @@ function handleAppShortcut(event: Electron.Event, input: Electron.Input, content
   if (input.type !== 'keyDown' || input.isAutoRepeat || input.isComposing) return;
   const isMac = process.platform === 'darwin';
   const isModifierPressed = isMac ? input.meta : input.control;
-  if (!isModifierPressed || input.alt) return;
   const key = input.key.toLowerCase();
+  const isMainWindowContents = mainWindow !== null && BrowserWindow.fromWebContents(contents) === mainWindow;
+  if (isMainWindowContents && input.control && !input.alt && key === 'tab') {
+    event.preventDefault();
+    sendToShell('shortcut:action', input.shift ? 'previous-tab' : 'next-tab');
+    return;
+  }
+  if (!isModifierPressed || input.alt) return;
   if (!input.shift) {
     let action: ShortcutAction | null = null;
     if (key === 'b') action = 'toggle-rail';
     else if (key === ',') action = 'open-settings';
+    else if (isMainWindowContents && key === 't') action = 'new-tab';
+    else if (isMainWindowContents && key === 'w') action = 'close-tab';
     if (action) {
       event.preventDefault();
       sendToShell('shortcut:action', action);

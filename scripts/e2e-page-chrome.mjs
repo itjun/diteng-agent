@@ -441,6 +441,7 @@ try {
   await setStyle('dark');
   await fetch(`${mock.base}/__style?name=light`);
   await shell.click('[data-testid="new-tab"]');
+  await shell.click('[data-testid="quicklink-erp"]');
   await sleep(2800);
   const tab2Layout = await readLayout();
   const tabCount = await shell.evaluate(() => window.__ditengTabsList?.().tabs.length ?? 0);

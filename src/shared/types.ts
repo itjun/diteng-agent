@@ -246,7 +246,7 @@ export interface TabsOpenRequestPayload {
  * 应用级快捷键动作（主进程 before-input-event 统一接管主窗与 webview guest 焦点，
  * 壳收到后执行对应 UI 动作）：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 打开设置页。
  */
-export type ShortcutAction = 'toggle-rail' | 'open-settings';
+export type ShortcutAction = 'toggle-rail' | 'open-settings' | 'new-tab' | 'close-tab' | 'next-tab' | 'previous-tab';
 
 /**
  * feedback:capture-screenshot 返回：整窗截图已写入系统剪贴板。
