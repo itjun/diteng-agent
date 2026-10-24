@@ -1,0 +1,345 @@
+/*
+ * 反馈截图标注编辑器：壳内全屏模态浮层（fixed inset 0），z-index 盖过
+ * 页内合成 webview、拖拽盾牌（400）与提示 toast（350）。
+ * 视觉沿用 dsh 菜单语言：--dsw-specific-menu 底、0.5px 边框、14px 圆角、三层阴影。
+ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 28px 24px 20px;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+}
+
+.overlay:focus,
+.overlay:focus-visible {
+  outline: none;
+}
+
+/* 画布区：占据工具栏之外的全部高度，画布在其中居中（显示尺寸由 JS 等比计算） */
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* 截图容器：12px 圆角 + 阴影，底图不透明所以铺白底 */
+.canvasWrap {
+  display: flex;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.18),
+    0 12px 32px rgba(0, 0, 0, 0.36),
+    0 32px 80px rgba(0, 0, 0, 0.36);
+}
+
+.canvas {
+  display: block;
+  max-width: 100%;
+  outline: none;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.canvas:focus,
+.canvas:focus-visible {
+  outline: none;
+}
+
+/* 底部居中区：错误提示在上、药丸工具栏在下，作为正常流元素让画布自动让位 */
+.bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* 复制失败等就地提示：不关闭编辑器，标注全部保留 */
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: 8px 12px;
+  border: 0.5px solid var(--dsw-alias-state-error-primary);
+  border-radius: 10px;
+  background: var(--dsw-specific-menu);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    0 12px 32px rgba(0, 0, 0, 0.14);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.error svg {
+  flex: none;
+}
+
+/* 底部居中药丸：窗口 940 宽（最小宽度）时全部动作单行不溢出 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  max-width: min(100%, calc(100vw - 32px));
+  padding: 6px;
+  overflow-x: auto;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-specific-menu);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    0 12px 32px rgba(0, 0, 0, 0.14);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+  scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* 工具/撤销/重做等图标按钮：28px 方形命中区，选中态铺业务主色 */
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton[aria-pressed='true'] {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.iconButton[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.swatchGroup,
+.widthGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+/* 四色色板：圆点 + 选中态内描边，不挤占工具栏宽度 */
+.swatchButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.swatchButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.swatchButton[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-label-primary);
+}
+
+.swatchButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.swatch {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+}
+
+/* 线宽三档：圆点大小表达 2/4/7px */
+.widthButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.widthButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.widthButton[aria-pressed='true'] {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.widthButton[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.widthButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.widthDot {
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.widthDotThin {
+  width: 4px;
+  height: 4px;
+}
+
+.widthDotMedium {
+  width: 7px;
+  height: 7px;
+}
+
+.widthDotThick {
+  width: 10px;
+  height: 10px;
+}
+
+/* 文字动作按钮：取消/微信/企业微信走中性色，「仅复制」为主操作 */
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.actionPrimary {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-weight: 600;
+}
+
+.actionPrimary:hover:not(:disabled) {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  filter: brightness(1.06);
+}
+
+/* 文字输入框：固定定位贴住点击点，字号与画布文字（20 显示像素）一致 */
+.textInput {
+  position: fixed;
+  z-index: 501;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px dashed currentColor;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 26px;
+  outline: none;
+  transform: translateY(-22px);
+  caret-color: currentColor;
+}
+
+.textInput::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 400;
+}

@@ -367,3 +367,162 @@ export function AlertIcon() {
     </svg>
   );
 }
+
+/** 标注工具：箭头 */
+export function ArrowToolIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 19L19 5" />
+      <path d="M11.5 5H19v7.5" />
+    </svg>
+  );
+}
+
+/** 标注工具：矩形 */
+export function RectToolIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="6" width="16" height="12" rx="1.5" />
+    </svg>
+  );
+}
+
+/** 标注工具：椭圆 */
+export function EllipseToolIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <ellipse cx="12" cy="12" rx="8" ry="6" />
+    </svg>
+  );
+}
+
+/** 标注工具：自由画笔（铅笔） */
+export function PenToolIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 20l1.2-4.2L16.3 4.7a2 2 0 0 1 2.9 0l.1.1a2 2 0 0 1 0 2.9L8.2 18.8z" />
+      <path d="M13.5 7.5l3 3" />
+    </svg>
+  );
+}
+
+/** 标注工具：文字 */
+export function TextToolIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 5h14M12 5v14M9.5 19h5" />
+    </svg>
+  );
+}
+
+/** 标注工具：矩形马赛克（四宫格，对角块填充表示像素化） */
+export function MosaicToolIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="4" width="7" height="7" rx="1" fill="currentColor" stroke="none" />
+      <rect x="13" y="4" width="7" height="7" rx="1" />
+      <rect x="4" y="13" width="7" height="7" rx="1" />
+      <rect x="13" y="13" width="7" height="7" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** 撤销：左弯箭头 */
+export function UndoIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 9h10a5 5 0 0 1 0 10H8" />
+      <path d="M8 5L4 9l4 4" />
+    </svg>
+  );
+}
+
+/** 重做：右弯箭头 */
+export function RedoIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 9H10a5 5 0 0 0 0 10h6" />
+      <path d="M16 5l4 4-4 4" />
+    </svg>
+  );
+}

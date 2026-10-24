@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import type {
+  FeedbackChatApp,
   SessionSummary,
   ShortcutAction,
   TabInfo,
@@ -31,6 +32,8 @@ import {
   SettingsRail,
 } from './Settings';
 import type { SettingsCategoryKey } from './Settings';
+import { FeedbackEditor } from './FeedbackEditor';
+import type { FeedbackEditorResult } from './FeedbackEditor';
 import { applyChromeColor } from './chrome-color';
 import { probePageSurface } from './page-surface';
 import type { PageSurface } from './page-surface';
@@ -40,6 +43,8 @@ import { messageConnectionLabel, useMessageState } from './use-message-state';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
+/** 剪贴板粘贴快捷键文案：反馈成功提示里引导用户到聊天窗口粘贴 */
+const PASTE_SHORTCUT = isMacPlatform ? '⌘V' : 'Ctrl+V';
 const DEFAULT_RAIL_WIDTH = 224;
 /** 导航已移至内容区，侧栏只需容纳红绿灯和展开开关。 */
 const RAIL_WIDTH_MIN = 200;
@@ -55,6 +60,11 @@ interface FeedbackToast {
   kind: 'ok' | 'fail';
   title: string;
   desc: string;
+}
+
+/** 聊天应用展示名（toast 用） */
+function feedbackAppLabel(app: FeedbackChatApp): string {
+  return app === 'wechat' ? '微信' : '企业微信';
 }
 
 /**
@@ -123,6 +133,8 @@ export function Shell() {
   });
   const [isRailDrag, setIsRailDrag] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<FeedbackToast | null>(null);
+  /** 待标注的整窗截图 PNG：非空即打开标注编辑器浮层 */
+  const [feedbackShot, setFeedbackShot] = useState<Uint8Array | null>(null);
   // 标签页顶部底色（地址栏跟随网页内容变色）：按标签存，切换标签直接复用，采不到时留空走应用主题默认色
   const [pageSurfaces, setPageSurfaces] = useState<Record<string, PageSurface>>({});
   const nextIdRef = useRef(1);
@@ -295,8 +307,8 @@ export function Shell() {
   }, []);
 
   /**
-   * 一键反馈：主进程把整个主窗画面（rail + 工具栏 + 当前页）截图写入系统剪贴板，
-   * 这里只负责入口、截图前的透明底处理与结果提示。
+   * 一键反馈：主进程把整个主窗画面（rail + 工具栏 + 当前页）截成 PNG 字节，
+   * 壳打开标注编辑器；复制与打开聊天应用由编辑器/本组件完成。
    */
   const captureFeedback = useCallback(async () => {
     if (isFeedbackCapturingRef.current) return;
@@ -311,21 +323,57 @@ export function Shell() {
     try {
       await waitForPaint();
       const result = await window.diteng.captureFeedbackScreenshot();
-      setFeedbackToast(
-        result.ok
-          ? {
-              kind: 'ok',
-              title: '截图已复制到系统剪贴板',
-              desc: `打开客服会话，直接粘贴（${isMacPlatform ? '⌘V' : 'Ctrl+V'}）发送即可完成反馈`,
-            }
-          : { kind: 'fail', title: '截图复制失败', desc: result.message },
-      );
+      if (result.ok) setFeedbackShot(result.png);
+      else setFeedbackToast({ kind: 'fail', title: '截图失败', desc: result.message });
     } catch {
-      setFeedbackToast({ kind: 'fail', title: '截图复制失败', desc: '复制截图到剪贴板失败，请重试' });
+      setFeedbackToast({ kind: 'fail', title: '截图失败', desc: '请稍后重试' });
     } finally {
       if (platformMarker) root.setAttribute('data-platform', platformMarker);
       isFeedbackCapturingRef.current = false;
     }
+  }, []);
+
+  /**
+   * 标注编辑器收尾：复制成功时按目标应用启动微信/企微并给出粘贴引导；
+   * 取消或复制失败（编辑器自身保持打开并提示）不产生提示。
+   */
+  const closeFeedbackEditor = useCallback((result: FeedbackEditorResult) => {
+    setFeedbackShot(null);
+    if (result.action === 'cancel') return;
+    const target = result.target;
+    if (!target) {
+      setFeedbackToast({
+        kind: 'ok',
+        title: '标注截图已复制到系统剪贴板',
+        desc: `打开聊天窗口，直接粘贴（${PASTE_SHORTCUT}）发送`,
+      });
+      return;
+    }
+    const label = feedbackAppLabel(target);
+    void window.diteng
+      .openFeedbackApp(target)
+      .then((opened) => {
+        setFeedbackToast(
+          opened.ok
+            ? {
+                kind: 'ok',
+                title: `已复制，正在打开${label}`,
+                desc: `在聊天窗口粘贴（${PASTE_SHORTCUT}）发送`,
+              }
+            : {
+                kind: 'fail',
+                title: `已复制到剪贴板，但没能打开${label}`,
+                desc: `${opened.message}；请手动打开${label}后粘贴发送`,
+              },
+        );
+      })
+      .catch(() => {
+        setFeedbackToast({
+          kind: 'fail',
+          title: `已复制到剪贴板，但没能打开${label}`,
+          desc: `请手动打开${label}后粘贴发送`,
+        });
+      });
   }, []);
 
   // 挂载：会话/配置拉取、首个标签（登录落点）、guest 开标签请求、会话变化推送
@@ -435,7 +483,8 @@ export function Shell() {
     setSettingsCategory(category);
   }, []);
 
-  // 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 进入设置页。
+  // 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 进入设置页；编辑器快捷键（editor-*）
+  // 由 FeedbackEditor 自行订阅处理，这里只认应用级动作。
   useEffect(() => {
     const unsubscribe = window.diteng.onShortcut((action: ShortcutAction) => {
       if (action === 'toggle-rail') toggleRail();
@@ -710,6 +759,8 @@ export function Shell() {
               </button>
             </div>
           )}
+          {/* 截图标注编辑器：壳内全屏浮层，固定定位不受布局影响；关闭后按结果提示 */}
+          {feedbackShot && <FeedbackEditor png={feedbackShot} onClose={closeFeedbackEditor} />}
         </main>
 
       </div>

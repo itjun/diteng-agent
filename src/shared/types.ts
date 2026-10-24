@@ -252,15 +252,38 @@ export interface TabsOpenRequestPayload {
 
 /**
  * 应用级快捷键动作（主进程 before-input-event 统一接管主窗与 webview guest 焦点，
- * 壳收到后执行对应 UI 动作）：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 打开设置页。
+ * 壳收到后执行对应 UI 动作）：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 打开设置页；
+ * editor-* 仅在反馈标注编辑器打开期间下发（Esc 取消、⌘Z 撤销、⇧⌘Z 重做）。
  */
-export type ShortcutAction = 'toggle-rail' | 'open-settings' | 'new-tab' | 'close-tab' | 'next-tab' | 'previous-tab';
+export type ShortcutAction =
+  | 'toggle-rail'
+  | 'open-settings'
+  | 'new-tab'
+  | 'close-tab'
+  | 'next-tab'
+  | 'previous-tab'
+  | 'editor-cancel'
+  | 'editor-undo'
+  | 'editor-redo';
 
 /**
- * feedback:capture-screenshot 返回：整窗截图已写入系统剪贴板。
- * width/height 为截图尺寸（DIP，与窗口内容区一致；PNG 实际像素按设备缩放比为 1x/2x）。
+ * feedback:capture-screenshot 返回：整窗截图的 PNG 原始字节。
+ * 截图只回渲染层做标注，不再由主进程写剪贴板；像素尺寸由渲染层解码后决定
+ * （物理像素 = 窗口内容区 DIP × 设备缩放比）。
  */
-export type FeedbackScreenshotResult = { ok: true; width: number; height: number } | ApiFailure;
+export type FeedbackScreenshotResult = { ok: true; png: Uint8Array } | ApiFailure;
+
+/**
+ * 反馈截图要交给哪个聊天应用：微信 / 企业微信。
+ * 壳只负责「复制 + 启动/前置应用」，不选择会话、不模拟粘贴。
+ */
+export type FeedbackChatApp = 'wechat' | 'wecom';
+
+/** feedback:copy-image 返回：标注后的 PNG 已写入系统剪贴板 */
+export type FeedbackCopyResult = { ok: true } | ApiFailure;
+
+/** feedback:open-app 返回：已发起启动/前置（不代表用户一定已登录或已打开聊天窗口） */
+export type FeedbackOpenAppResult = { ok: true } | ApiFailure;
 
 /**
  * MQTT 未读通知链路状态（主进程 MqttService 对 renderer / e2e 暴露的只读摘要）。
@@ -377,10 +400,16 @@ export interface DitengApi {
   /** 订阅会话变化推送（网页版切账套同步后触发，壳据此关闭旧账套的其余标签），返回取消订阅函数 */
   onSessionChanged(listener: (summary: SessionSummary | null) => void): () => void;
   /**
-   * 一键反馈：把整个主窗（rail + 内容工具栏 + 当前页，含 webview 页内合成内容）截图
-   * 写入系统剪贴板，壳据此提示用户直接粘贴给客服。
+   * 一键反馈：把整个主窗（rail + 内容工具栏 + 当前页，含 webview 页内合成内容）截图，
+   * 以 PNG 字节返回渲染层做标注；不写系统剪贴板（标注确认后由 copyFeedbackImage 写入）。
    */
   captureFeedbackScreenshot(): Promise<FeedbackScreenshotResult>;
-  /** 订阅应用快捷键动作（⌘/Ctrl+B 侧栏、⌘/Ctrl+, 设置），返回取消订阅函数 */
+  /** 把标注后的 PNG 字节写入系统剪贴板（主进程统一调用异步 ClipboardItem API） */
+  copyFeedbackImage(png: Uint8Array): Promise<FeedbackCopyResult>;
+  /** 启动/前置微信或企业微信，让用户自己粘贴发送；只做启动，不模拟按键 */
+  openFeedbackApp(app: FeedbackChatApp): Promise<FeedbackOpenAppResult>;
+  /** 标注编辑器打开/关闭通知：主进程据此放行 Esc/⌘Z/⌘W 并转发 editor-* 动作 */
+  setFeedbackEditorActive(isActive: boolean): void;
+  /** 订阅应用快捷键动作（⌘/Ctrl+B 侧栏、⌘/Ctrl+, 设置、编辑器撤销/重做/取消），返回取消订阅函数 */
   onShortcut(listener: (action: ShortcutAction) => void): () => void;
 }

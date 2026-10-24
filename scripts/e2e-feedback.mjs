@@ -1,6 +1,9 @@
 /**
- * 一键反馈 e2e：真实 Electron 主窗点击「反馈」→ 整窗截图写入系统剪贴板 → toast 引导粘贴给客服，
- * 并通过主进程 Node inspector（--inspect=9230）读回剪贴板 PNG，做尺寸 / 不透明度 / webview guest 内容像素校验。
+ * 一键反馈 e2e：真实 Electron 主窗点击「反馈」→ 主进程整窗截图回渲染层 → 壳内标注编辑器
+ * （箭头 / 撤销重做 / 矩形马赛克）→ 复制到系统剪贴板 → 可选「复制并打开微信/企业微信」。
+ *
+ * 校验分三层：渲染层（playwright/CDP）看编辑器与交互；主进程 inspector（--inspect=9230）读回
+ * 剪贴板 PNG 做尺寸/不透明度/像素断言、用桩拦截聊天应用启动；electron 日志确认只截图一次。
  *
  * 用法：node scripts/e2e-feedback.mjs
  * 前置：无需手动起 vite/electron；脚本会先 tsc 主进程与 preload，再拉起隔离测试实例。
@@ -11,10 +14,12 @@
  *   2. CDP 固定 9224、主进程 inspector 固定 9230，绝不使用 9223；
  *      启动/清理只动命令行属于本仓库 electron 的测试进程；
  *   3. 登录等全部请求只发往脚本进程内的 127.0.0.1 mock 后端，不访问任何真实服务器；
- *   4. 系统剪贴板是全局资源：测试前备份 text/png，结束时尽力还原（测试期间的截图内容会被覆盖）。
+ *   4. 系统剪贴板是全局资源：测试前备份 text/png，结束时尽力还原（测试期间的截图内容会被覆盖）；
+ *   5. 「打开微信/企业微信」用主进程 execFile 桩拦截，不真正拉起用户应用，也不模拟粘贴。
  *
- * 产物：/tmp/diteng-feedback-clip.png（单次点击后的剪贴板图片，最终交付证据）
- *       /tmp/diteng-feedback-toast.png（成功 toast 截图）
+ * 产物：/tmp/diteng-feedback-editor.png（编辑器截图，最终交付证据）
+ *       /tmp/diteng-feedback-clip.png（标注后剪贴板图，最终交付证据）
+ *       /tmp/diteng-feedback-toast.png（复制成功 toast）
  *       失败/诊断时另有 /tmp/diteng-feedback-*.png；主进程日志 /tmp/diteng-electron-feedback.log
  * 退出码：0=全部通过；1=存在 FAIL 或异常；3=harness 就绪但 [data-testid=feedback-button] 尚未落盘
  *        （等待 Lead 通知后重跑；不影响本轮其它结论）。
@@ -55,6 +60,7 @@ const CLIP_PATH = '/tmp/diteng-feedback-clip.png';
 const TOAST_PATH = '/tmp/diteng-feedback-toast.png';
 const RAPID_CLIP_PATH = '/tmp/diteng-feedback-clip-rapid.png';
 const DIAG_CLIP_PATH = '/tmp/diteng-feedback-diag-clip.png';
+const EDITOR_PATH = '/tmp/diteng-feedback-editor.png';
 const CLIPBOARD_BACKUP_PNG = '/tmp/diteng-feedback-clipboard-backup.png';
 const CLIPBOARD_BACKUP_TEXT = '/tmp/diteng-feedback-clipboard-backup.txt';
 
@@ -771,6 +777,238 @@ async function checkFeedbackEntry(layout) {
   return true;
 }
 
+// ============================== 反馈标注编辑器辅助 ==============================
+
+/** 标注红（编辑器默认色 #e5484d）：e2e 画箭头后按此校验剪贴板像素 */
+const ARROW_RED = { r: 0xe5, g: 0x48, b: 0x4d };
+/** 判定「像素颜色明显变化」的容差（马赛克用例） */
+const CHANGE_TOLERANCE = 24;
+
+/** 读编辑器是否存在、画布是否就绪（canvas 像素尺寸 = 截图原始像素） */
+function readEditorGeometry() {
+  return state.shell.evaluate(() => {
+    const editor = document.querySelector('[data-testid="feedback-editor"]');
+    const canvas = document.querySelector('[data-testid="feedback-editor-canvas"]');
+    if (!editor) return { hasEditor: false, hasCanvas: Boolean(canvas) };
+    if (!canvas) return { hasEditor: true, hasCanvas: false };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      hasEditor: true,
+      hasCanvas: true,
+      isCanvasVisible: getComputedStyle(canvas).visibility !== 'hidden',
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    };
+  });
+}
+
+/** 等编辑器出现且画布解码完成（canvas 像素尺寸 > 0 且可见） */
+async function waitForEditorReady(timeoutMs = 20_000) {
+  return waitUntil(async () => {
+    const geometry = await readEditorGeometry().catch(() => null);
+    if (!geometry?.hasEditor || !geometry.hasCanvas) return null;
+    if (!geometry.isCanvasVisible || geometry.canvasWidth <= 0 || geometry.rect.width <= 0) return null;
+    return geometry;
+  }, timeoutMs, 100);
+}
+
+/** 点「反馈」并等编辑器就绪 */
+async function openFeedbackEditor() {
+  await state.shell.click('[data-testid="feedback-button"]');
+  return waitForEditorReady(20_000);
+}
+
+/** 等编辑器关闭（复制成功 / 取消后） */
+async function waitForEditorClosed(timeoutMs = 20_000) {
+  return waitUntil(
+    async () => (await state.shell.locator('[data-testid="feedback-editor"]').count()) === 0,
+    timeoutMs,
+    100,
+  );
+}
+
+/** 等 toast 出现并返回文案/状态 */
+async function waitForFeedbackToast(timeoutMs = 20_000) {
+  const appeared = await waitUntil(
+    async () => (await state.shell.locator('[data-testid="feedback-toast"]').count()) > 0,
+    timeoutMs,
+    100,
+  );
+  if (!appeared) return null;
+  const toastText = ((await state.shell.textContent('[data-testid="feedback-toast"]')) ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const toastState = await state.shell
+    .getAttribute('[data-testid="feedback-toast"]', 'data-state')
+    .catch(() => null);
+  return { text: toastText, state: toastState };
+}
+
+/** 关闭 toast 并等它消失，避免遮挡下一次截图 */
+async function closeFeedbackToast() {
+  await state.shell.click('[data-testid="feedback-toast-close"]').catch(() => {});
+  await state.shell
+    .waitForSelector('[data-testid="feedback-toast"]', { state: 'detached', timeout: 10_000 })
+    .catch(() => {});
+}
+
+/** 图片坐标 → 画布显示坐标（viewport / CSS px） */
+function imagePointToClient(geometry, point) {
+  return {
+    x: geometry.rect.left + point.x * (geometry.rect.width / geometry.canvasWidth),
+    y: geometry.rect.top + point.y * (geometry.rect.height / geometry.canvasHeight),
+  };
+}
+
+/** 在画布上拖一条线（箭头/矩形/椭圆/马赛克共用） */
+async function dragOnCanvas(geometry, fromImage, toImage, steps = 10) {
+  const from = imagePointToClient(geometry, fromImage);
+  const to = imagePointToClient(geometry, toImage);
+  await state.shell.mouse.move(from.x, from.y);
+  await state.shell.mouse.down();
+  for (let index = 1; index <= steps; index += 1) {
+    await state.shell.mouse.move(
+      from.x + ((to.x - from.x) * index) / steps,
+      from.y + ((to.y - from.y) * index) / steps,
+    );
+  }
+  await state.shell.mouse.up();
+}
+
+/**
+ * 在真实 Electron 主进程里合成一次 before-input-event，验证「主进程拦截 → shortcut:action →
+ * 编辑器执行」这条链路。真实 OS 按键由 Electron 原生输入触发同一监听（⌘B/⌘, 已依赖该机制）；
+ * Playwright 的 CDP 合成按键不经过 before-input-event，因此这里不用 keyboard.press。
+ */
+function emitEditorInput(key, { shift = false } = {}) {
+  return mainEval(`(() => {
+    const req = process.mainModule.require.bind(process.mainModule);
+    const { BrowserWindow } = req('electron');
+    const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
+    const target = windows.find((win) => win.getContentBounds().width > 500) ?? windows[0];
+    if (!target) return { ok: false, error: '没有可用主窗' };
+    let isPrevented = false;
+    const event = { preventDefault: () => { isPrevented = true; } };
+    const input = {
+      type: 'keyDown',
+      key: ${JSON.stringify(key)},
+      meta: process.platform === 'darwin',
+      control: process.platform !== 'darwin',
+      shift: ${shift ? 'true' : 'false'},
+      alt: false,
+      isAutoRepeat: false,
+      isComposing: false,
+    };
+    target.webContents.emit('before-input-event', event, input);
+    return { ok: true, isPrevented };
+  })()`);
+}
+
+/** 读取画布指定图片坐标的像素（确认标注/撤销/马赛克确实落到画布） */
+function readCanvasPixels(points) {
+  return state.shell.evaluate((list) => {
+    const canvas = document.querySelector('[data-testid="feedback-editor-canvas"]');
+    if (!canvas) return null;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    return list.map(({ group, x, y }) => {
+      const px = Math.round(x);
+      const py = Math.round(y);
+      const data = context.getImageData(px, py, 1, 1).data;
+      return { group, x: px, y: py, r: data[0], g: data[1], b: data[2], a: data[3] };
+    });
+  }, points);
+}
+
+/** 颜色是否接近目标色 */
+function isNearColor(point, target, tolerance = COLOR_TOLERANCE) {
+  return (
+    Math.abs(point.r - target.r) <= tolerance &&
+    Math.abs(point.g - target.g) <= tolerance &&
+    Math.abs(point.b - target.b) <= tolerance
+  );
+}
+
+/** 两点颜色是否明显不同 */
+function isColorChanged(before, after) {
+  return (
+    Math.abs(before.r - after.r) > CHANGE_TOLERANCE ||
+    Math.abs(before.g - after.g) > CHANGE_TOLERANCE ||
+    Math.abs(before.b - after.b) > CHANGE_TOLERANCE
+  );
+}
+
+/** 等剪贴板出现 PNG（复制后 macOS 剪贴板落盘可能滞后） */
+async function waitForClipboardImage(filePath, samples, timeoutMs = 8_000) {
+  return waitUntil(async () => {
+    const probe = await clipboardImageProbe(filePath, samples);
+    return probe?.hasImage ? probe : null;
+  }, timeoutMs, 150);
+}
+
+// ============================== 聊天应用启动桩（主进程 execFile） ==============================
+
+/**
+ * 主进程启动器在 macOS 走 execFile('open', ['-b', bundleId])。这里替换 node:child_process
+ * 的 execFile 为桩：记录调用参数、可模拟失败，绝不真正拉起用户的微信/企业微信。
+ */
+function installExecFileProbe() {
+  return mainEval(`(() => {
+    const req = process.mainModule.require.bind(process.mainModule);
+    const childProcess = req('node:child_process');
+    const original = childProcess.execFile;
+    const probe = { calls: [], isFail: false, isPatched: false, original };
+    const stub = (command, args, options, callback) => {
+      const done = typeof options === 'function' ? options : callback;
+      probe.calls.push({ command, args: Array.isArray(args) ? args : [] });
+      const error = probe.isFail ? new Error('e2e stubbed launcher failure') : null;
+      if (typeof done === 'function') setImmediate(() => done(error, '', ''));
+    };
+    try {
+      childProcess.execFile = stub;
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    }
+    probe.isPatched = childProcess.execFile === stub;
+    globalThis.__ditengFeedbackExecProbe = probe;
+    return { ok: true, isPatched: probe.isPatched };
+  })()`);
+}
+
+function readExecFileProbe() {
+  return mainEval(`(() => {
+    const probe = globalThis.__ditengFeedbackExecProbe;
+    if (!probe) return null;
+    return { calls: probe.calls, isFail: probe.isFail, isPatched: probe.isPatched };
+  })()`);
+}
+
+function setExecFileProbeFailure(isFail) {
+  return mainEval(`(() => {
+    const probe = globalThis.__ditengFeedbackExecProbe;
+    if (!probe) return { ok: false };
+    probe.isFail = ${isFail ? 'true' : 'false'};
+    return { ok: true };
+  })()`);
+}
+
+function restoreExecFileProbe() {
+  return mainEval(`(() => {
+    const req = process.mainModule.require.bind(process.mainModule);
+    const probe = globalThis.__ditengFeedbackExecProbe;
+    if (!probe) return { restored: false };
+    try {
+      req('node:child_process').execFile = probe.original;
+    } catch {
+      // 还原失败不影响退出：测试实例即将销毁
+    }
+    delete globalThis.__ditengFeedbackExecProbe;
+    return { restored: true };
+  })()`);
+}
+
+
 // ============================== 主流程 ==============================
 
 async function run() {
@@ -857,62 +1095,133 @@ async function run() {
     return 3;
   }
 
-  // ---------- 4. 单次点击：toast + 剪贴板像素契约 ----------
-  console.log('STEP 单次点击反馈按钮 → 校验 toast、主进程日志与剪贴板图片');
+  // ---------- 4. 点击「反馈」→ 标注编辑器出现，此时不写剪贴板 ----------
+  console.log('STEP 点击反馈按钮 → 校验标注编辑器、截图字节与剪贴板未写入');
   const layoutWithButton = await readLayout();
   await checkFeedbackEntry(layoutWithButton);
+  const scale = win.scaleFactor;
+  const expectedWidth = Math.round(win.contentBounds.width * win.scaleFactor);
+  const expectedHeight = Math.round(win.contentBounds.height * win.scaleFactor);
+  const samples = buildSamples(layoutWithButton, expectedWidth, expectedHeight, scale);
+  const probeInstalled = await installClipboardProbe(0);
+  check('clipboard.write 计数探针可用', Boolean(probeInstalled?.isPatched), JSON.stringify(probeInstalled));
   await clearClipboard();
   state.electronLogOffset = electronLogSize();
-  await shell.click('[data-testid="feedback-button"]');
-  const toastAppeared = await waitUntil(
-    async () => (await shell.locator('[data-testid="feedback-toast"]').count()) > 0,
-    20_000,
-    200,
-  );
-  check('点击反馈按钮后出现 toast（data-testid=feedback-toast）', Boolean(toastAppeared));
-  const toastText = toastAppeared
-    ? ((await shell.textContent('[data-testid="feedback-toast"]')) ?? '').replace(/\s+/g, ' ').trim()
-    : '';
-  const toastState = toastAppeared
-    ? await shell.getAttribute('[data-testid="feedback-toast"]', 'data-state').catch(() => null)
-    : null;
+  const editorGeometry = await openFeedbackEditor();
   check(
-    'toast 成功文案含「截图已复制到系统剪贴板」「粘贴」「客服」',
-    toastText.includes('截图已复制到系统剪贴板') && toastText.includes('粘贴') && toastText.includes('客服'),
-    `text="${toastText}" state=${toastState}`,
+    '点击反馈后打开标注编辑器（data-testid=feedback-editor）',
+    Boolean(editorGeometry?.hasEditor),
+    editorGeometry ? '编辑器已出现' : '20s 内未出现编辑器',
   );
-  check('toast 状态为成功（data-state=ok）', toastState === 'ok', `data-state=${toastState}`);
+  check(
+    '编辑器画布像素尺寸 = 截图原始物理像素',
+    Boolean(editorGeometry) &&
+      Math.abs(editorGeometry.canvasWidth - expectedWidth) <= 1 &&
+      Math.abs(editorGeometry.canvasHeight - expectedHeight) <= 1,
+    editorGeometry
+      ? `canvas=${editorGeometry.canvasWidth}x${editorGeometry.canvasHeight} expected=${expectedWidth}x${expectedHeight}`
+      : '编辑器未就绪',
+  );
+  const layoutInEditor = await readLayout();
+  check(
+    '打开编辑器后 data-platform 已恢复（vibrancy 标记未被污染）',
+    layoutInEditor.platformMarker === layoutWithButton.platformMarker,
+    `before=${layoutWithButton.platformMarker} after=${layoutInEditor.platformMarker}`,
+  );
+  const probeAfterOpen = await readClipboardProbe();
+  check(
+    '打开编辑器阶段不写剪贴板（截图只回渲染层）',
+    probeAfterOpen?.writes === 0,
+    `clipboard.write 次数=${probeAfterOpen?.writes}`,
+  );
+  const clipboardAtOpen = await clipboardImageProbe('/tmp/diteng-feedback-clip-open.png', []);
+  check(
+    '打开编辑器阶段剪贴板没有图片',
+    !clipboardAtOpen?.hasImage,
+    `types=${JSON.stringify(clipboardAtOpen?.types ?? [])}`,
+  );
+  const openLog = readNewElectronLog();
+  check(
+    '主进程日志记录整窗截图完成（[feedback] 整窗截图完成）',
+    /\[feedback\] 整窗截图完成：\d+x\d+/.test(openLog),
+    openLog.trim().split('\n').slice(-2).join(' | ').slice(0, 200) || '(无新增日志)',
+  );
+  check(
+    '截图阶段主进程无失败日志',
+    !/\[feedback\][^\n]*失败/.test(openLog),
+    openLog.trim().slice(0, 200) || '(无新增日志)',
+  );
+  try {
+    await shell.screenshot({ path: EDITOR_PATH });
+    logInfo(`编辑器截图：${EDITOR_PATH}`);
+  } catch (error) {
+    logInfo(`编辑器截图失败：${error?.message ?? error}`);
+  }
+  const webview = layoutWithButton.webview;
+  if (!editorGeometry?.hasEditor || !webview) throw new Error('编辑器或 webview 布局缺失');
+
+  // ---------- 5. 画箭头 → 仅复制 → 剪贴板图片包含标注且内容完整 ----------
+  console.log('STEP 画箭头 → 仅复制 → 校验剪贴板图片尺寸/不透明度/标注像素');
+  const arrowFromCss = { x: webview.left + webview.width * 0.3, y: webview.top + webview.height * 0.6 };
+  const arrowToCss = { x: webview.left + webview.width * 0.7, y: webview.top + webview.height * 0.6 };
+  const arrowFromImage = { x: arrowFromCss.x * scale, y: arrowFromCss.y * scale };
+  const arrowToImage = { x: arrowToCss.x * scale, y: arrowToCss.y * scale };
+  const arrowSamples = [0.3, 0.45, 0.6].map((fraction) => ({
+    group: 'arrow',
+    x: Math.round(arrowFromImage.x + (arrowToImage.x - arrowFromImage.x) * fraction),
+    y: Math.round(arrowFromImage.y),
+  }));
+  const bgProbePoint = {
+    group: 'editorBg',
+    x: Math.round((webview.left + webview.width * 0.5) * scale),
+    y: Math.round((webview.top + webview.height * 0.5) * scale),
+  };
+  const editorBgPixels = await readCanvasPixels([bgProbePoint]);
+  check(
+    '编辑器底图来自整窗截图（webview 底色像素命中）',
+    Boolean(editorBgPixels?.[0]) && isNearColor(editorBgPixels[0], MOCK_BG),
+    editorBgPixels?.[0]
+      ? `[${editorBgPixels[0].x},${editorBgPixels[0].y}] rgba(${editorBgPixels[0].r},${editorBgPixels[0].g},${editorBgPixels[0].b})`
+      : '读取画布失败',
+  );
+  await dragOnCanvas(editorGeometry, arrowFromImage, arrowToImage);
+  const canvasArrow = await readCanvasPixels(arrowSamples);
+  check(
+    '画箭头后画布出现标注红（像素校验）',
+    Array.isArray(canvasArrow) && canvasArrow.filter((point) => isNearColor(point, ARROW_RED)).length >= 2,
+    canvasArrow
+      ? canvasArrow.map((point) => `[${point.x},${point.y}] rgba(${point.r},${point.g},${point.b})`).join(' ')
+      : '读取画布失败',
+  );
+  await shell.click('[data-testid="feedback-copy"]');
+  const editorClosed = await waitForEditorClosed();
+  check('点击「仅复制」后编辑器关闭', Boolean(editorClosed));
+  const copyProbe = await readClipboardProbe();
+  check('复制操作恰好写入一次剪贴板', copyProbe?.writes === 1, `clipboard.write 次数=${copyProbe?.writes}`);
+  const toastAfterCopy = await waitForFeedbackToast();
+  check(
+    '复制后出现成功 toast（data-state=ok）',
+    Boolean(toastAfterCopy) && toastAfterCopy.state === 'ok',
+    `state=${toastAfterCopy?.state ?? '(无 toast)'} text="${toastAfterCopy?.text ?? ''}"`,
+  );
+  check(
+    '成功 toast 引导粘贴（含「已复制」「粘贴」）',
+    Boolean(toastAfterCopy) && toastAfterCopy.text.includes('已复制') && toastAfterCopy.text.includes('粘贴'),
+    `text="${toastAfterCopy?.text ?? ''}"`,
+  );
   try {
     await shell.screenshot({ path: TOAST_PATH });
     logInfo(`toast 截图：${TOAST_PATH}`);
   } catch (error) {
     logInfo(`toast 截图失败：${error?.message ?? error}`);
   }
-
-  const newLog = readNewElectronLog();
-  check(
-    '主进程日志记录截图写入成功（[feedback] 整窗截图已写入系统剪贴板）',
-    /\[feedback\] 整窗截图已写入系统剪贴板：\d+x\d+/.test(newLog),
-    newLog.trim().split('\n').slice(-3).join(' | ').slice(0, 240) || '(无新增日志)',
-  );
-  check('主进程日志无截图失败分支（[feedback] 截图失败/写入失败）', !/\[feedback\][^\n]*(失败)/.test(newLog), newLog.trim().slice(0, 240));
-
-  // 读取剪贴板 PNG 并做像素校验（此时渲染层已恢复 data-platform，用布局里的 rect 采样）
-  const layoutAfterCapture = await readLayout();
-  check(
-    '截图后 data-platform 已恢复（vibrancy 标记未被污染）',
-    layoutAfterCapture.platformMarker === layout.platformMarker,
-    `before=${layout.platformMarker} after=${layoutAfterCapture.platformMarker}`,
-  );
-  const scale = layoutAfterCapture.devicePixelRatio;
-  const expectedWidth = Math.round(win.contentBounds.width * win.scaleFactor);
-  const expectedHeight = Math.round(win.contentBounds.height * win.scaleFactor);
-  const samples = buildSamples(layoutAfterCapture, expectedWidth, expectedHeight, scale);
-  const clip = await clipboardImageProbe(CLIP_PATH, samples);
+  const clip = await waitForClipboardImage(CLIP_PATH, [...samples, ...arrowSamples]);
   check(
     '系统剪贴板存在 image/png 图片',
     Boolean(clip?.hasImage),
-    clip?.hasImage ? `图片=${clip.width}x${clip.height} ${clip.pngBytes} 字节` : `types=${JSON.stringify(clip?.types ?? [])}`,
+    clip?.hasImage
+      ? `图片=${clip.width}x${clip.height} ${clip.pngBytes} 字节`
+      : `types=${JSON.stringify(clip?.types ?? [])}`,
   );
   if (!clip?.hasImage) return 1;
   check(
@@ -925,18 +1234,23 @@ async function run() {
     clip.transparent === 0 && clip.minAlpha === 255,
     `透明像素=${clip.transparent} minAlpha=${clip.minAlpha}`,
   );
-
   const bgHits = countColorHits(clip.points, 'webviewBg', MOCK_BG);
   check(
-    '截图包含 webview guest 内容（mock ERP 底色 #fde68a 命中）',
+    '标注后截图仍包含 webview guest 内容（mock ERP 底色命中，未把编辑器遮罩截进去）',
     bgHits.hits >= 7,
     `${bgHits.hits}/${bgHits.total} ${formatPoints(bgHits.sample)}`,
   );
   const markerHits = countColorHits(clip.points, 'marker', MOCK_MARKER);
   check(
-    '截图包含 guest 独有标记（紫色块，证明页内合成内容被截入）',
+    '标注后截图仍包含 guest 独有标记（紫色块）',
     markerHits.hits >= 7,
     `${markerHits.hits}/${markerHits.total} ${formatPoints(markerHits.sample)}`,
+  );
+  const arrowHits = countColorHits(clip.points, 'arrow', ARROW_RED);
+  check(
+    '剪贴板图片包含箭头标注红（复制的是标注后的图）',
+    arrowHits.hits >= 2,
+    `${arrowHits.hits}/${arrowHits.total} ${formatPoints(arrowHits.sample)}`,
   );
   const railOpaque = countOpaque(clip.points, 'rail');
   check('rail 区域不透明（alpha=255）', railOpaque.hits === railOpaque.total, `${railOpaque.hits}/${railOpaque.total}`);
@@ -947,92 +1261,292 @@ async function run() {
     `${toolbarOpaque.hits}/${toolbarOpaque.total}`,
   );
   logInfo(`剪贴板图片已保存：${CLIP_PATH}（${clip.pngBytes} 字节）`);
+  await closeFeedbackToast();
 
-  // 关闭 toast，避免遮挡下一次截图
-  await shell.click('[data-testid="feedback-toast-close"]').catch(() => {});
-  await shell.waitForSelector('[data-testid="feedback-toast"]', { state: 'detached', timeout: 10_000 }).catch(() => {});
-
-  // ---------- 5. 连续快速点击：只发起一次截图、截图期间禁用入口、data-platform 临时摘除 ----------
-  console.log('STEP 连续快速点击反馈按钮 → 校验防重与截图期间状态');
-  const probeInstalled = await installClipboardProbe(400);
-  if (!probeInstalled?.isPatched) {
-    logInfo(`clipboard.write 计数探针不可用：${probeInstalled?.error ?? JSON.stringify(probeInstalled)}`);
-  }
+  // ---------- 6. 撤销/重做：画布与导出图保持同步 ----------
+  console.log('STEP 撤销/重做 → 校验画布与剪贴板导出同步');
+  await installClipboardProbe(0);
   await clearClipboard();
-  const markerBeforeRapid = (await readLayout()).platformMarker;
+  const undoGeometry = await openFeedbackEditor();
+  if (!undoGeometry) throw new Error('撤销用例：编辑器未打开');
+  await dragOnCanvas(undoGeometry, arrowFromImage, arrowToImage);
+  let canvasPixels = await readCanvasPixels([arrowSamples[1]]);
+  check(
+    '撤销前画布有箭头',
+    Boolean(canvasPixels?.[0]) && isNearColor(canvasPixels[0], ARROW_RED),
+    canvasPixels?.[0] ? `rgba(${canvasPixels[0].r},${canvasPixels[0].g},${canvasPixels[0].b})` : '读取画布失败',
+  );
+  const undoEmit = await emitEditorInput('z');
+  check(
+    '主进程捕获 ⌘Z 并转发 editor-undo（合成 before-input-event）',
+    Boolean(undoEmit?.ok) && undoEmit.isPrevented === true,
+    JSON.stringify(undoEmit),
+  );
+  await sleep(150);
+  canvasPixels = await readCanvasPixels([arrowSamples[1]]);
+  check(
+    '撤销后画布箭头消失（主进程转发生效）',
+    Boolean(canvasPixels?.[0]) && !isNearColor(canvasPixels[0], ARROW_RED),
+    canvasPixels?.[0] ? `rgba(${canvasPixels[0].r},${canvasPixels[0].g},${canvasPixels[0].b})` : '读取画布失败',
+  );
+  const redoEmit = await emitEditorInput('z', { shift: true });
+  check(
+    '主进程捕获 ⇧⌘Z 并转发 editor-redo（合成 before-input-event）',
+    Boolean(redoEmit?.ok) && redoEmit.isPrevented === true,
+    JSON.stringify(redoEmit),
+  );
+  await sleep(150);
+  canvasPixels = await readCanvasPixels([arrowSamples[1]]);
+  check(
+    '重做后画布箭头恢复（主进程转发生效）',
+    Boolean(canvasPixels?.[0]) && isNearColor(canvasPixels[0], ARROW_RED),
+    canvasPixels?.[0] ? `rgba(${canvasPixels[0].r},${canvasPixels[0].g},${canvasPixels[0].b})` : '读取画布失败',
+  );
+  await shell.click('[data-testid="feedback-undo"]');
+  await shell.click('[data-testid="feedback-copy"]');
+  await waitForEditorClosed();
+  await waitForFeedbackToast();
+  const undoClip = await waitForClipboardImage('/tmp/diteng-feedback-clip-undo.png', [arrowSamples[1]]);
+  check(
+    '撤销后导出图不含箭头（画布与导出同步）',
+    Boolean(undoClip?.hasImage) && !isNearColor(undoClip.points[0], ARROW_RED),
+    undoClip?.hasImage
+      ? `[${undoClip.points[0].x},${undoClip.points[0].y}] rgba(${undoClip.points[0].r},${undoClip.points[0].g},${undoClip.points[0].b})`
+      : '剪贴板无图片',
+  );
+  await closeFeedbackToast();
+  await installClipboardProbe(0);
+  await clearClipboard();
+  const redoGeometry = await openFeedbackEditor();
+  if (!redoGeometry) throw new Error('重做用例：编辑器未打开');
+  await dragOnCanvas(redoGeometry, arrowFromImage, arrowToImage);
+  await shell.click('[data-testid="feedback-undo"]');
+  await shell.click('[data-testid="feedback-redo"]');
+  await shell.click('[data-testid="feedback-copy"]');
+  await waitForEditorClosed();
+  await waitForFeedbackToast();
+  const redoClip = await waitForClipboardImage('/tmp/diteng-feedback-clip-redo.png', [arrowSamples[1]]);
+  check(
+    '撤销再重做后导出图恢复箭头',
+    Boolean(redoClip?.hasImage) && isNearColor(redoClip.points[0], ARROW_RED),
+    redoClip?.hasImage
+      ? `[${redoClip.points[0].x},${redoClip.points[0].y}] rgba(${redoClip.points[0].r},${redoClip.points[0].g},${redoClip.points[0].b})`
+      : '剪贴板无图片',
+  );
+  await closeFeedbackToast();
+
+  // ---------- 7. 矩形马赛克：边界像素被像素化并进入导出图 ----------
+  console.log('STEP 矩形马赛克 → 校验边界像素变化并进入导出图');
+  await installClipboardProbe(0);
+  await clearClipboard();
+  const mosaicGeometry = await openFeedbackEditor();
+  if (!mosaicGeometry) throw new Error('马赛克用例：编辑器未打开');
+  const markerLeftCss = webview.left + MOCK_MARKER_RECT.left;
+  const markerTopCss = webview.top + MOCK_MARKER_RECT.top;
+  const boundaryPoints = [0.2, 0.5, 0.8].flatMap((fraction) => [
+    {
+      group: 'mosaicBoundary',
+      x: (markerLeftCss - 4) * scale,
+      y: (markerTopCss + MOCK_MARKER_RECT.height * fraction) * scale,
+    },
+    {
+      group: 'mosaicBoundary',
+      x: (markerLeftCss + 4) * scale,
+      y: (markerTopCss + MOCK_MARKER_RECT.height * fraction) * scale,
+    },
+  ]);
+  const boundaryBefore = await readCanvasPixels(boundaryPoints);
+  await shell.click('[data-testid="feedback-tool-mosaic"]');
+  const mosaicFromCss = {
+    x: markerLeftCss - 20,
+    y: markerTopCss + MOCK_MARKER_RECT.height * 0.1,
+  };
+  const mosaicToCss = {
+    x: markerLeftCss + 80,
+    y: markerTopCss + MOCK_MARKER_RECT.height * 0.9,
+  };
+  await dragOnCanvas(
+    mosaicGeometry,
+    { x: mosaicFromCss.x * scale, y: mosaicFromCss.y * scale },
+    { x: mosaicToCss.x * scale, y: mosaicToCss.y * scale },
+  );
+  const boundaryAfter = await readCanvasPixels(boundaryPoints);
+  const changedOnCanvas =
+    boundaryBefore && boundaryAfter
+      ? boundaryBefore.filter((point, index) => isColorChanged(point, boundaryAfter[index])).length
+      : 0;
+  check(
+    '马赛克改变画布边界像素（像素化生效）',
+    changedOnCanvas >= 2,
+    `变化点=${changedOnCanvas}/${boundaryPoints.length}`,
+  );
+  await shell.click('[data-testid="feedback-copy"]');
+  await waitForEditorClosed();
+  await waitForFeedbackToast();
+  const mosaicClip = await waitForClipboardImage('/tmp/diteng-feedback-clip-mosaic.png', boundaryPoints);
+  const changedInClip =
+    mosaicClip?.hasImage && boundaryBefore
+      ? mosaicClip.points.filter((point, index) => isColorChanged(point, boundaryBefore[index])).length
+      : 0;
+  check(
+    '马赛克效果进入剪贴板导出图',
+    changedInClip >= 2,
+    `变化点=${changedInClip}/${boundaryPoints.length}`,
+  );
+  await closeFeedbackToast();
+
+  // ---------- 8. Esc 取消：不写剪贴板、不产生成功 toast ----------
+  console.log('STEP Esc 取消 → 校验剪贴板未被写入');
+  await installClipboardProbe(0);
+  await clearClipboard();
+  const escGeometry = await openFeedbackEditor();
+  if (!escGeometry) throw new Error('Esc 用例：编辑器未打开');
+  await dragOnCanvas(escGeometry, arrowFromImage, arrowToImage);
+  const escEmit = await emitEditorInput('Escape');
+  check(
+    '主进程捕获 Esc 并转发 editor-cancel（合成 before-input-event）',
+    Boolean(escEmit?.ok) && escEmit.isPrevented === true,
+    JSON.stringify(escEmit),
+  );
+  const escClosed = await waitForEditorClosed();
+  check('Esc 后编辑器关闭', Boolean(escClosed));
+  const escProbe = await readClipboardProbe();
+  check('Esc 取消不写剪贴板', escProbe?.writes === 0, `clipboard.write 次数=${escProbe?.writes}`);
+  const escClip = await clipboardImageProbe('/tmp/diteng-feedback-clip-esc.png', []);
+  check('Esc 取消后剪贴板没有图片', !escClip?.hasImage, `types=${JSON.stringify(escClip?.types ?? [])}`);
+  check(
+    'Esc 取消不出现成功 toast',
+    (await shell.locator('[data-testid="feedback-toast"]').count()) === 0,
+  );
+  // ⌘W 在编辑器打开时应取消编辑器，而不是关闭主窗（防误关）
+  await installClipboardProbe(0);
+  await clearClipboard();
+  const closeGeometry = await openFeedbackEditor();
+  if (!closeGeometry) throw new Error('⌘W 用例：编辑器未打开');
+  const wEmit = await emitEditorInput('w');
+  const wClosed = await waitForEditorClosed();
+  const windowAfterW = await windowInfo();
+  check(
+    '主进程捕获 ⌘W 并改为取消编辑器（不关闭主窗）',
+    Boolean(wEmit?.ok) &&
+      wEmit.isPrevented === true &&
+      Boolean(wClosed) &&
+      Boolean(windowAfterW?.ok) &&
+      (await readClipboardProbe())?.writes === 0,
+    JSON.stringify({ wEmit, wClosed, windowAlive: Boolean(windowAfterW?.ok) }),
+  );
+
+  // ---------- 9. 「复制并打开微信/企业微信」：启动器调用被桩拦截，不真拉起应用 ----------
+  console.log('STEP 复制并打开微信/企业微信 → 校验启动器调用参数与失败提示');
+  if (process.platform !== 'darwin') {
+    skip('macOS 用 open -b 启动微信', `当前平台 ${process.platform} 不走 macOS 启动分支`);
+    skip('启动器失败时提示已复制但没能打开企业微信', '依赖 macOS 启动分支');
+  } else {
+    const execProbeInstalled = await installExecFileProbe();
+    check('主进程 execFile 启动器探针可用', Boolean(execProbeInstalled?.isPatched), JSON.stringify(execProbeInstalled));
+    if (execProbeInstalled?.isPatched) {
+      try {
+        await installClipboardProbe(0);
+        await clearClipboard();
+        const wechatGeometry = await openFeedbackEditor();
+        check('打开微信用例：编辑器出现', Boolean(wechatGeometry?.hasEditor));
+        if (wechatGeometry) {
+          await shell.click('[data-testid="feedback-open-wechat"]');
+          await waitForEditorClosed();
+          const wechatToast = await waitForFeedbackToast();
+          check(
+            '打开微信后 toast 提示已复制并打开',
+            Boolean(wechatToast) && wechatToast.text.includes('微信') && wechatToast.text.includes('已复制'),
+            `state=${wechatToast?.state ?? '(无 toast)'} text="${wechatToast?.text ?? ''}"`,
+          );
+          const wechatProbe = await readClipboardProbe();
+          check('打开微信前先写入剪贴板（恰好一次）', wechatProbe?.writes === 1, `clipboard.write 次数=${wechatProbe?.writes}`);
+          const wechatClip = await waitForClipboardImage('/tmp/diteng-feedback-clip-wechat.png', samples);
+          check(
+            '打开微信后剪贴板仍是完整整窗截图',
+            Boolean(wechatClip?.hasImage) &&
+              Math.abs(wechatClip.width - expectedWidth) <= 1 &&
+              Math.abs(wechatClip.height - expectedHeight) <= 1,
+            wechatClip?.hasImage ? `${wechatClip.width}x${wechatClip.height}` : '剪贴板无图片',
+          );
+          const execProbe = await readExecFileProbe();
+          const wechatCall = (execProbe?.calls ?? []).find(
+            (call) =>
+              call.command === 'open' &&
+              Array.isArray(call.args) &&
+              call.args[0] === '-b' &&
+              call.args[1] === 'com.tencent.xinWeChat',
+          );
+          check(
+            'macOS 用 open -b com.tencent.xinWeChat 启动微信',
+            Boolean(wechatCall),
+            JSON.stringify(execProbe?.calls ?? []),
+          );
+          await closeFeedbackToast();
+        }
+        await setExecFileProbeFailure(true);
+        await installClipboardProbe(0);
+        await clearClipboard();
+        const wecomGeometry = await openFeedbackEditor();
+        check('打开企业微信失败用例：编辑器出现', Boolean(wecomGeometry?.hasEditor));
+        if (wecomGeometry) {
+          await shell.click('[data-testid="feedback-open-wecom"]');
+          await waitForEditorClosed();
+          const wecomToast = await waitForFeedbackToast();
+          check(
+            '启动器失败时提示已复制但没能打开企业微信',
+            Boolean(wecomToast) &&
+              wecomToast.state === 'fail' &&
+              wecomToast.text.includes('企业微信') &&
+              wecomToast.text.includes('已复制'),
+            `state=${wecomToast?.state ?? '(无 toast)'} text="${wecomToast?.text ?? ''}"`,
+          );
+          const wecomClip = await waitForClipboardImage('/tmp/diteng-feedback-clip-wecom.png', []);
+          check('启动器失败时剪贴板仍保留复制结果', Boolean(wecomClip?.hasImage));
+          await closeFeedbackToast();
+        }
+      } finally {
+        const restored = await restoreExecFileProbe().catch(() => ({ restored: false }));
+        logInfo(`execFile 启动器桩已还原：${JSON.stringify(restored)}`);
+      }
+    } else {
+      skip('macOS 用 open -b com.tencent.xinWeChat 启动微信', 'execFile 属性不可写，无法安装启动桩');
+      skip('启动器失败时提示已复制但没能打开企业微信', '依赖启动桩');
+    }
+  }
+
+  // ---------- 10. 连续点击：只截图一次、只开一个编辑器、不写剪贴板 ----------
+  console.log('STEP 连续点击反馈按钮 → 校验截图防重');
+  await closeFeedbackToast();
+  await installClipboardProbe(0);
+  await clearClipboard();
+  state.electronLogOffset = electronLogSize();
   await shell.evaluate(() => {
     const button = document.querySelector('[data-testid="feedback-button"]');
     button?.click();
     button?.click();
     button?.click();
   });
-  // 在 400ms 写入延时窗口内轮询：按钮应禁用、data-platform 应临时摘除
-  let sawDisabled = false;
-  let sawMarkerRemoved = false;
-  for (let i = 0; i < 60; i++) {
-    const observed = await shell
-      .evaluate(() => ({
-        disabled: Boolean(document.querySelector('[data-testid="feedback-button"]')?.disabled),
-        ariaBusy: document.querySelector('[data-testid="feedback-button"]')?.getAttribute('aria-busy'),
-        platformMarker: document.documentElement.getAttribute('data-platform'),
-      }))
-      .catch(() => null);
-    if (observed?.disabled || observed?.ariaBusy === 'true') sawDisabled = true;
-    if (observed && observed.platformMarker === null) sawMarkerRemoved = true;
-    if (sawDisabled && sawMarkerRemoved) break;
-    await sleep(20);
-  }
-  const rapidToast = await waitUntil(
-    async () => (await shell.locator('[data-testid="feedback-toast"]').count()) > 0,
-    20_000,
-    200,
-  );
-  check('连续快速点击后仍出现成功 toast', Boolean(rapidToast));
-  const rapidToastText = rapidToast
-    ? ((await shell.textContent('[data-testid="feedback-toast"]')) ?? '').replace(/\s+/g, ' ').trim()
-    : '';
-  check('连续快速点击无失败提示', rapidToastText.includes('截图已复制到系统剪贴板') && !rapidToastText.includes('失败'), `text="${rapidToastText}"`);
-  if (probeInstalled?.isPatched) {
-    const probe = await readClipboardProbe();
-    check('连续快速点击只发起一次剪贴板写入（截图防重）', probe?.writes === 1, `clipboard.write 次数=${probe?.writes}`);
-  } else {
-    skip('连续快速点击只发起一次剪贴板写入（截图防重）', 'clipboard.write 无法在主进程内包装计数');
-  }
-  if (sawDisabled) {
-    check('截图期间反馈按钮进入禁用/忙碌态', true, '400ms 写入延时窗口内观察到 disabled/aria-busy');
-  } else {
-    skip(
-      '截图期间反馈按钮进入禁用/忙碌态',
-      '当前实现用 ref 防重、不设置 disabled（Lead 注释：避免禁用态被截进画面）；防重由「只写入一次」断言覆盖，是否补 disabled 由 Lead 裁决',
-    );
-  }
+  const rapidGeometry = await waitForEditorReady(20_000);
+  const rapidEditorCount = await shell.locator('[data-testid="feedback-editor"]').count();
   check(
-    '截图期间临时摘除 data-platform（vibrancy 透明底），截图后恢复',
-    sawMarkerRemoved && (await readLayout()).platformMarker === markerBeforeRapid,
-    `before=${markerBeforeRapid} 摘除观察=${sawMarkerRemoved} after=${(await readLayout()).platformMarker}`,
+    '连续点击后只出现一个编辑器',
+    Boolean(rapidGeometry?.hasEditor) && rapidEditorCount === 1,
+    `editor 数量=${rapidEditorCount}`,
   );
-  const buttonEnabledAgain = await waitUntil(
-    async () => (await shell.evaluate(() => !document.querySelector('[data-testid="feedback-button"]')?.disabled)) === true,
-    15_000,
-    200,
-  );
-  check('截图完成后反馈按钮恢复可用', Boolean(buttonEnabledAgain));
-  const rapidClip = await clipboardImageProbe(RAPID_CLIP_PATH, samples);
+  check('连续点击不写剪贴板', (await readClipboardProbe())?.writes === 0, '截图阶段不应写剪贴板');
+  await sleep(600);
+  const rapidLog = readNewElectronLog();
+  const rapidCaptureCount = (rapidLog.match(/\[feedback\] 整窗截图完成/g) ?? []).length;
   check(
-    '连续快速点击后剪贴板仍是有效的整窗截图',
-    Boolean(rapidClip?.hasImage) &&
-      rapidClip.width === expectedWidth &&
-      rapidClip.height === expectedHeight &&
-      rapidClip.transparent === 0,
-    rapidClip?.hasImage
-      ? `${rapidClip.width}x${rapidClip.height} 透明像素=${rapidClip.transparent}`
-      : '剪贴板无 image/png',
+    '连续点击只截图一次（主进程日志计数=1）',
+    rapidCaptureCount === 1,
+    `截图次数=${rapidCaptureCount}`,
   );
-  await restoreClipboardProbe();
-  await shell.click('[data-testid="feedback-toast-close"]').catch(() => {});
-  await shell.waitForSelector('[data-testid="feedback-toast"]', { state: 'detached', timeout: 10_000 }).catch(() => {});
+  await shell.keyboard.press('Escape');
+  await waitForEditorClosed();
 
-  // ---------- 6. 失败路径：注入 capturePage 异常 → 中文失败 toast（不改 src，走主进程 inspector 注入） ----------
+  // ---------- 11. 失败路径：注入 capturePage 异常 → 中文失败 toast、不打开编辑器 ----------
   console.log('STEP 注入截图异常 → 校验中文失败提示（失败路径）');
   const injection = await mainEval(`(() => {
     const req = process.mainModule.require.bind(process.mainModule);
@@ -1055,25 +1569,20 @@ async function run() {
     try {
       await clearClipboard();
       await shell.click('[data-testid="feedback-button"]');
-      const failToast = await waitUntil(
-        async () => (await shell.locator('[data-testid="feedback-toast"]').count()) > 0,
-        20_000,
-        200,
+      const failToast = await waitForFeedbackToast();
+      const editorCountAfterFail = await shell.locator('[data-testid="feedback-editor"]').count();
+      check(
+        '截图异常时展示失败 toast（data-state=fail）',
+        Boolean(failToast) && failToast.state === 'fail',
+        `state=${failToast?.state ?? '(无 toast)'} text="${failToast?.text ?? ''}"`,
       );
-      const failText = failToast
-        ? ((await shell.textContent('[data-testid="feedback-toast"]')) ?? '').replace(/\s+/g, ' ').trim()
-        : '';
-      const failState = failToast
-        ? await shell.getAttribute('[data-testid="feedback-toast"]', 'data-state').catch(() => null)
-        : null;
-      check('截图异常时展示失败 toast（data-state=fail）', Boolean(failToast) && failState === 'fail', `state=${failState} text="${failText}"`);
       check(
         '失败 toast 为中文错误提示',
-        /[\u4e00-\u9fa5]/.test(failText) && failText.includes('失败'),
-        `text="${failText}"`,
+        Boolean(failToast) && /[\u4e00-\u9fa5]/.test(failToast.text) && failToast.text.includes('失败'),
+        `text="${failToast?.text ?? ''}"`,
       );
-      await shell.click('[data-testid="feedback-toast-close"]').catch(() => {});
-      await shell.waitForSelector('[data-testid="feedback-toast"]', { state: 'detached', timeout: 10_000 }).catch(() => {});
+      check('截图失败时不打开标注编辑器', editorCountAfterFail === 0, `editor 数量=${editorCountAfterFail}`);
+      await closeFeedbackToast();
     } finally {
       const restored = await mainEval(`(() => {
         const backup = globalThis.__ditengFeedbackCapturePageBackup;
@@ -1084,25 +1593,17 @@ async function run() {
       })()`).catch(() => ({ restored: false }));
       logInfo(`capturePage 异常注入已撤销：${JSON.stringify(restored)}`);
     }
-    // 失败后再次点击应恢复成功（证明异常注入不残留、正常链路仍可用）
-    await shell.click('[data-testid="feedback-button"]');
-    const recovered = await waitUntil(
-      async () => {
-        if ((await shell.locator('[data-testid="feedback-toast"]').count()) === 0) return null;
-        const text = ((await shell.textContent('[data-testid="feedback-toast"]')) ?? '').replace(/\s+/g, ' ');
-        return text.includes('截图已复制到系统剪贴板') ? text : null;
-      },
-      20_000,
-      200,
-    );
-    check('失败路径后恢复正常截图（toast 成功）', Boolean(recovered));
-    await shell.click('[data-testid="feedback-toast-close"]').catch(() => {});
-    await shell.waitForSelector('[data-testid="feedback-toast"]', { state: 'detached', timeout: 10_000 }).catch(() => {});
+    const recoveredGeometry = await openFeedbackEditor();
+    check('失败路径后恢复正常（再次点击可打开编辑器）', Boolean(recoveredGeometry?.hasEditor));
+    await shell.keyboard.press('Escape');
+    await waitForEditorClosed();
   } else {
     skip('截图异常时展示失败 toast（data-state=fail）', `无法注入 capturePage 异常：${injection?.error ?? '属性不可写'}`);
     skip('失败 toast 为中文错误提示', '依赖失败注入');
+    skip('截图失败时不打开标注编辑器', '依赖失败注入');
   }
 
+  logInfo(`编辑器截图：${EDITOR_PATH}`);
   logInfo(`Toast 截图：${TOAST_PATH}`);
   logInfo(`剪贴板截图：${CLIP_PATH}`);
   return 0;
@@ -1126,12 +1627,25 @@ async function diagnoseCapturePipeline(layout, win) {
       if (platformMarker) root.removeAttribute('data-platform');
       try {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return await window.diteng.captureFeedbackScreenshot();
+        const captured = await window.diteng.captureFeedbackScreenshot();
+        if (!captured.ok) return { ok: false, message: captured.message };
+        const bytes = captured.png;
+        const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const bitmap = await createImageBitmap(new Blob([buffer], { type: 'image/png' }));
+        const copied = await window.diteng.copyFeedbackImage(bytes);
+        return {
+          ok: true,
+          byteLength: bytes.length,
+          width: bitmap.width,
+          height: bitmap.height,
+          copied: copied.ok,
+          copiedMessage: copied.ok ? '' : copied.message,
+        };
       } finally {
         if (platformMarker) root.setAttribute('data-platform', platformMarker);
       }
     });
-    logInfo(`诊断：captureFeedbackScreenshot 返回 ${JSON.stringify(result)}`);
+    logInfo(`诊断：截图/复制返回 ${JSON.stringify(result)}`);
     if (result?.ok) {
       const scale = layout.devicePixelRatio;
       const expectedWidth = Math.round(win.contentBounds.width * win.scaleFactor);
@@ -1220,7 +1734,7 @@ try {
     console.log('失败明细：');
     for (const item of failed) console.log(`- ${item.name}：${item.detail}`);
   }
-  console.log(`产物：${CLIP_PATH} / ${TOAST_PATH}`);
+  console.log(`产物：${EDITOR_PATH} / ${CLIP_PATH} / ${TOAST_PATH}`);
   console.log(`主进程日志：${ELECTRON_LOG}`);
   console.log(`隔离 userData（保留供排查）：${USER_DATA_DIR}`);
   console.log(exitCode === 0 ? 'RESULT: PASS' : exitCode === 3 ? 'RESULT: HARNESS_READY' : 'RESULT: FAIL');

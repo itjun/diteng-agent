@@ -37,6 +37,7 @@ import { installErpMenuNewTabPatch } from './erp-menu-newtab';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
+import { openFeedbackChatApp } from './external-apps';
 import { CorpSwitchCoordinator, type CorpSwitchTarget } from './corp-switch';
 import { ErpRequestGate } from './erp-request-gate';
 import { isShellEntryUrl } from './shell-origin';
@@ -45,6 +46,7 @@ import type {
   AppConfigPatch,
   ApiFailure,
   CorpAccount,
+  FeedbackCopyResult,
   FeedbackScreenshotResult,
   LoginResult,
   MqttState,
@@ -76,6 +78,8 @@ let mainWindow: BrowserWindow | null = null;
 let pendingEntry: { url: string; corpNo: string } | null = null;
 // 托盘退出（托盘菜单/Dock 退出）时置位，主窗 close 拦截据此放行真正关闭
 let isQuitting = false;
+// 反馈标注编辑器打开状态：由主窗壳经 feedback:editor-active 同步，打开期间主窗接管 Esc/⌘Z/⇧⌘Z/⌘W
+let isFeedbackEditorActive = false;
 let isLoggingOut = false;
 let isConfirmingRelogin = false;
 let testNotification: Notification | null = null;
@@ -108,6 +112,7 @@ function sendToShell(channel: string, payload: unknown): void {
  * 应用快捷键：⌘/Ctrl+B 展开收起侧栏、⌘/Ctrl+, 打开设置页。
  * 焦点可能在主窗壳（工具栏/rail/设置页）或 webview guest（ERP 页面）里，
  * 两处 webContents 都挂 before-input-event，统一拦下默认行为后推给壳执行。
+ * 反馈标注编辑器打开期间（仅主窗与其 webview guest）另接管 Esc/⌘Z/⇧⌘Z/⌘W 转发 editor-* 动作。
  * macOS 另外补回编辑类快捷键（剪贴板/撤销/重做）与常用窗口快捷键：
  * 应用菜单已被清空（见 app.whenReady），这些系统快捷键原本挂在菜单上，不补会失效。
  */
@@ -116,7 +121,28 @@ function handleAppShortcut(event: Electron.Event, input: Electron.Input, content
   const isMac = process.platform === 'darwin';
   const isModifierPressed = isMac ? input.meta : input.control;
   const key = input.key.toLowerCase();
+  // 反馈标注编辑器打开期间：Esc 取消、⌘/Ctrl+Z 撤销、⇧⌘/Ctrl+Z 重做、⌘/Ctrl+W 取消（不关窗），
+  // 均转给壳由编辑器自身处理；其余按键维持下方原有逻辑
   const isMainWindowContents = mainWindow !== null && BrowserWindow.fromWebContents(contents) === mainWindow;
+  if (isFeedbackEditorActive && isMainWindowContents) {
+    if (input.key === 'Escape') {
+      event.preventDefault();
+      sendToShell('shortcut:action', 'editor-cancel');
+      return;
+    }
+    if (isModifierPressed && !input.alt) {
+      if (key === 'z') {
+        event.preventDefault();
+        sendToShell('shortcut:action', input.shift ? 'editor-redo' : 'editor-undo');
+        return;
+      }
+      if (key === 'w') {
+        event.preventDefault();
+        sendToShell('shortcut:action', 'editor-cancel');
+        return;
+      }
+    }
+  }
   if (isMainWindowContents && input.control && !input.alt && key === 'tab') {
     event.preventDefault();
     sendToShell('shortcut:action', input.shift ? 'previous-tab' : 'next-tab');
@@ -543,6 +569,10 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isShellUrl(url)) event.preventDefault();
   });
+  // 壳整页刷新/崩溃恢复后编辑器已不存在：复位快捷键接管开关，避免 Esc/⌘Z/⌘W 被错误拦截
+  mainWindow.webContents.on('did-start-loading', () => {
+    isFeedbackEditorActive = false;
+  });
 
   const createdMainWindow = mainWindow;
   const previousLoginWindow = loginWindow;
@@ -584,6 +614,8 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   });
   mainWindow.on('closed', () => {
     pendingEntry = null;
+    // 编辑器随主窗一起销毁，复位快捷键接管开关
+    isFeedbackEditorActive = false;
     if (mainWindow === createdMainWindow) mainWindow = null;
   });
   loadShellEntry(mainWindow, MAIN_WINDOW_HASH);
@@ -910,34 +942,61 @@ function readServerBase(request: unknown): string {
 }
 
 /**
- * 一键反馈：整窗截图写入系统剪贴板，用户直接粘贴给客服。
+ * 一键反馈：主窗整窗截图，PNG 原始字节回渲染层做标注。
  * 截图对象是主窗壳 webContents——rail/工具栏与 <webview> 标签页均为页内合成，一次 capturePage
  * 即可拿到整幅画面；截图前的 macOS vibrancy 透明底处理由渲染层临时摘掉 data-platform 完成
- * （见 Shell captureFeedback）。Electron 44 起图片写入改为异步 ClipboardItem，
- * 旧的 clipboard.writeImage 已移除。
+ * （见 Shell captureFeedback）。写系统剪贴板改由标注确认后调 feedback:copy-image 完成
+ * （Electron 44 起剪贴板图片只能走异步 ClipboardItem，旧的 clipboard.writeImage 已移除）。
  */
 async function captureFeedbackScreenshot(): Promise<FeedbackScreenshotResult> {
   if (!mainWindow || mainWindow.isDestroyed()) return invalid('主窗口不可用，请重新登录后再试');
-  let png: Buffer;
-  let width = 0;
-  let height = 0;
   try {
     const image = await mainWindow.webContents.capturePage();
-    ({ width, height } = image.getSize());
-    png = image.toPNG();
+    const { width, height } = image.getSize();
+    if (width <= 0 || height <= 0) return invalid('请稍后重试');
+    const png = image.toPNG();
+    if (png.length === 0) return invalid('请稍后重试');
+    console.log(`[feedback] 整窗截图完成：${width}x${height}（PNG ${png.length} 字节）`);
+    return { ok: true, png };
   } catch (error) {
     console.warn('[feedback] 主窗截图失败：', error);
-    return invalid('截图失败，请重试');
+    return invalid('请稍后重试');
   }
-  if (width <= 0 || height <= 0 || png.length === 0) return invalid('截图失败，请重试');
+}
+
+// 反馈 PNG 长度上限：渲染层传标注后的 canvas 导出，30MB 足够且能挡住误传大对象
+const FEEDBACK_PNG_MAX_BYTES = 30 * 1024 * 1024;
+// PNG 文件头魔数，用于拒绝非 PNG 字节写入剪贴板
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * feedback:copy-image 入参校验：接受 Uint8Array/ArrayBuffer，长度 0<len<=30MB 且带 PNG 魔数；
+ * 非法输入返回 null 由调用方按 invalid 处理，不让 handler 抛异常。
+ */
+function readFeedbackPng(source: unknown): Uint8Array | null {
+  let bytes: Uint8Array | null = null;
+  if (source instanceof Uint8Array) bytes = source;
+  else if (source instanceof ArrayBuffer) bytes = new Uint8Array(source);
+  if (!bytes || bytes.length === 0 || bytes.length > FEEDBACK_PNG_MAX_BYTES) return null;
+  if (bytes.length < PNG_MAGIC.length) return null;
+  for (let i = 0; i < PNG_MAGIC.length; i += 1) {
+    if (bytes[i] !== PNG_MAGIC[i]) return null;
+  }
+  return bytes;
+}
+
+/** feedback:copy-image：校验 PNG 字节后写入系统剪贴板（Electron 44 异步 ClipboardItem） */
+async function copyFeedbackImage(source: unknown): Promise<FeedbackCopyResult> {
+  const png = readFeedbackPng(source);
+  if (!png) return invalid('截图数据无效，请重新截图');
   try {
     await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
   } catch (error) {
-    console.warn('[feedback] 截图写入系统剪贴板失败：', error);
+    console.warn('[feedback] 标注截图写入系统剪贴板失败：', error);
     return invalid('复制截图到剪贴板失败，请重试');
   }
-  console.log(`[feedback] 整窗截图已写入系统剪贴板：${width}x${height}（PNG ${png.length} 字节）`);
-  return { ok: true, width, height };
+  console.log(`[feedback] 标注截图已写入系统剪贴板（PNG ${png.length} 字节）`);
+  return { ok: true };
 }
 
 function registerIpcHandlers(): void {
@@ -1117,8 +1176,24 @@ function registerIpcHandlers(): void {
     } finally { isConfirmingRelogin = false; }
   });
 
-  // 一键反馈：主窗整窗截图写剪贴板（渲染层负责入口与提示文案）
+  // 一键反馈：主窗整窗截图（PNG 字节回渲染层标注，不在此写剪贴板）
   ipcMain.handle('feedback:capture-screenshot', () => captureFeedbackScreenshot());
+
+  // 一键反馈：标注后的 PNG 写系统剪贴板，成功后渲染层再启动微信/企业微信
+  ipcMain.handle('feedback:copy-image', (_event, source: unknown) => copyFeedbackImage(source));
+
+  // 一键反馈：启动/前置微信、企业微信（只启动，不模拟粘贴）
+  ipcMain.handle('feedback:open-app', async (_event, target: unknown) => {
+    if (target !== 'wechat' && target !== 'wecom') return invalid('反馈聊天应用参数不正确');
+    const failure = await openFeedbackChatApp(target);
+    return failure ?? { ok: true };
+  });
+
+  // 一键反馈：标注编辑器打开状态（主窗级开关；打开期间主窗接管 Esc/撤销/重做/⌘W）
+  ipcMain.on('feedback:editor-active', (event, isActive: unknown) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+    isFeedbackEditorActive = isActive === true;
+  });
 
   registerTabsIpcHandlers();
   registerNotifyIpcHandlers();
