@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, ChromeColor, SessionSummary } from '../../shared/types';
+import type { AppConfig, ChromeColor, MqttState, SessionSummary } from '../../shared/types';
 import { ArrowLeftIcon } from './theme-icons';
 import { useThemeSetting } from './use-theme';
 import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
 import styles from './Settings.module.css';
+import { NotificationSettings } from './NotificationSettings';
 import { SettingRow } from './SettingRow';
 import { version as APP_VERSION } from '../../../package.json';
 
@@ -32,6 +33,7 @@ const CATEGORIES: SettingsCategoryDef[] = [
   { key: 'account', name: '账号', desc: '登录身份与当前账套' },
   { key: 'appearance', name: '外观', desc: '主题外观' },
   { key: 'connection', name: '连接', desc: '服务器与设备信息' },
+  { key: 'notifications', name: '通知', desc: '系统提醒与重要消息' },
   { key: 'about', name: '关于', desc: '版本与更新' },
 ];
 
@@ -216,13 +218,19 @@ function ProfileCard({ session }: { session: SessionSummary | null }) {
 export function SettingsPage({
   session,
   activeCategory,
+  messageState,
+  messageError,
   onAccounts,
+  onMessages,
   onRelogin,
   isReloggingIn,
 }: {
   session: SessionSummary | null;
   activeCategory: SettingsCategoryKey;
+  messageState: MqttState | null;
+  messageError: string;
   onAccounts: () => void;
+  onMessages: () => void;
   onRelogin: () => void;
   isReloggingIn: boolean;
 }) {
@@ -350,6 +358,7 @@ export function SettingsPage({
                 </div>
               </section>
             </>}
+            {activeCategory === 'notifications' && <NotificationSettings state={messageState} stateError={messageError} onMessages={onMessages} />}
             <SettingRows rows={rowsByCategory[activeCategory]} />
             {activeCategory === 'connection' && <div className={styles.rowGroup}>
               <SettingRow title="更换服务器" desc="先退出当前登录，再在登录页填写新的服务器地址。">

@@ -12,6 +12,7 @@ import {
   AlertIcon,
   AccountBookIcon,
   BackIcon,
+  BellIcon,
   CameraIcon,
   ChatIcon,
   CheckIcon,
@@ -35,6 +36,7 @@ import { probePageSurface } from './page-surface';
 import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
 import { pageLabel, shareablePageUrl, tabLabel } from './shell-presentation';
+import { messageConnectionLabel, useMessageState } from './use-message-state';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
@@ -103,6 +105,7 @@ export function Shell() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [activeTabId, setActiveTabId] = useState('');
   const [session, setSession] = useState<SessionSummary | null>(null);
+  const { state: messageState, error: messageError } = useMessageState();
   const [isReloggingIn, setIsReloggingIn] = useState(false);
   const isReloggingInRef = useRef(false);
   const isOpeningWorkspaceRef = useRef(false);
@@ -274,6 +277,7 @@ export function Shell() {
 
   const openChat = useCallback(() => { void openWorkspace('ai'); }, [openWorkspace]);
   const openAccounts = useCallback(() => { void openWorkspace('accounts'); }, [openWorkspace]);
+  const openMessages = useCallback(() => { void openWorkspace('messages'); }, [openWorkspace]);
 
   const relogin = useCallback(async () => {
     if (isReloggingInRef.current) return;
@@ -512,6 +516,10 @@ export function Shell() {
 
   const corpDisplayName = session?.corpName || session?.corpNo || '未登录';
   const userDisplayName = session?.userName || session?.loginId || '登录用户';
+  const messageLabel = messageError || messageConnectionLabel(messageState);
+  const messageSummary = messageError ? '状态读取失败' : messageState ? {
+    idle: '尚未连接', connecting: '正在连接', connected: '实时接收正常', reconnecting: '正在重新连接', unavailable: '定时同步',
+  }[messageState.connectionStatus] : '正在读取状态';
 
   // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，地址栏显示新建标签页）
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -590,6 +598,12 @@ export function Shell() {
               </>
             )}
             <div className={styles.railFooter}>
+              <button type="button" className={styles.railAction} data-testid="open-messages" onClick={openMessages}
+                title={`消息中心 · ${messageLabel}`} aria-label={`消息中心，${messageState && messageState.unread >= 0 ? `${messageState.unread} 条未读` : '未读数待同步'}，${messageLabel}`}>
+                <BellIcon />
+                <span className={styles.railActionText}><strong>消息中心</strong><small><i className={messageState?.connected ? styles.statusOnline : styles.statusPending} />{messageSummary}</small></span>
+                {messageState && messageState.unread > 0 && <span className={styles.unreadBadge} data-testid="unread-badge">{messageState.unread > 99 ? '99+' : messageState.unread}</span>}
+              </button>
               <button type="button" className={styles.railAction} data-testid="switch-account" onClick={openAccounts}
                 title={`当前账套 ${corpDisplayName}（${session?.corpNo ?? ''}）· 切换账套`} aria-label={`当前账套 ${corpDisplayName}，切换账套`}>
                 <AccountBookIcon />
@@ -650,15 +664,15 @@ export function Shell() {
                 />
               ))}
               {!isSettingsOpen && !activeTab?.url && (
-                <NewTabPage key={activeTabId} session={session} openViaMain={resolveAndOpen} onChat={openChat} />
+                <NewTabPage key={activeTabId} session={session} openViaMain={resolveAndOpen} onChat={openChat} onMessages={openMessages} onAccounts={openAccounts} />
               )}
             </div>
           </div>
 
           {isSettingsOpen && (
             <>
-              <SettingsPage session={session} activeCategory={settingsCategory}
-                onAccounts={openAccounts} onRelogin={() => void relogin()} isReloggingIn={isReloggingIn} />
+              <SettingsPage session={session} activeCategory={settingsCategory} messageState={messageState} messageError={messageError}
+                onAccounts={openAccounts} onMessages={openMessages} onRelogin={() => void relogin()} isReloggingIn={isReloggingIn} />
             </>
           )}
           {/* 一键反馈结果提示：复制/启动聊天应用后引导粘贴；浮在内容区底部，不占布局 */}
@@ -1086,10 +1100,14 @@ function NewTabPage({
   session,
   openViaMain,
   onChat,
+  onMessages,
+  onAccounts,
 }: {
   session: SessionSummary | null;
   openViaMain: (request: TabsResolveRequest) => Promise<TabsResolveResult>;
   onChat: () => void;
+  onMessages: () => void;
+  onAccounts: () => void;
 }) {
   const [address, setAddress] = useState('');
   const [hint, setHint] = useState('');
@@ -1120,7 +1138,26 @@ function NewTabPage({
 
   return (
     <div className={styles.newTabPage}>
-      <form className={styles.addressForm} onSubmit={openAddress} noValidate>
+      <div className={styles.startHeading}>
+        <span>当前账套 · {session?.corpNo || '—'}</span>
+        <h1>{session?.corpName || session?.corpNo || '工作区'}</h1>
+        <p>{session?.userName || '您好'}，从这里开始今天的工作。</p>
+      </div>
+      <div className={styles.quicklinks}>
+        <button type="button" className={styles.quicklink} data-testid="quicklink-erp" disabled={isOpening || !session} onClick={() => void openRequest({ home: true })}>
+          <HomeIcon /><span className={styles.quicklinkTitle}>ERP 首页</span><span className={styles.quicklinkDesc}>业务菜单与待办</span>
+        </button>
+        <button type="button" className={styles.quicklink} data-testid="quicklink-messages" disabled={!session} onClick={onMessages}>
+          <BellIcon /><span className={styles.quicklinkTitle}>消息中心</span><span className={styles.quicklinkDesc}>查看对话与未读消息</span>
+        </button>
+        <button type="button" className={styles.quicklink} data-testid="quicklink-ai" disabled={!session} onClick={onChat}>
+          <ChatIcon /><span className={styles.quicklinkTitle}>AI 助手</span><span className={styles.quicklinkDesc}>当前账套的企业助手</span>
+        </button>
+        <button type="button" className={styles.quicklink} data-testid="quicklink-accounts" disabled={!session} onClick={onAccounts}>
+          <AccountBookIcon /><span className={styles.quicklinkTitle}>切换账套</span><span className={styles.quicklinkDesc}>进入其他企业的工作区</span>
+        </button>
+      </div>
+      <form className={styles.addressForm} onSubmit={openAddress} noValidate aria-label="通过链接打开页面">
         <div className={styles.addressWrap}>
           <input
             className={styles.addressInput}
@@ -1128,42 +1165,16 @@ function NewTabPage({
             value={address}
             onChange={(event) => setAddress(event.target.value)}
             aria-label="ERP 页面地址"
-            placeholder="输入 ERP 页面地址"
+            placeholder="粘贴 ERP 页面链接（可选）"
             spellCheck={false}
             autoComplete="off"
-            autoFocus
           />
         </div>
         <button type="submit" disabled={isOpening} className={styles.addressGo}>
           打开
         </button>
       </form>
-      {hint && <p className={styles.newTabHint}>{hint}</p>}
-      <div className={styles.quicklinks}>
-        <button
-          type="button"
-          className={styles.quicklink}
-          data-testid="quicklink-erp"
-          disabled={isOpening || !session}
-          onClick={() => void openRequest({ home: true })}
-        >
-          <span className={styles.quicklinkTitle}>ERP 首页</span>
-          <span className={styles.quicklinkDesc}>
-            {session ? `${session.corpNo}/${session.homeForm || 'FrmDefault'}` : '登录会话失效，请重新登录'}
-          </span>
-        </button>
-        <button
-          type="button"
-          className={styles.quicklink}
-          data-testid="quicklink-ai"
-          onClick={onChat}
-        >
-          <span className={styles.quicklinkTitle}>AI 助手</span>
-          <span className={styles.quicklinkDesc}>
-            {session ? `${session.corpNo} 的 AI 助手` : '登录会话失效，请重新登录'}
-          </span>
-        </button>
-      </div>
+      {hint && <p className={styles.newTabHint} role="status">{hint}</p>}
     </div>
   );
 }
