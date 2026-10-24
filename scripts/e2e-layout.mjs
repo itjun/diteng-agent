@@ -217,7 +217,7 @@ if (!shell) {
 }
 await shell.waitForSelector('[data-testid="tabstrip"]', { timeout: 30_000 });
 
-// 2. rail 形态断言：根容器存在，tabstrip 宽度=记忆值或默认 224（保留自定义宽度）
+// 2. rail 形态断言：根容器存在，tabstrip 宽度=记忆值或默认 224（Cursor/VS Code 同款默认）
 async function tabstripBox() {
   return shell.locator('[data-testid="tabstrip"]').boundingBox();
 }
@@ -381,7 +381,7 @@ check('设置页使用统一实底', settingsBackground !== 'rgba(0, 0, 0, 0)', 
 state = await shell.evaluate(() => window.__ditengTabsList());
 check('设置页打开时标签保留', state.tabs.length === 2 && state.activeTabId === secondTabId, `tabs=${state.tabs.length} active=${state.activeTabId}`);
 
-// 6a. 设置导航收进最左 rail：顶部只有返回入口 + 4 个分类；默认外观页主题控件齐全
+// 6a. 设置导航收进最左 rail：顶部只有返回入口 + 5 个分类；默认外观页主题控件齐全
 check(
   '设置导航位于最左 rail',
   (await shell.locator('[data-testid="tabstrip"] [data-testid="settings-rail"]').count()) === 1,
@@ -402,7 +402,7 @@ check('设置页无搜索框', (await shell.locator('[data-testid="settings-sear
 check('设置页隐藏底部用户行', (await shell.locator('[data-testid="tabstrip"] [data-testid="user-chip"]').count()) === 0);
 check('设置页隐藏齿轮设置入口', (await shell.locator('[data-testid="open-settings"]').count()) === 0);
 const navCount = await shell.locator('[data-testid^="settings-nav-"]').count();
-check('设置导航 4 分类', navCount === 4, `nav=${navCount}`);
+check('设置导航 5 分类', navCount === 5, `nav=${navCount}`);
 check(
   '默认外观页导航高亮',
   (await shell.locator('[data-testid="settings-nav-appearance"][aria-current="page"]').count()) === 1,
