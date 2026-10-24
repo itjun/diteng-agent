@@ -336,29 +336,13 @@ check('第二标签打开', state.tabs.length === 2, `tabs=${state.tabs.length}`
 const secondTabId = state.tabs[state.tabs.length - 1].id;
 check('新标签为激活态', state.activeTabId === secondTabId, `active=${state.activeTabId}`);
 
-// 5. 用户卡片：点底部用户行弹出；账套切换只在网页版内，卡片仅保留退出登录，ESC 关闭
-await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 10_000 });
+// 5. 账户行直接进入设置；外壳不提供退出入口。
 await shell.click('[data-testid="user-chip"]');
-await shell.waitForSelector('[data-testid="user-card"]', { timeout: 5_000 });
-check('user-card 打开', (await shell.locator('[data-testid="user-card"]').count()) === 1);
-check(
-  '卡片不再提供账套切换入口',
-  (await shell.locator('[data-testid="user-card"] [data-testid^="corp-option-"]').count()) === 0,
-);
-// 外观/设置入口已统一收进设置页（rail 齿轮），账套切换统一在网页版内：卡片只剩退出登录
-const cardText = (await shell.locator('[data-testid="user-card"]').innerText()).replace(/\s+/g, ' ');
-check(
-  '用户卡片仅保留退出登录',
-  cardText.includes('退出登录') &&
-    !cardText.includes('账套') &&
-    !cardText.includes('外观') &&
-    !cardText.includes('设置…'),
-  `text=${cardText.slice(0, 120)}`,
-);
-// ESC 关闭卡片
+await shell.waitForSelector('[data-testid="settings-page"]');
+check('账户行打开设置', (await shell.locator('[data-testid="settings-page"]').count()) === 1);
+check('外壳不提供退出或账户弹层', (await shell.locator('[data-testid="logout"], [data-testid="user-card"]').count()) === 0);
 await shell.keyboard.press('Escape');
-await shell.waitForTimeout(300);
-check('ESC 关闭卡片', (await shell.locator('[data-testid="user-card"]').count()) === 0);
+await shell.waitForSelector('[data-testid="user-chip"]');
 
 // 6. 设置页：rail 底部齿轮进入，rail 原地换成设置导航，内容区被设置页替换，返回后标签不丢
 await shell.click('[data-testid="user-chip"] [data-testid="open-settings"]');
@@ -431,10 +415,10 @@ for (const testid of [
   check(`外观页控件 ${testid}`, (await shell.locator(`[data-testid="${testid}"]`).count()) === 1);
 }
 
-// 6b. 分类切换：点「账号」→ 右栏换页（大卡片 logout 入口出现、主题控件移除），高亮跟随
+// 6b. 分类切换：点「账号」→ 右栏换页（大卡片仅展示身份、主题控件移除），高亮跟随
 await shell.click('[data-testid="settings-nav-account"]');
 await shell.waitForTimeout(300);
-check('账号页 logout 入口', (await shell.locator('[data-testid="settings-page"] [data-testid="logout"]').count()) === 1);
+check('账号页无退出入口', (await shell.locator('[data-testid="settings-page"] [data-testid="logout"]').count()) === 0);
 check('账号页导航高亮', (await shell.locator('[data-testid="settings-nav-account"][aria-current="page"]').count()) === 1);
 check('切页后主题控件移除', (await shell.locator('[data-testid="settings-theme-system"]').count()) === 0);
 

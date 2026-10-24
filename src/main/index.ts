@@ -1228,7 +1228,7 @@ app.on('web-contents-created', (_event, contents) => {
   /** 网页版退出入口统一映射到壳退出；返回是否已受理（受理后不再按普通导航处理） */
   const handleWebLogout = (url: string): boolean => {
     if (!isErpLogoutUrl(url, getSession(), currentAiBase())) return false;
-    console.log(`[auth] 捕获网页版退出入口，改走外壳退出：${url}`);
+    console.log('[auth] 捕获网页版退出入口，改走外壳退出');
     performLogout();
     return true;
   };

@@ -757,9 +757,6 @@
 
 /* ============ 底部用户行 + 用户卡片 ============ */
 
-.userChipWrap {
-  position: relative;
-}
 
 .userChip {
   display: inline-flex;
@@ -833,80 +830,6 @@
 .userGear:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-}
-
-/*
- * 用户卡片（Cursor 式浮动卡片）：近实色底（menu token，macOS 有不透明兜底）、
- * 圆角 14、柔和多层阴影；从用户行上缘向上弹出，宽度超出 rail 覆盖内容区，
- * z-index 盖过页内合成 webview。
- */
-.userCard {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 300px;
-  max-width: calc(100vw - 24px);
-  box-sizing: border-box;
-  padding: 6px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 14px;
-  background: var(--dsw-specific-menu);
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.1),
-    0 12px 32px rgba(0, 0, 0, 0.14);
-  z-index: 300;
-}
-
-.userCardUp {
-  top: auto;
-  right: auto;
-  left: 0;
-  bottom: calc(100% + 8px);
-}
-
-.userCardRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  box-sizing: border-box;
-  height: 32px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.userCardRow:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.userCardRow:disabled {
-  cursor: default;
-}
-
-.userCardRowText {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 退出登录：destructive 语义色，仅文字/图标着色不铺底 */
-.userCardRowDanger {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.userCardRowDanger:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
 }
 
 /* ============ 一键反馈提示 ============ */

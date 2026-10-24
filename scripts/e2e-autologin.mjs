@@ -141,12 +141,10 @@ async function submitLogin(page, base) {
   await page.click('button[type=submit]');
 }
 
-/** 用户卡片「退出登录」（与 e2e-logout 同路径）：清会话 + 清 savedPassword，回登录窗 */
+/** 测试内部退出（用户入口由 e2e-web-logout 验证）：清会话 + 清 savedPassword，回登录窗 */
 async function logoutFromShell(shell) {
-  await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 30_000 });
-  await shell.click('[data-testid="user-chip"]');
-  await shell.waitForSelector('[data-testid="user-card"] [data-testid="logout"]', { timeout: 10_000 });
-  await shell.click('[data-testid="logout"]');
+  // 测试会话清理走保留的内部 IPC；用户界面中的退出只由网页版提供。
+  await shell.evaluate(() => { void window.diteng.logout(); });
 }
 
 /** 列出监听 9223（CDP）的进程号；无进程时返回空数组。

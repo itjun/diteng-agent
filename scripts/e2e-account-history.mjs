@@ -188,12 +188,10 @@ async function submitLogin(login, loginId, password, base = mockBaseA) {
   await login.click('button[type=submit]');
 }
 
-/** 用户卡片「退出登录」→ 回登录窗（主窗随后销毁） */
+/** 内部退出清理 → 回登录窗（主窗随后销毁） */
 async function logout(shell) {
-  await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 30_000 });
-  await shell.click('[data-testid="user-chip"]');
-  await shell.waitForSelector('[data-testid="user-card"] [data-testid="logout"]', { timeout: 10_000 });
-  await shell.click('[data-testid="logout"]');
+  // 测试会话清理走保留的内部 IPC；用户界面中的退出只由网页版提供。
+  await shell.evaluate(() => { void window.diteng.logout(); });
   const login = await waitForLoginPage(30);
   if (!login) throw new Error('退出登录后 30s 内未见登录窗');
   return login;

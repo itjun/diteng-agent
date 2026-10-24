@@ -188,13 +188,11 @@ async function findWebLogoutLink() {
   return null;
 }
 
-// 1. 归零：若残留 #/main 会话，先走壳退出（与本脚本被测链路不同的另一入口），确保从登录窗出发。
+// 1. 归零：若残留 #/main 会话，先通过内部 IPC 清理测试会话，确保从登录窗出发。
 let shell = findShell();
 if (shell) {
-  await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 30_000 });
-  await shell.click('[data-testid="user-chip"]');
-  await shell.waitForSelector('[data-testid="user-card"] [data-testid="logout"]', { timeout: 10_000 });
-  await shell.click('[data-testid="logout"]');
+  // 测试会话清理走保留的内部 IPC；用户界面中的退出只由网页版提供。
+  await shell.evaluate(() => { void window.diteng.logout(); });
   for (let i = 0; i < 30 && (findShell() || !findLogin()); i++) await sleep(1000);
   shell = null;
 }

@@ -225,50 +225,16 @@ if (info.isMac) {
   check('rail 保持实心', parseAlpha(info.railBg) === 1, `backgroundColor=${info.railBg}`);
 }
 
-// 4. 用户卡片浮层盖住 webview 内容区：卡片从 rail 底部行向上弹出、横向超出 rail 右缘，
-//    矩形与内容区（webview 所在 viewport）相交（页内合成 webview 之上），DOM 断言 + 截图留档
+// 4. 账户行不再弹出覆盖网页的退出菜单，直接进入设置，Escape 返回原页面。
 {
-  await shell.waitForSelector('[data-testid="user-chip"]:not([disabled])', { timeout: 10_000 });
   await shell.click('[data-testid="user-chip"]');
-  await shell.waitForSelector('[data-testid="user-card"]', { timeout: 5_000 });
-  const overlay = await shell.evaluate(() => {
-    const rail = document.querySelector('[data-testid="tabstrip"]');
-    const card = document.querySelector('[data-testid="user-card"]');
-    const viewport = document.querySelector('main');
-    if (!rail || !card || !viewport) return null;
-    const railBox = rail.getBoundingClientRect();
-    const cardBox = card.getBoundingClientRect();
-    const viewportBox = viewport.getBoundingClientRect();
-    return {
-      railRight: railBox.right,
-      cardLeft: cardBox.left,
-      cardRight: cardBox.right,
-      cardTop: cardBox.top,
-      cardBottom: cardBox.bottom,
-      cardZ: getComputedStyle(card).zIndex,
-      viewportLeft: viewportBox.left,
-      viewportTop: viewportBox.top,
-      viewportBottom: viewportBox.bottom,
-    };
-  });
-  // 盖住内容区：卡片右缘深入内容区 40px+、左缘起于 rail 内、纵向落在内容区跨度内
-  const coversContent =
-    overlay !== null &&
-    overlay.cardRight > overlay.railRight + 40 &&
-    overlay.cardLeft < overlay.viewportLeft &&
-    overlay.cardTop > overlay.viewportTop &&
-    overlay.cardBottom < overlay.viewportBottom;
-  check(
-    '用户卡片浮层盖住 webview 内容区',
-    coversContent && Number(overlay.cardZ) > 0,
-    overlay
-      ? `railRight=${overlay.railRight.toFixed(0)} card=[${overlay.cardLeft.toFixed(0)},${overlay.cardTop.toFixed(0)}→${overlay.cardRight.toFixed(0)},${overlay.cardBottom.toFixed(0)}] viewport=[${overlay.viewportLeft.toFixed(0)},${overlay.viewportTop.toFixed(0)}→,${overlay.viewportBottom.toFixed(0)}] z=${overlay.cardZ}`
-      : '元素缺失',
-  );
+  await shell.waitForSelector('[data-testid="settings-page"]');
+  check('账户行打开设置且不生成退出浮层',
+    (await shell.locator('[data-testid="user-card"], [data-testid="logout"]').count()) === 0);
   await shell.screenshot({ path: '/tmp/diteng-vibrancy-card.png' });
   await shell.keyboard.press('Escape');
-  await shell.waitForTimeout(300);
-  check('卡片 ESC 收起', (await shell.locator('[data-testid="user-card"]').count()) === 0);
+  await shell.waitForSelector('[data-testid="user-chip"]');
+  check('Escape 返回网页', (await shell.locator('[data-testid="settings-page"]').count()) === 0);
 }
 
 // 5. 截图存档（毛玻璃透桌面效果由人工肉眼把关）

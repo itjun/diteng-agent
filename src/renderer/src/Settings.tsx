@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AppConfig, ChromeColor, SessionSummary } from '../../shared/types';
-import { ArrowLeftIcon, SignOutIcon } from './theme-icons';
+import { ArrowLeftIcon } from './theme-icons';
 import { useThemeSetting } from './use-theme';
 import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
 import styles from './Settings.module.css';
@@ -192,7 +192,7 @@ function SettingRows({ rows }: { rows: SettingRowDef[] }) {
   );
 }
 
-/** 账号页顶部大卡片：圆形头像 + 账套名称/账套代码，底部「退出登录」红字链接（走现有 auth:logout 链路） */
+/** 账号页顶部大卡片：圆形头像 + 账套名称/账套代码，身份只读展示，退出入口统一保留在网页版 */
 function ProfileCard({ corpName, corpNo }: { corpName: string; corpNo: string }) {
   // 账套名称由会话摘要下发，主进程尚未取到时回落账套号，避免大标题空白
   const name = corpName || corpNo;
@@ -210,19 +210,6 @@ function ProfileCard({ corpName, corpNo }: { corpName: string; corpNo: string })
             {corpNo || '—'}
           </div>
         </div>
-      </div>
-      <div className={styles.profileFooter}>
-        <button
-          type="button"
-          className={styles.logoutLink}
-          data-testid="logout"
-          onClick={() => {
-            void window.diteng.logout();
-          }}
-        >
-          <SignOutIcon />
-          <span>退出登录</span>
-        </button>
       </div>
     </div>
   );

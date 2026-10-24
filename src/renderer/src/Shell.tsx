@@ -22,7 +22,6 @@ import {
   ReloadIcon,
   SettingsIcon,
   SidebarToggleIcon,
-  SignOutIcon,
 } from './theme-icons';
 import {
   DEFAULT_SETTINGS_CATEGORY,
@@ -832,90 +831,20 @@ function RailTab({ tab, label, isActive, onClose, onActivate, onReload, onCloseO
   );
 }
 
-/**
- * 底部用户行（Cursor 式）：圆形头像（当前账套名称首字符）+ 账套名称单行省略 + 右端齿轮，
- * 扁平融入侧栏无边框；点击整行向上弹出用户卡片（仅退出登录——账套切换统一在网页版内完成），
- * 齿轮单独点击直达设置页（外观、账号等设置项统一在设置页处理）。
- */
-function UserChip({
-  session,
-  displayName,
-  onOpenSettings,
-}: {
+/** 账户行直接打开设置；退出入口只在右侧网页版提供。 */
+function UserChip({ session, displayName, onOpenSettings }: {
   session: SessionSummary | null;
   displayName: string;
   onOpenSettings: () => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  // 展开时点外/Escape 收起
-  useEffect(() => {
-    if (!isOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setIsOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [isOpen]);
-
-  const avatarChar = displayName.charAt(0).toUpperCase();
-  // tooltip：当前账套「名称（代码）」，名称未下发时只显示代码；服务器随会话展示
-  const corpLabel = session?.corpName ? `${session.corpName}（${session.corpNo}）` : (session?.corpNo ?? '');
-  const chipTitle = session ? `当前账套 ${corpLabel} / 服务器 ${session.serverBase}` : '未登录';
-
+  const corpLabel = session?.corpName ? `${session.corpName}（${session.corpNo}）` : (session?.corpNo ?? '未登录');
   return (
-    <div className={styles.userChipWrap} ref={wrapRef}>
-      <button
-        type="button"
-        className={`${styles.userChip} ${styles.userChipRail}`}
-        data-testid="user-chip"
-        onClick={() => setIsOpen((open) => !open)}
-        disabled={!session}
-        title={chipTitle}
-      >
-        <span className={styles.userAvatar} aria-hidden="true">
-          {avatarChar}
-        </span>
-        <span className={styles.userChipName}>{displayName}</span>
-        <span
-          role="button"
-          aria-label="打开设置"
-          data-testid="open-settings"
-          className={styles.userGear}
-          title="设置"
-          onClick={(event) => {
-            event.stopPropagation();
-            setIsOpen(false);
-            onOpenSettings();
-          }}
-        >
-          <SettingsIcon />
-        </span>
-      </button>
-      {isOpen && (
-        <div className={`${styles.userCard} ${styles.userCardUp}`} data-testid="user-card" role="menu" aria-label="用户菜单">
-          <button
-            type="button"
-            data-testid="logout"
-            className={`${styles.userCardRow} ${styles.userCardRowDanger}`}
-            onClick={() => {
-              void window.diteng.logout();
-            }}
-          >
-            <SignOutIcon />
-            <span className={styles.userCardRowText}>退出登录</span>
-          </button>
-        </div>
-      )}
-    </div>
+    <button type="button" className={`${styles.userChip} ${styles.userChipRail}`} data-testid="user-chip"
+      onClick={onOpenSettings} title={`当前账套 ${corpLabel} · 打开设置`} aria-label={`当前账套 ${corpLabel}，打开设置`}>
+      <span className={styles.userAvatar} aria-hidden="true">{displayName.charAt(0)}</span>
+      <span className={styles.userChipName}>{displayName}</span>
+      <span className={styles.userGear} data-testid="open-settings" aria-hidden="true"><SettingsIcon /></span>
+    </button>
   );
 }
 
