@@ -9,6 +9,7 @@ Electron 44 · TypeScript · React 18 · Vite（renderer）+ tsc（main/preload�
 ## 常用命令
 
 ```bash
+./build.py          # macOS 一键停止旧进程、编译打包、安装到 /Applications 并启动
 pnpm install        # 安装（electron 二进制失败时用 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/）
 pnpm dev            # 开发：vite(5173) + electron（改动 main/preload 需重启）
 pnpm typecheck      # 四个 tsconfig 全量检查
@@ -16,6 +17,8 @@ node --test scripts/test-shell-presentation.mjs scripts/test-desktop-coordinatio
 pnpm build          # 构建 main/preload/renderer 到 dist/
 pnpm dist:mac       # 打 mac arm64 dmg（release/）；dist:win 为 Windows nsis 配置
 ```
+
+`build.py` 需要 Python 3、Node.js、pnpm 和 Xcode Command Line Tools，可从任意目录通过脚本路径运行（也可用 `python3 build.py`）。自动匹配本机 Apple Silicon / Intel 架构，使用本地 ad-hoc 签名（不公证），保留用户配置；加 `--no-launch` 可在安装后跳过启动。DMG 安装包保留在 `release/`，构建失败时不会替换已安装应用。
 
 ## e2e 真机验证（CDP 驱动真实应用）
 
