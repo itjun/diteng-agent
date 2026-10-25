@@ -94,35 +94,36 @@ export function isGestureTooSmall(shape: GestureShape): boolean {
   return deltaX < 4 && deltaY < 4;
 }
 
-/** 箭头：线 + 实心三角箭头 */
-function drawArrowShape(ctx: CanvasRenderingContext2D, shape: ArrowShape): void {
+/** 细尾逐渐加宽到箭头根部；短箭头按长度收缩，避免箭头越过起点。 */
+function arrowOutline(shape: ArrowShape): Point[] {
   const deltaX = shape.to.x - shape.from.x;
   const deltaY = shape.to.y - shape.from.y;
-  if (deltaX === 0 && deltaY === 0) return;
-  const angle = Math.atan2(deltaY, deltaX);
-  const headLength = Math.max(shape.lineWidth * 3.4, 12);
-  const headAngle = Math.PI / 7;
-  const shaftEndX = shape.to.x - Math.cos(angle) * headLength * 0.9;
-  const shaftEndY = shape.to.y - Math.sin(angle) * headLength * 0.9;
-  ctx.strokeStyle = shape.color;
-  ctx.lineWidth = shape.lineWidth;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(shape.from.x, shape.from.y);
-  ctx.lineTo(shaftEndX, shaftEndY);
-  ctx.stroke();
+  const length = Math.hypot(deltaX, deltaY);
+  if (length === 0) return [shape.from];
+  const ux = deltaX / length; const uy = deltaY / length;
+  const headLength = Math.min(Math.max(shape.lineWidth * 3.5, 12), length * 0.45);
+  const headHalfWidth = headLength * 0.7;
+  const shaftHalfWidth = headHalfWidth * 0.4;
+  const point = (along: number, across: number): Point => ({
+    x: shape.from.x + ux * along - uy * across,
+    y: shape.from.y + uy * along + ux * across,
+  });
+  return [
+    shape.from,
+    point(length - headLength * 0.75, -shaftHalfWidth),
+    point(length - headLength, -headHalfWidth),
+    shape.to,
+    point(length - headLength, headHalfWidth),
+    point(length - headLength * 0.75, shaftHalfWidth),
+  ];
+}
+
+function drawArrowShape(ctx: CanvasRenderingContext2D, shape: ArrowShape): void {
+  const points = arrowOutline(shape);
   ctx.fillStyle = shape.color;
   ctx.beginPath();
-  ctx.moveTo(shape.to.x, shape.to.y);
-  ctx.lineTo(
-    shape.to.x - Math.cos(angle - headAngle) * headLength,
-    shape.to.y - Math.sin(angle - headAngle) * headLength,
-  );
-  ctx.lineTo(
-    shape.to.x - Math.cos(angle + headAngle) * headLength,
-    shape.to.y - Math.sin(angle + headAngle) * headLength,
-  );
+  ctx.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
   ctx.closePath();
   ctx.fill();
 }
@@ -241,6 +242,11 @@ export interface Bounds { x: number; y: number; w: number; h: number }
 export type Handle = 'move' | 'from' | 'to' | 'nw' | 'ne' | 'sw' | 'se';
 
 export function shapeBounds(shape: Shape, measure: (text: string, fontSize: number) => number): Bounds {
+  if (shape.type === 'arrow') {
+    const points = arrowOutline(shape);
+    const xs = points.map((point) => point.x); const ys = points.map((point) => point.y);
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  }
   if (shape.type === 'text') {
     return {
       x: shape.x, y: shape.y - shape.fontSize,
@@ -263,12 +269,19 @@ function segmentDistance(point: Point, from: Point, to: Point): number {
   return Math.hypot(point.x - from.x - fraction * dx, point.y - from.y - fraction * dy);
 }
 
-/** 按绘制层级从上往下命中；箭头和画笔按线段命中，避免巨大的空白包围框抢走点选。 */
+/** 按绘制层级从上往下命中；箭头按实心轮廓、画笔按线段，避免空白包围框抢走点选。 */
 export function findShapeAtPoint(shapes: Shape[], point: Point, tolerance: number, measure: (text: string, fontSize: number) => number): number {
   for (let index = shapes.length - 1; index >= 0; index -= 1) {
     const shape = shapes[index];
     if (shape.type === 'arrow') {
-      if (segmentDistance(point, shape.from, shape.to) <= tolerance + shape.lineWidth / 2) return index;
+      const points = arrowOutline(shape);
+      let isInside = false;
+      for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const from = points[j]; const to = points[i];
+        if (segmentDistance(point, from, to) <= tolerance) return index;
+        if ((from.y > point.y) !== (to.y > point.y) && point.x < (to.x - from.x) * (point.y - from.y) / (to.y - from.y) + from.x) isInside = !isInside;
+      }
+      if (isInside) return index;
       continue;
     }
     if (shape.type === 'pen') {

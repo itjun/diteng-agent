@@ -54,6 +54,17 @@ test('箭头空白包围区不抢走点选，交叠标注优先命中上层', ()
   assert.equal(findShapeAtPoint([arrow], { x: 70, y: 72 }, 5, measure), 0);
   assert.equal(findShapeAtPoint([arrow, { ...text, x: 60, y: 75 }], { x: 70, y: 70 }, 5, measure), 1);
 });
+test('渐宽箭头的箭翼可点选，选框包含整个实心轮廓', () => {
+  const horizontal = { ...arrow, from: { x: 20, y: 60 }, to: { x: 220, y: 60 } };
+  assert.equal(findShapeAtPoint([horizontal], { x: 208, y: 68 }, 0, measure), 0);
+  assert.equal(findShapeAtPoint([horizontal], { x: 25, y: 64 }, 0, measure), -1);
+  const bounds = shapeBounds(horizontal, measure);
+  assert.ok(bounds.y < 51 && bounds.y + bounds.h > 69);
+  assert.equal(bounds.x, 20); assert.equal(bounds.w, 200);
+  const short = { ...horizontal, to: { x: 26, y: 60 } };
+  assert.equal(shapeBounds(short, measure).x, 20);
+  assert.equal(shapeBounds(short, measure).w, 6);
+});
 test('文字选框包含第二行，空行不丢失高度', () => {
   assert.deepEqual(shapeBounds(text, measure), { x: 30, y: 50, w: 60, h: 54 });
   assert.equal(findShapeAtPoint([text], { x: 50, y: 95 }, 0, measure), 0);

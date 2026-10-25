@@ -1,4 +1,4 @@
-/** 真实反馈编辑器的视口与标注导出回归；隔离 Electron，不访问账号或系统剪贴板。 */
+/** 真实反馈编辑器的视口与箭头回归；隔离 Electron，不访问账号或系统剪贴板。 */
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,6 +72,18 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
   check('适合窗口恢复居中', Math.abs(fitted.x - before.x) < 2 && Math.abs(fitted.y - before.y) < 2);
   await page.getByTestId('feedback-tool-arrow').click();
   await drag(fitted.x + fitted.width * 0.2, fitted.y + fitted.height * 0.4, fitted.width * 0.6, 0);
+  const widths = await canvas.evaluate((element) => {
+    const ctx = element.getContext('2d');
+    return [0.3, 0.65].map((fraction) => {
+      const pixels = ctx.getImageData(Math.round(element.width * fraction), Math.round(element.height * 0.4) - 30, 1, 61).data;
+      let width = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (Math.abs(pixels[i] - 229) < 25 && Math.abs(pixels[i + 1] - 72) < 25 && Math.abs(pixels[i + 2] - 77) < 25) width += 1;
+      }
+      return width;
+    });
+  });
+  check('实心箭头由细尾逐渐加宽', widths[0] > 0 && widths[1] >= widths[0] * 2, JSON.stringify(widths));
   await canvas.focus();
   await page.keyboard.down('Space');
   check('空格拖动时隐藏编辑手柄', await page.getByTestId('feedback-handle-to').count() === 0);
