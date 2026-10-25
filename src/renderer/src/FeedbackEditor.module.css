@@ -46,6 +46,7 @@
 
 /* 截图容器：12px 圆角 + 阴影，底图不透明所以铺白底 */
 .canvasWrap {
+  position: relative;
   display: flex;
   max-width: 100%;
   max-height: 100%;
@@ -319,27 +320,79 @@
   filter: brightness(1.06);
 }
 
-/* 文字输入框：固定定位贴住点击点，字号与画布文字（20 显示像素）一致 */
-.textInput {
-  position: fixed;
-  z-index: 501;
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 4px;
-  border: 1px dashed currentColor;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.35);
-  font-family: inherit;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 26px;
-  outline: none;
-  transform: translateY(-22px);
-  caret-color: currentColor;
+.selection {
+  position: absolute;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  pointer-events: none;
 }
 
-.textInput::placeholder {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 13px;
-  font-weight: 400;
+.handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 2px;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  cursor: move;
+  touch-action: none;
+}
+
+.textEditor {
+  position: absolute;
+  z-index: 2;
+  width: 320px;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 6px;
+  background: var(--dsw-specific-menu);
+}
+
+.textInput {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 90px;
+  padding: 4px;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.35;
+  outline: none;
+}
+
+.textActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 5px;
+}
+
+.option select {
+  height: 28px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: var(--dsw-specific-menu);
+  color: inherit;
+  font: inherit;
+}
+
+.overlay button:focus-visible,
+.overlay select:focus-visible,
+.canvas:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
 }
