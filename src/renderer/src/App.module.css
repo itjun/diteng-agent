@@ -1,75 +1,139 @@
-/* 登录窗样式：颜色一律走移植的 --dsw-* token，深色由 body[data-ds-dark-theme] 自动切换 */
+/* 登录页局部配色，不影响主窗口；深色仍由既有主题状态驱动。 */
 
 .page {
+  --login-gutter: 24px;
+  --login-background-start: #edf4ff;
+  --login-background-end: #e7f4ee;
+  --login-illustration-start: #eef5ff;
+  --login-illustration-end: #f0faf5;
+  --login-border: #d6e0e6;
+  --login-accent: #1c803e;
+  --login-accent-hover: #166b34;
+  --login-focus: #087aa8;
+  --login-error: #b42318;
+  --dsw-alias-label-primary: #203141;
+  --dsw-alias-label-secondary: #526678;
+  --dsw-alias-label-tertiary: #617384;
+  --dsw-alias-label-caption: #617384;
+  --dsw-alias-label-dimmed: #667789;
+  --dsw-alias-bg-layer-1: #ffffff;
+  --dsw-specific-login-input: #ffffff;
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--dsw-alias-bg-base);
-  /* macOS 标题栏已隐藏，整页作为窗口拖拽区；表单卡片与按钮在 .card 上整体恢复 no-drag */
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: var(--login-gutter);
+  scroll-padding-block: var(--login-gutter);
+  overflow-y: auto;
+  background: linear-gradient(125deg, var(--login-background-start), var(--login-background-end));
+  /* 顶部和插画区可拖拽，表单及滚动内容恢复交互。 */
+  -webkit-app-region: drag;
+}
+
+/* 顶部拖拽区与四周留白等宽，小屏滚动时不覆盖可见表单。 */
+.page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  height: var(--login-gutter);
+  background: linear-gradient(125deg, var(--login-background-start), var(--login-background-end));
   -webkit-app-region: drag;
 }
 
 .card {
   position: relative;
+  display: grid;
+  grid-template-columns: 46% 54%;
+  flex: 1 0 auto;
   box-sizing: border-box;
-  width: 332px;
-  padding: 28px;
-  border-radius: var(--dsw-radius-lg);
+  width: 100%;
+  min-height: 520px;
+  border-radius: 20px;
   background: var(--dsw-alias-bg-layer-1);
-  /* 0.5px 发丝边框 + subtle 阴影，浅色下卡片与底色同为白时靠描边分层 */
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-  -webkit-app-region: no-drag;
+  border: 1px solid var(--login-border);
+  box-shadow: 0 12px 36px rgba(42, 70, 94, 0.07);
 }
 
-/* macOS 自绘关闭钮（唯一的窗口操作按钮） */
-.closeButton {
-  position: fixed;
-  top: 14px;
-  left: 14px;
+.illustrationPanel {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  padding: 32px 24px;
+  border-radius: 19px 0 0 19px;
+  background: linear-gradient(155deg, var(--login-illustration-start), var(--login-illustration-end));
+}
+
+.illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+}
+
+.formPanel {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: var(--dsw-radius-md);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  min-width: 0;
+  padding: 40px 32px;
   -webkit-app-region: no-drag;
-  cursor: default;
 }
 
-.closeButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+.formContent {
+  width: 352px;
+  max-width: 100%;
+}
+
+.formTitle {
+  margin: 0 0 28px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
 
-body[data-ds-dark-theme] .card {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+body[data-ds-dark-theme] .page {
+  --login-background-start: #111d2c;
+  --login-background-end: #132a27;
+  --login-illustration-start: #1a2b40;
+  --login-illustration-end: #1a3537;
+  --login-border: #344757;
+  --login-accent: #238444;
+  --login-accent-hover: #1d753b;
+  --login-focus: #71c6e5;
+  --login-error: #ffb4aa;
+  --dsw-alias-label-primary: #e9f1f7;
+  --dsw-alias-label-secondary: #b5c5d2;
+  --dsw-alias-label-tertiary: #a0b3c3;
+  --dsw-alias-label-caption: #a0b3c3;
+  --dsw-alias-label-dimmed: #8fa4b6;
+  --dsw-alias-bg-layer-1: #1a2633;
+  --dsw-specific-login-input: #1d2d3d;
 }
 
-/* 自动登录/启动判定期状态页：品牌头 + spinner 居中 */
-.autoLoginPanel {
+/* 各状态只替换右侧内容，分栏保持稳定。 */
+.autoLoginPanel,
+.donePanel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-height: 240px;
-}
-
-.autoLoginPanel .brandRow {
-  align-self: flex-start;
+  justify-content: center;
+  min-height: 318px;
 }
 
 .spinner {
-  width: 22px;
-  height: 22px;
-  margin-top: 64px;
-  border: 2px solid var(--dsw-alias-border-l4);
-  border-top-color: var(--dsw-alias-state-business-primary);
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--login-border);
+  border-top-color: var(--login-accent);
   border-radius: 50%;
   animation: autoLoginSpin 0.8s linear infinite;
 }
@@ -91,51 +155,29 @@ body[data-ds-dark-theme] .card {
   min-width: 120px;
 }
 
-.brandRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0 6px;
-}
-
-.brand {
-  margin: 0;
-  font-family: var(--dsw-font-family-brand);
-  font-size: 19px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.brandTag {
-  font-size: 10px;
-  letter-spacing: 1.4px;
-  color: var(--dsw-alias-label-tertiary);
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-xs);
-  padding: 1.5px 6px;
-}
-
 .fieldLabel {
   display: block;
-  margin: 14px 0 6px;
-  font-size: 12px;
-  line-height: 16px;
+  margin: 20px 0 8px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--dsw-alias-label-secondary);
 }
 
 .inputWrap {
   display: flex;
   align-items: center;
-  height: 36px;
-  padding: 0 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px;
   background: var(--dsw-specific-login-input);
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-sm);
+  border: 1px solid var(--login-border);
+  border-radius: 10px;
 }
 
 .inputWrap:focus-within {
-  border-color: var(--dsw-alias-state-business-primary);
+  border-color: var(--login-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-focus) 14%, transparent);
 }
 
 .input {
@@ -144,7 +186,7 @@ body[data-ds-dark-theme] .card {
   border: none;
   outline: none;
   background: transparent;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
 }
@@ -163,8 +205,8 @@ body[data-ds-dark-theme] .card {
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   margin-left: 4px;
   padding: 0;
   border: none;
@@ -218,13 +260,13 @@ body[data-ds-dark-theme] .historyList {
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  padding: 6px 8px;
+  padding: 10px 8px;
   border: none;
   border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
 }
@@ -315,12 +357,12 @@ body[data-ds-dark-theme] .historyList {
 }
 
 .outlineButton {
-  height: 36px;
+  height: 48px;
   padding: 0 12px;
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: var(--dsw-radius-sm);
+  border: 1px solid var(--login-border);
+  border-radius: 10px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
@@ -335,21 +377,22 @@ body[data-ds-dark-theme] .historyList {
   cursor: not-allowed;
 }
 
-/* 主按钮：浅色 rgb(15,17,21) 底白字 / 深色 rgb(249,250,251) 底黑字，由 token 反色对自动实现 */
+/* 绿色主操作沿用 Web 登录页方向，深浅模式均保留白字。 */
 .primaryButton {
   width: 100%;
-  height: 38px;
-  margin-top: 20px;
+  height: 48px;
+  margin-top: 24px;
   border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-foreground);
-  font-size: 14px;
+  border-radius: 10px;
+  background: var(--login-accent);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .primaryButton:hover:not(:disabled) {
-  background: var(--dsw-alias-button-primary-hover);
+  background: var(--login-accent-hover);
 }
 
 .primaryButton:disabled {
@@ -359,15 +402,17 @@ body[data-ds-dark-theme] .historyList {
 
 .error {
   margin: 12px 0 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-error-primary);
+  font-size: 14px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+  color: var(--login-error);
 }
 
 .hint {
   margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -376,7 +421,9 @@ body[data-ds-dark-theme] .historyList {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
 }
 
 /* 短信子表单的「重新登录」入口：单独一行靠右，避免挤占双勾选的左右两端 */
@@ -390,17 +437,17 @@ body[data-ds-dark-theme] .historyList {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
 
 .checkbox input {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin: 0;
-  accent-color: var(--dsw-alias-brand-primary);
+  accent-color: var(--login-accent);
   cursor: inherit;
 }
 
@@ -417,22 +464,10 @@ body[data-ds-dark-theme] .historyList {
   text-decoration: underline;
 }
 
-.machineFooter {
-  margin-top: 18px;
-  text-align: center;
-  font-size: 11px;
-  color: var(--dsw-alias-label-caption);
-  user-select: none;
-}
-
-.donePanel {
-  display: flex;
-  flex-direction: column;
-}
-
 .doneTitle {
-  margin: 0 0 12px;
-  font-size: 15px;
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -456,4 +491,45 @@ body[data-ds-dark-theme] .historyList {
 
 .donePanel .hint {
   margin-top: 16px;
+}
+
+.page button:focus-visible,
+.checkbox input:focus-visible {
+  outline: 2px solid var(--login-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 799px) {
+  .page {
+    --login-gutter: 20px;
+    -webkit-app-region: no-drag;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    min-height: 520px;
+  }
+
+  .illustrationPanel {
+    display: none;
+  }
+
+  .formPanel {
+    flex: 1;
+    padding: 28px;
+  }
+}
+
+@media (max-height: 600px) {
+  .page {
+    -webkit-app-region: no-drag;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }

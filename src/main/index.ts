@@ -447,9 +447,14 @@ function applyMacMainWindowBackdrop(): void {
 
 function createLoginWindow(): void {
   const config = getConfig();
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(960, workArea.width);
+  const height = Math.min(640, workArea.height);
   loginWindow = new BrowserWindow({
-    width: 420,
-    height: 560,
+    width,
+    height,
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
     resizable: false,
     // 登录窗只保留关闭按钮：macOS 隐藏整套原生红绿灯、页面自绘 ×（minimizable:false 只会禁用成灰点，不是消失）；
     // Windows 去掉最小化/最大化后原生标题栏天然只剩 ×
@@ -458,7 +463,7 @@ function createLoginWindow(): void {
     fullscreenable: false,
     show: false,
     title: 'diteng agent',
-    // 顶部留出页面拖拽区高度，与 App.module.css loginPage padding-top 对应
+    // 顶部留出页面拖拽区高度，与 App.module.css page padding-top 对应
     ...(process.platform === 'darwin' && { titleBarStyle: 'hidden' as const }),
     backgroundColor: resolveIsDarkTheme(config) ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
     webPreferences: {

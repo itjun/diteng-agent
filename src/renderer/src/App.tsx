@@ -5,6 +5,7 @@ import { DEVICE_UNCHECKED_CODE, type SavedAccountSummary } from '../../shared/ty
 import { NotifyPopup } from './NotifyPopup';
 import { Shell } from './Shell';
 import { useThemeSetting } from './use-theme';
+import loginIllustration from './assets/login-illustration.webp';
 import styles from './App.module.css';
 
 type LoginMode = 'password' | 'sms';
@@ -25,9 +26,6 @@ const SMS_RESEND_SECONDS = 300;
  * 窗口角色创建后不再变化，直接在渲染时判定，无需监听 hashchange。
  * #/notify-popup 为重要消息置顶弹窗（ImportantNotifier 创建的无边框小窗）。
  */
-/** macOS 登录窗隐藏原生红绿灯后需要自绘 ×（与 Shell 的 data-platform 标记无关，此处独立判定） */
-const isDarwin = /Mac/i.test(navigator.userAgent);
-
 export function App() {
   if (window.location.hash.startsWith('#/main')) return <Shell />;
   if (window.location.hash.startsWith('#/notify-popup')) return <NotifyPopup />;
@@ -51,7 +49,6 @@ function LoginPanel() {
   const [errorMsg, setErrorMsg] = useState('');
   // 登录成功后的过渡态：主进程随即打开主窗并关闭登录窗
   const [isEntering, setIsEntering] = useState(false);
-  const [machineCode, setMachineCode] = useState('');
   // 历史登录账号（最近登录在前）：账号输入框右侧出口，支持选择、删除、清空
   const [savedAccounts, setSavedAccounts] = useState<SavedAccountSummary[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -129,7 +126,6 @@ function LoginPanel() {
       setSavedAccounts(accounts);
       // 账号预填优先取「自动登录凭据对应的账号」，其次取最近登录的历史账号（记住密码未勾选时后者仍可用）
       setLoginId(config.savedLoginId || accounts[0]?.loginId || '');
-      setMachineCode(config.machineCode);
       setIsRememberPassword(config.rememberPassword);
       setIsAutoLogin(config.autoLogin && config.rememberPassword);
       // 自动登录仅在「自动登录✓ 且已存凭据」时发起（StrictMode 双执行只发起一次，经 ref 防重）
@@ -364,32 +360,18 @@ function LoginPanel() {
 
   return (
     <div className={styles.page}>
-      {/* macOS 登录窗隐藏了原生红绿灯，× 由页面自绘；Windows 保留原生标题栏不渲染此钮 */}
-      {isDarwin ? (
-        <button
-          type="button"
-          className={styles.closeButton}
-          data-testid="login-close"
-          title="关闭"
-          aria-label="关闭"
-          onClick={() => void window.diteng.closeLoginWindow()}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
-          </svg>
-        </button>
-      ) : null}
       <main className={styles.card}>
+        <div className={styles.illustrationPanel} aria-hidden="true">
+          <img className={styles.illustration} src={loginIllustration} alt="" draggable={false} />
+        </div>
+        <div className={styles.formPanel}>
+        <div className={styles.formContent}>
         {autoLoginPhase !== 'manual' ? (
           // waiting：自动登录状态页；checking：读 config 判定期（同壳架 + spinner，不带 testid，避免表单闪现）
           <section
             className={styles.autoLoginPanel}
             data-testid={autoLoginPhase === 'waiting' ? 'auto-login-state' : undefined}
           >
-            <header className={styles.brandRow}>
-              <h1 className={styles.brand}>diteng agent</h1>
-              <span className={styles.brandTag}>DESKTOP</span>
-            </header>
             <div className={styles.spinner} aria-hidden="true" />
             {autoLoginPhase === 'waiting' && (
               <>
@@ -406,20 +388,13 @@ function LoginPanel() {
             )}
           </section>
         ) : isEntering ? (
-          <section className={styles.donePanel}>
-            <header className={styles.brandRow}>
-              <h1 className={styles.brand}>diteng agent</h1>
-              <span className={styles.brandTag}>DESKTOP</span>
-            </header>
+          <section className={styles.donePanel} role="status">
             <p className={styles.doneTitle}>登录成功</p>
             <p className={styles.hint}>正在打开主界面…</p>
           </section>
         ) : (
           <form onSubmit={handleSubmit} noValidate>
-            <header className={styles.brandRow}>
-              <h1 className={styles.brand}>diteng agent</h1>
-              <span className={styles.brandTag}>DESKTOP</span>
-            </header>
+            <h1 className={styles.formTitle}>登录账号</h1>
 
             <label className={styles.fieldLabel} htmlFor="login-id">
               账号
@@ -565,7 +540,7 @@ function LoginPanel() {
               </>
             )}
 
-            {errorMsg && <p className={styles.error}>{errorMsg}</p>}
+            {errorMsg && <p className={styles.error} role="alert">{errorMsg}</p>}
 
             <button type="submit" className={styles.primaryButton} disabled={isSubmitting || isPasswordPending}>
               {isPasswordPending ? '填充密码…' : isSubmitting ? '登录中…' : '登录'}
@@ -602,10 +577,8 @@ function LoginPanel() {
             )}
           </form>
         )}
-
-        {machineCode && (
-          <footer className={styles.machineFooter}>设备码 {machineCode.slice(0, 8)}…</footer>
-        )}
+        </div>
+        </div>
       </main>
     </div>
   );
