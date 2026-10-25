@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { CursorArrowIcon, TrashIcon } from '@radix-ui/react-icons';
+import { CursorArrowIcon, HandIcon, TrashIcon, ZoomInIcon, ZoomOutIcon } from '@radix-ui/react-icons';
 import type { FeedbackChatApp, ShortcutAction } from '../../shared/types';
 import {
   AlertIcon, ArrowToolIcon, CopyIcon, EllipseToolIcon, MosaicToolIcon,
@@ -15,14 +15,17 @@ import styles from './FeedbackEditor.module.css';
 
 export type FeedbackEditorResult =
   | { action: 'cancel' }
-  | { action: 'copy'; target: FeedbackChatApp | null };
+  | { action: 'copy'; target: FeedbackChatApp | null; history: AnnotationHistory };
+
+export interface FeedbackEditorDraft { png: Uint8Array; history: AnnotationHistory }
 
 export interface FeedbackEditorProps {
   png: Uint8Array;
+  initialHistory?: AnnotationHistory;
   onClose: (result: FeedbackEditorResult) => void;
 }
 
-type Tool = 'select' | 'arrow' | 'rect' | 'ellipse' | 'pen' | 'text' | 'mosaic';
+type Tool = 'hand' | 'select' | 'arrow' | 'rect' | 'ellipse' | 'pen' | 'text' | 'mosaic';
 type WidthKey = 'thin' | 'medium' | 'thick';
 interface TextDraft { shape: TextShape; index: number | null }
 interface TransformDraft { index: number; original: Shape; preview: Shape; start: Point; handle: Handle }
@@ -37,6 +40,7 @@ const WIDTHS: { key: WidthKey; label: string; value: number }[] = [
 ];
 const TOOLS: { key: Tool; label: string; icon: ReactNode }[] = [
   { key: 'select', label: '选择', icon: <CursorArrowIcon /> },
+  { key: 'hand', label: '平移', icon: <HandIcon /> },
   { key: 'arrow', label: '箭头', icon: <ArrowToolIcon /> },
   { key: 'rect', label: '矩形', icon: <RectToolIcon /> },
   { key: 'ellipse', label: '椭圆', icon: <EllipseToolIcon /> },
@@ -56,8 +60,8 @@ function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
 }
 
 /** 底图和标注始终使用图片坐标；选框与文字输入独立覆盖，导出只渲染标注内容。 */
-export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Element {
-  const [history] = useState(() => new AnnotationHistory());
+export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorProps): JSX.Element {
+  const [history] = useState(() => initialHistory ?? new AnnotationHistory());
   const [, setRevision] = useState(0);
   const [activeTool, setActiveTool] = useState<Tool>('arrow');
   const [activeColor, setActiveColor] = useState(COLORS[0].value);
@@ -69,6 +73,8 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
   const [isReady, setIsReady] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [viewScale, setViewScale] = useState(0);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,6 +88,9 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
   const renderFrameRef = useRef(0);
   const isBusyRef = useRef(false);
   const isClosedRef = useRef(false);
+  const viewRef = useRef({ isFit: true, scale: 1 });
+  const isSpacePressedRef = useRef(false);
+  const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   const select = useCallback((index: number) => {
@@ -162,13 +171,13 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
   const openText = (point: Point, index: number | null): void => {
     const existing = index !== null ? history.shapes[index] : null;
     const shape: TextShape = existing?.type === 'text' ? { ...existing } : {
-      type: 'text', x: point.x, y: point.y, text: '', color: activeColor, fontSize: fontSize * ratio(),
+      type: 'text', x: point.x, y: point.y, text: '', color: activeColor, fontSize: fontSize * window.devicePixelRatio,
     };
     updateTextDraft({ shape, index });
     select(index ?? -1);
     setActiveTool('text');
     setActiveColor(shape.color);
-    setFontSize(Math.round(shape.fontSize / ratio()));
+    setFontSize(Math.round(shape.fontSize / window.devicePixelRatio));
     renderNow();
     requestAnimationFrame(() => {
       textInputRef.current?.focus();
@@ -215,24 +224,59 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
       if (!result.ok) throw new Error(result.message || '复制失败，请重试');
       if (isClosedRef.current) return;
       isClosedRef.current = true;
-      onClose({ action: 'copy', target });
+      onClose({ action: 'copy', target, history });
     } catch (error) {
       if (isClosedRef.current) return;
       setErrorText(error instanceof Error ? error.message : '复制失败，请重试');
       isBusyRef.current = false; setIsBusy(false); renderNow();
     }
-  }, [commitText, onClose, renderNow]);
+  }, [commitText, history, onClose, renderNow]);
 
   const layoutCanvas = useCallback(() => {
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     const bitmap = bitmapRef.current;
     if (!stage || !canvas || !bitmap) return;
-    const scale = Math.min(stage.clientWidth / bitmap.width, stage.clientHeight / bitmap.height, 1);
+    const scale = viewRef.current.isFit
+      ? Math.min(Math.max(1, stage.clientWidth - 48) / bitmap.width, Math.max(1, stage.clientHeight - 48) / bitmap.height, 1 / window.devicePixelRatio)
+      : viewRef.current.scale;
+    viewRef.current.scale = scale;
     canvas.style.width = `${bitmap.width * scale}px`;
     canvas.style.height = `${bitmap.height * scale}px`;
+    setViewScale(scale);
     refresh();
   }, [refresh]);
+  const zoomTo = useCallback((scale: number, anchor?: Point) => {
+    const canvas = canvasRef.current;
+    const stage = stageRef.current;
+    if (!canvas || !stage || !bitmapRef.current || isBusyRef.current) return;
+    const oldRect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const point = anchor ?? { x: stageRect.left + stage.clientWidth / 2, y: stageRect.top + stage.clientHeight / 2 };
+    const imageX = (point.x - oldRect.left) / viewRef.current.scale;
+    const imageY = (point.y - oldRect.top) / viewRef.current.scale;
+    viewRef.current = { isFit: false, scale: clamp(scale, 0.2 / window.devicePixelRatio, 4 / window.devicePixelRatio) };
+    layoutCanvas();
+    const nextRect = canvas.getBoundingClientRect();
+    stage.scrollLeft += nextRect.left + imageX * viewRef.current.scale - point.x;
+    stage.scrollTop += nextRect.top + imageY * viewRef.current.scale - point.y;
+  }, [layoutCanvas]);
+  const fitToWindow = (): void => {
+    viewRef.current.isFit = true;
+    layoutCanvas();
+    stageRef.current?.scrollTo(0, 0);
+  };
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey || textDraftRef.current) return;
+      event.preventDefault();
+      zoomTo(viewRef.current.scale * Math.exp(-event.deltaY * 0.008), { x: event.clientX, y: event.clientY });
+    };
+    stage.addEventListener('wheel', onWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, [zoomTo]);
   useEffect(() => {
     let isCancelled = false;
     const bytes = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
@@ -282,14 +326,25 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
         return;
       }
       if (textDraftRef.current) return;
+      if (event.key === ' ' && !(event.target instanceof HTMLElement && event.target.closest('button, select, input, textarea'))) {
+        event.preventDefault(); isSpacePressedRef.current = true; setIsSpacePressed(true); return;
+      }
       if (event.key === 'Escape') { event.preventDefault(); closeEditor(); }
       else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelected(); }
-      else if (event.key === 'Enter' && !event.repeat && !(document.activeElement instanceof HTMLSelectElement)) {
+      else if (event.key === 'Enter' && !event.repeat && (document.activeElement === canvasRef.current || document.activeElement === rootRef.current)) {
         event.preventDefault(); void copyImage(null);
       }
     };
+    const releaseSpace = () => { isSpacePressedRef.current = false; setIsSpacePressed(false); };
+    const onKeyUp = (event: KeyboardEvent) => { if (event.key === ' ') releaseSpace(); };
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', releaseSpace);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', releaseSpace);
+    };
   }, [closeEditor, copyImage, deleteSelected]);
 
   const imagePoint = (event: { clientX: number; clientY: number }): Point => {
@@ -306,8 +361,27 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
     transformRef.current = { index, original, preview: original, start: imagePoint(event), handle };
     canvasRef.current?.setPointerCapture(event.pointerId);
   };
+  const beginPan = (event: ReactPointerEvent<HTMLElement>): void => {
+    const stage = stageRef.current;
+    if (!stage || isBusyRef.current) return;
+    event.preventDefault(); event.stopPropagation();
+    panRef.current = { x: event.clientX, y: event.clientY, left: stage.scrollLeft, top: stage.scrollTop };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const movePan = (event: ReactPointerEvent<HTMLElement>): void => {
+    const pan = panRef.current; const stage = stageRef.current;
+    if (!pan || !stage) return;
+    stage.scrollLeft = pan.left - event.clientX + pan.x;
+    stage.scrollTop = pan.top - event.clientY + pan.y;
+  };
+  const endPan = (event: ReactPointerEvent<HTMLElement>): void => {
+    panRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    if (!isReady || isBusyRef.current || event.button !== 0) return;
+    if (!isReady || isBusyRef.current) return;
+    if (isSpacePressedRef.current || activeTool === 'hand' || event.button === 1) { beginPan(event); return; }
+    if (event.button !== 0) return;
     event.preventDefault();
     if (textDraftRef.current) { commitText(); return; }
     canvasRef.current?.focus();
@@ -318,20 +392,23 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
       if (index >= 0) {
         const shape = history.shapes[index];
         if ('color' in shape) setActiveColor(shape.color);
-        if (shape.type === 'text') setFontSize(Math.round(shape.fontSize / ratio()));
+        if (shape.type === 'text') setFontSize(Math.round(shape.fontSize / window.devicePixelRatio));
+        if (shape.type === 'mosaic') setMosaicSize(Math.round(shape.block / window.devicePixelRatio));
+        if ('lineWidth' in shape) setActiveWidth(WIDTHS.reduce((closest, item) => Math.abs(item.value - shape.lineWidth / window.devicePixelRatio) < Math.abs(closest.value - shape.lineWidth / window.devicePixelRatio) ? item : closest).key);
         startTransform(event, index, 'move');
       }
       return;
     }
     select(-1);
     if (activeTool === 'text') { openText(point, null); return; }
-    const width = WIDTHS.find((item) => item.key === activeWidth)!.value * ratio();
+    const width = WIDTHS.find((item) => item.key === activeWidth)!.value * window.devicePixelRatio;
     if (activeTool === 'pen') gestureRef.current = { type: 'pen', points: [point], color: activeColor, lineWidth: width };
-    else if (activeTool === 'mosaic') gestureRef.current = { type: 'mosaic', from: point, to: point, block: mosaicSize * ratio() };
+    else if (activeTool === 'mosaic') gestureRef.current = { type: 'mosaic', from: point, to: point, block: mosaicSize * window.devicePixelRatio };
     else gestureRef.current = createBoxShape(activeTool, point, { color: activeColor, lineWidth: width });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+    if (panRef.current) { movePan(event); return; }
     const point = imagePoint(event);
     const transform = transformRef.current;
     if (transform) transform.preview = transformShape(transform.original, transform.handle, transform.start, point);
@@ -341,6 +418,7 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
     if (transform || gesture) scheduleRender();
   };
   const finishPointer = (event: ReactPointerEvent<HTMLCanvasElement>, isCancelled: boolean): void => {
+    if (panRef.current) { endPan(event); return; }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     const transform = transformRef.current; const gesture = gestureRef.current;
     transformRef.current = null; gestureRef.current = null;
@@ -376,10 +454,24 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
   return (
     <div ref={rootRef} className={styles.overlay} data-testid="feedback-editor" role="dialog" aria-modal="true" aria-label="反馈截图标注" tabIndex={-1}
       data-shape-count={history.shapes.length} data-selected-type={selectedShape?.type ?? ''}>
-      <div className={styles.stage} ref={stageRef}>
+      <div className={styles.header}>
+        <strong>反馈截图</strong>
+        <div className={styles.zoomControls} role="group" aria-label="画布缩放">
+          <button type="button" className={styles.action} data-testid="feedback-fit" disabled={isDisabled} onClick={fitToWindow}>适合窗口</button>
+          <button type="button" className={styles.iconButton} data-testid="feedback-zoom-out" aria-label="缩小画布" disabled={isDisabled} onClick={() => zoomTo(viewRef.current.scale / 1.25)}><ZoomOutIcon /></button>
+          <button type="button" className={styles.action} data-testid="feedback-zoom-100" title="按原页面大小显示" disabled={isDisabled} onClick={() => zoomTo(1 / window.devicePixelRatio)}>100%</button>
+          <button type="button" className={styles.iconButton} data-testid="feedback-zoom-in" aria-label="放大画布" disabled={isDisabled} onClick={() => zoomTo(viewRef.current.scale * 1.25)}><ZoomInIcon /></button>
+          <output className={styles.zoomValue} data-testid="feedback-zoom-value" aria-live="polite">{Math.round(viewScale * window.devicePixelRatio * 100)}%</output>
+        </div>
+        <button type="button" className={styles.action} data-testid="feedback-cancel" title="退出编辑（Esc）" disabled={isBusy} onClick={closeEditor}>退出编辑</button>
+      </div>
+      <div className={styles.stage} ref={stageRef} data-testid="feedback-stage"
+        onPointerDown={(event) => { if (isSpacePressedRef.current || activeTool === 'hand') beginPan(event); }}
+        onPointerMove={(event) => { if (panRef.current) movePan(event); }} onPointerUp={endPan} onPointerCancel={endPan}>
+        <div className={styles.canvasSurface}>
         <div className={styles.canvasWrap}>
           <canvas ref={canvasRef} className={styles.canvas} data-testid="feedback-editor-canvas" tabIndex={0} aria-label="截图标注画布"
-            style={{ visibility: isReady ? 'visible' : 'hidden', cursor: activeTool === 'select' ? 'default' : activeTool === 'text' ? 'text' : 'crosshair' }}
+            style={{ visibility: isReady ? 'visible' : 'hidden', cursor: isSpacePressed || activeTool === 'hand' ? 'grab' : activeTool === 'select' ? 'default' : activeTool === 'text' ? 'text' : 'crosshair' }}
             onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
             onPointerUp={(event) => finishPointer(event, false)} onPointerCancel={(event) => finishPointer(event, true)}
             onDoubleClick={(event) => {
@@ -407,13 +499,12 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
             <div className={styles.textActions}><span>⌘ / Ctrl + Enter 确认</span><button type="button" data-testid="feedback-text-done" className={`${styles.action} ${styles.actionPrimary}`} onClick={commitText}>完成</button></div>
           </div>}
         </div>
+        </div>
         {!isReady && !errorText && <div className={styles.loading}>正在载入截图…</div>}
       </div>
       <div className={styles.bottom}>
         {errorText && <div className={styles.error} data-testid="feedback-error" role="alert"><AlertIcon /><span>{errorText}</span></div>}
         <div className={styles.toolbar} role="toolbar" aria-label="标注工具栏">
-          <button type="button" className={styles.action} data-testid="feedback-cancel" title="取消标注（Esc）" disabled={isBusy} onClick={closeEditor}>取消</button>
-          <span className={styles.divider} aria-hidden="true" />
           {TOOLS.map((tool) => <button type="button" key={tool.key} className={styles.iconButton} data-testid={`feedback-tool-${tool.key}`} title={tool.label} aria-label={tool.label}
             aria-pressed={activeTool === tool.key} disabled={isDisabled} onClick={() => { commitText(); setActiveTool(tool.key); }}>{tool.icon}</button>)}
           <span className={styles.divider} aria-hidden="true" />
@@ -421,21 +512,24 @@ export function FeedbackEditor({ png, onClose }: FeedbackEditorProps): JSX.Eleme
             data-testid={`feedback-color-${['red', 'yellow', 'blue', 'green'][index]}`} aria-pressed={activeColor === color.value} disabled={isDisabled}
             onClick={() => { setActiveColor(color.value); changeStyle('color', color.value); }}><span className={styles.swatch} style={{ backgroundColor: color.value }} /></button>)}</div>}
           {isTextTool ? <label className={styles.option}>字号<select aria-label="文字字号" data-testid="feedback-font-size" value={fontSize} disabled={isDisabled}
-            onChange={(event) => { const size = Number(event.target.value); setFontSize(size); changeStyle('fontSize', size * ratio()); }}>{[16, 20, 24, 32, 40].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+            onChange={(event) => { const size = Number(event.target.value); setFontSize(size); changeStyle('fontSize', size * window.devicePixelRatio); }}>{[16, 20, 24, 32, 40].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
             : isMosaicTool ? <label className={styles.option}>颗粒<select aria-label="马赛克颗粒大小" value={mosaicSize} disabled={isDisabled}
-              onChange={(event) => { const size = Number(event.target.value); setMosaicSize(size); changeStyle('block', size * ratio()); }}>{[6, 10, 16, 24].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+              onChange={(event) => { const size = Number(event.target.value); setMosaicSize(size); changeStyle('block', size * window.devicePixelRatio); }}>{[6, 10, 16, 24].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
             : <div className={styles.widthGroup} role="group" aria-label="线宽">{WIDTHS.map((width) => <button type="button" key={width.key} className={styles.widthButton} data-testid={`feedback-width-${width.key}`} title={width.label} aria-label={width.label}
-              aria-pressed={activeWidth === width.key} disabled={isDisabled} onClick={() => { setActiveWidth(width.key); changeStyle('lineWidth', width.value * ratio()); }}>
+              aria-pressed={activeWidth === width.key} disabled={isDisabled} onClick={() => { setActiveWidth(width.key); changeStyle('lineWidth', width.value * window.devicePixelRatio); }}>
               <span className={`${styles.widthDot} ${styles[{ thin: 'widthDotThin', medium: 'widthDotMedium', thick: 'widthDotThick' }[width.key]]}`} /></button>)}</div>}
           <span className={styles.divider} aria-hidden="true" />
           <button type="button" className={styles.iconButton} data-testid="feedback-delete" title="删除标注（Delete）" aria-label="删除标注" disabled={selectedIndex < 0 || isBusy} onClick={deleteSelected}><TrashIcon /></button>
           <button type="button" className={styles.iconButton} data-testid="feedback-undo" title="撤销（⌘Z）" aria-label="撤销" disabled={!history.canUndo || isBusy} onClick={undo}><UndoIcon /></button>
           <button type="button" className={styles.iconButton} data-testid="feedback-redo" title="重做（⇧⌘Z）" aria-label="重做" disabled={!history.canRedo || isBusy} onClick={redo}><RedoIcon /></button>
+          <div className={styles.completionActions}>
           <span className={styles.divider} aria-hidden="true" />
           <button type="button" className={`${styles.action} ${styles.actionPrimary}`} data-testid="feedback-copy" aria-busy={isBusy} disabled={isDisabled} onClick={() => void copyImage(null)}><CopyIcon /><span>{isBusy ? '正在复制…' : '复制图片'}</span></button>
           <button type="button" className={styles.action} data-testid="feedback-open-wechat" disabled={isDisabled} onClick={() => void copyImage('wechat')}>复制并打开微信</button>
           <button type="button" className={styles.action} data-testid="feedback-open-wecom" disabled={isDisabled} onClick={() => void copyImage('wecom')}>复制并打开企业微信</button>
+          </div>
         </div>
+        <div className={styles.canvasHint}>选择标注可修改 · 双击文字重新编辑 · ⌘ / Ctrl + 滚轮缩放 · 空格拖动画布</div>
       </div>
     </div>
   );

@@ -1,8 +1,4 @@
-/*
- * 反馈截图标注编辑器：壳内全屏模态浮层（fixed inset 0），z-index 盖过
- * 页内合成 webview、拖拽盾牌（400）与提示 toast（350）。
- * 视觉沿用 dsh 菜单语言：--dsw-specific-menu 底、0.5px 边框、14px 圆角、三层阴影。
- */
+/* 截图工作区与网页隔离；界面覆盖层不进入导出图。 */
 .overlay {
   position: fixed;
   inset: 0;
@@ -11,9 +7,9 @@
   flex-direction: column;
   align-items: center;
   box-sizing: border-box;
-  padding: 28px 24px 20px;
-  gap: 12px;
-  background: rgba(0, 0, 0, 0.55);
+  padding: 0;
+  gap: 0;
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   outline: none;
 }
@@ -23,15 +19,62 @@
   outline: none;
 }
 
-/* 画布区：占据工具栏之外的全部高度，画布在其中居中（显示尺寸由 JS 等比计算） */
-.stage {
-  position: relative;
+.header {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 20px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: 13px;
+  -webkit-app-region: drag;
+}
+
+:global(html[data-platform='darwin']) .header {
+  padding-left: 88px;
+}
+
+.header button,
+.header .zoomControls { -webkit-app-region: no-drag; }
+
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoomValue {
+  width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.stage {
+  position: relative;
   width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--dsw-alias-bg-base);
+}
+
+.canvasSurface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: max-content;
+  height: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 24px;
 }
 
 .loading {
@@ -39,29 +82,21 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   white-space: nowrap;
 }
 
-/* 截图容器：12px 圆角 + 阴影，底图不透明所以铺白底 */
 .canvasWrap {
   position: relative;
   display: flex;
-  max-width: 100%;
-  max-height: 100%;
-  overflow: hidden;
-  border-radius: 12px;
+  flex: none;
   background: #ffffff;
-  box-shadow:
-    0 0 0 0.5px rgba(255, 255, 255, 0.18),
-    0 12px 32px rgba(0, 0, 0, 0.36),
-    0 32px 80px rgba(0, 0, 0, 0.36);
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l2), 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
 .canvas {
   display: block;
-  max-width: 100%;
   outline: none;
   touch-action: none;
   cursor: crosshair;
@@ -79,8 +114,11 @@
   align-items: center;
   gap: 8px;
   flex: none;
-  max-width: 100%;
+  width: 100%;
   min-width: 0;
+  padding: 10px 16px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
 /* 复制失败等就地提示：不关闭编辑器，标注全部保留 */
@@ -107,15 +145,17 @@
   flex: none;
 }
 
-/* 底部居中药丸：窗口 940 宽（最小宽度）时全部动作单行不溢出 */
+/* 工具条按操作分组，窄窗可换行，不把完成动作藏到横向滚动中。 */
 .toolbar {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 4px;
   box-sizing: border-box;
-  max-width: min(100%, calc(100vw - 32px));
+  max-width: 100%;
   padding: 6px;
-  overflow-x: auto;
+  overflow: visible;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   background: var(--dsw-specific-menu);
@@ -142,14 +182,14 @@
   background: var(--dsw-alias-border-l2);
 }
 
-/* 工具/撤销/重做等图标按钮：28px 方形命中区，选中态铺业务主色 */
+/* 工具图标保持 32px 命中区，选中态沿用背景色。 */
 .iconButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   border-radius: 7px;
@@ -395,4 +435,32 @@
 .canvas:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: -2px;
+}
+
+.canvasHint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  text-align: center;
+}
+
+@media (max-width: 1050px) {
+  .toolbar { gap: 3px; }
+  .action { padding-inline: 8px; }
+}
+
+.completionActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+@media (max-width: 1050px) {
+  .completionActions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--dsw-alias-border-l2);
+  }
+  .completionActions .divider { display: none; }
 }

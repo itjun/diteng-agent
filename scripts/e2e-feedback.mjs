@@ -483,8 +483,10 @@ function clipboardImageProbe(filePath, samples) {
       if (alpha < minAlpha) minAlpha = alpha;
     }
     const points = ${JSON.stringify(samples)}.map(({ group, x, y }) => {
-      const index = (y * size.width + x) * 4;
-      return { group, x, y, r: bitmap[index + 2], g: bitmap[index + 1], b: bitmap[index], a: bitmap[index + 3] };
+      const px = Math.round(x);
+      const py = Math.round(y);
+      const index = (py * size.width + px) * 4;
+      return { group, x: px, y: py, r: bitmap[index + 2], g: bitmap[index + 1], b: bitmap[index], a: bitmap[index + 3] };
     });
     return { hasImage: true, pngBytes: png.length, width: size.width, height: size.height, transparent, minAlpha, points };
   })()`);
@@ -701,6 +703,7 @@ function installClipboardProbe(delayMs) {
         const probe = globalThis.__ditengFeedbackProbe;
         probe.writes += 1;
         if (probe.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, probe.delayMs));
+        if (probe.isFail) throw new Error('e2e clipboard failure');
         return original(...args);
       };
       try {
@@ -718,6 +721,7 @@ function installClipboardProbe(delayMs) {
     }
     globalThis.__ditengFeedbackProbe.writes = 0;
     globalThis.__ditengFeedbackProbe.delayMs = ${delayMs};
+    globalThis.__ditengFeedbackProbe.isFail = false;
     return { ok: true, isPatched: globalThis.__ditengFeedbackProbe.isPatched };
   })()`);
 }
@@ -816,7 +820,13 @@ async function waitForEditorReady(timeoutMs = 20_000) {
 /** 点「反馈」并等编辑器就绪 */
 async function openFeedbackEditor() {
   await state.shell.click('[data-testid="feedback-button"]');
+  await confirmFreshScreenshot();
   return waitForEditorReady(20_000);
+}
+
+async function confirmFreshScreenshot() {
+  const choice = state.shell.locator('[data-testid="feedback-replace"]');
+  if (await choice.count()) await choice.click();
 }
 
 /** 等编辑器关闭（复制成功 / 取消后） */
@@ -1008,6 +1018,162 @@ function restoreExecFileProbe() {
   })()`);
 }
 
+
+/** 新版反馈交互：仅使用隔离 mock 页，断言可观察的编辑、缩放与导出行为。 */
+async function runEditingChecks() {
+  const shell = state.shell;
+  const editor = shell.locator('[data-testid="feedback-editor"]');
+  const consoleErrors = [];
+  const recordError = (error) => consoleErrors.push(error.message);
+  shell.on('pageerror', recordError);
+  const originalUrl = await evalInGuest('location.href');
+  const originalWindow = await windowInfo();
+  await mainEval(`(() => { const req = process.mainModule.require.bind(process.mainModule); const win = req('electron').BrowserWindow.getAllWindows().find((item) => item.getContentBounds().width > 500); win.setSize(940, 700); })()`);
+  const longBusinessQuery = 'section=' + 'abc123'.repeat(65) + '&billNo=42&sid=synthetic-private';
+  await evalInGuest(`history.replaceState(null, '', location.pathname + '?' + ${JSON.stringify(longBusinessQuery)})`);
+  await shell.waitForFunction(() => document.querySelector('[data-testid="url-bar-text"]')?.textContent?.includes('billNo=42'));
+  const urlState = await shell.evaluate(() => {
+    const text = document.querySelector('[data-testid="url-bar-text"]');
+    const bar = document.querySelector('[data-testid="browser-toolbar"]');
+    const rect = text.getBoundingClientRect();
+    return { text: text.textContent, height: rect.height, scrollWidth: text.scrollWidth, clientWidth: text.clientWidth, toolbarHeight: bar.getBoundingClientRect().height, hasHome: Boolean(document.querySelector('[data-testid="nav-home"]')), feedbackRight: document.querySelector('[data-testid="feedback-button"]').getBoundingClientRect().right, viewportWidth: innerWidth };
+  });
+  check('最小窗口完整网址自动换行且保留末尾业务条件', urlState.height > 19 && urlState.scrollWidth <= urlState.clientWidth + 1 && urlState.text.endsWith('billNo=42') && !urlState.text.includes('synthetic-private'));
+  check('Dia 导航移除常驻主页，长网址不挤出反馈入口', !urlState.hasHome && urlState.feedbackRight <= urlState.viewportWidth);
+  await shell.screenshot({ path: '/tmp/diteng-feedback-url-wrapped.png' });
+  await evalInGuest(`history.replaceState(null, '', ${JSON.stringify(originalUrl)})`);
+  await mainEval(`(() => { const req = process.mainModule.require.bind(process.mainModule); const win = req('electron').BrowserWindow.getAllWindows().find((item) => item.getContentBounds().width > 500); win.setBounds(${JSON.stringify(originalWindow.bounds)}); })()`);
+  await openFeedbackEditor();
+  let geometry = await readEditorGeometry();
+  const from = { x: geometry.canvasWidth * 0.4, y: geometry.canvasHeight * 0.55 };
+  const to = { x: geometry.canvasWidth * 0.65, y: geometry.canvasHeight * 0.55 };
+  await dragOnCanvas(geometry, from, to);
+  check('画完自动选中箭头并提供端点手柄', await editor.getAttribute('data-selected-type') === 'arrow' && await shell.locator('[data-testid="feedback-handle-to"]').count() === 1);
+  const handle = await shell.locator('[data-testid="feedback-handle-to"]').boundingBox();
+  await shell.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await shell.mouse.down();
+  await shell.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 + 45, { steps: 8 });
+  await shell.mouse.up();
+  const endpoint = await shell.locator('[data-testid="feedback-handle-to"]').boundingBox();
+  check('箭头终点可独立拖动且不新增标注', endpoint.y > handle.y + 35 && await editor.getAttribute('data-shape-count') === '1');
+  await shell.click('[data-testid="feedback-undo"]');
+  const originalSamples = [{ x: (from.x + to.x) / 2, y: from.y }];
+  check('端点调整可以撤销回原箭头', isNearColor((await readCanvasPixels(originalSamples))[0], ARROW_RED));
+  await shell.click('[data-testid="feedback-tool-select"]');
+  const middle = { x: (from.x + to.x) / 2, y: from.y };
+  const moveTo = { x: middle.x + geometry.canvasWidth * 0.08, y: middle.y + geometry.canvasHeight * 0.06 };
+  await dragOnCanvas(geometry, middle, moveTo);
+  const movedSamples = [{ x: moveTo.x, y: moveTo.y }];
+  check('已有箭头可以整体移动', isNearColor((await readCanvasPixels(movedSamples))[0], ARROW_RED) && await editor.getAttribute('data-shape-count') === '1');
+
+  await shell.click('[data-testid="feedback-tool-text"]');
+  const textPoint = { x: geometry.canvasWidth * 0.4, y: geometry.canvasHeight * 0.3 };
+  const textClient = imagePointToClient(geometry, textPoint);
+  await shell.mouse.click(textClient.x, textClient.y);
+  const input = shell.locator('[data-testid="feedback-text-input"]');
+  await input.fill('第一行');
+  await input.press('Enter');
+  await input.press('End');
+  await shell.keyboard.insertText('第二行');
+  check('文字 Enter 换行，不误触发复制', await input.inputValue() === '第一行\n第二行' && await editor.count() === 1);
+  await shell.click('[data-testid="feedback-text-done"]');
+  check('多行文字作为一条标注提交', await editor.getAttribute('data-shape-count') === '2');
+  await shell.mouse.dblclick(textClient.x + 6, textClient.y - 3);
+  check('双击已有文字载入原文而非新建空框', await input.inputValue() === '第一行\n第二行');
+  await input.fill('已修改\n仍为两行');
+  await shell.click('[data-testid="feedback-text-done"]');
+  check('修改文字不增加标注数量', await editor.getAttribute('data-shape-count') === '2');
+  await shell.selectOption('[data-testid="feedback-font-size"]', '32');
+  await shell.click('[data-testid="feedback-color-blue"]');
+  await shell.mouse.dblclick(textClient.x + 6, textClient.y - 3);
+  check('字号与颜色修改后原文字仍可继续编辑', await input.inputValue() === '已修改\n仍为两行');
+  await input.fill('不应保留的临时修改');
+  await input.press('Escape');
+  await shell.mouse.dblclick(textClient.x + 6, textClient.y - 3);
+  check('取消本次文字修改会保留原文', await input.inputValue() === '已修改\n仍为两行');
+  await shell.click('[data-testid="feedback-text-done"]');
+  await shell.click('[data-testid="feedback-delete"]');
+  check('删除选中文字只删除该标注', await editor.getAttribute('data-shape-count') === '1');
+  await shell.click('[data-testid="feedback-undo"]');
+  check('删除操作可撤销', await editor.getAttribute('data-shape-count') === '2');
+
+  await shell.click('[data-testid="feedback-zoom-100"]');
+  geometry = await readEditorGeometry();
+  const dpr = await shell.evaluate(() => devicePixelRatio);
+  check('100% 按原页面尺寸显示', Math.abs(geometry.rect.width * dpr - geometry.canvasWidth) < 2);
+  await shell.click('[data-testid="feedback-zoom-in"]');
+  const zoomed = await readEditorGeometry();
+  check('放大改变显示尺寸而不改变图片像素', zoomed.rect.width > geometry.rect.width && zoomed.canvasWidth === geometry.canvasWidth);
+  const stage = shell.locator('[data-testid="feedback-stage"]');
+  const stageBox = await stage.boundingBox();
+  await shell.click('[data-testid="feedback-tool-hand"]');
+  const scrollBefore = await stage.evaluate((element) => ({ left: element.scrollLeft, top: element.scrollTop }));
+  await shell.mouse.move(stageBox.x + stageBox.width * 0.55, stageBox.y + stageBox.height * 0.55);
+  await shell.mouse.down();
+  await shell.mouse.move(stageBox.x + stageBox.width * 0.35, stageBox.y + stageBox.height * 0.4, { steps: 8 });
+  await shell.mouse.up();
+  const scrollAfter = await stage.evaluate((element) => ({ left: element.scrollLeft, top: element.scrollTop }));
+  check('平移只移动视口、不新增标注', (scrollAfter.left > scrollBefore.left || scrollAfter.top > scrollBefore.top) && await editor.getAttribute('data-shape-count') === '2');
+  await shell.click('[data-testid="feedback-fit"]');
+  geometry = await readEditorGeometry();
+  check('适合窗口后整张图片可见', geometry.rect.width <= stageBox.width && geometry.rect.height <= stageBox.height);
+  await mainEval(`(() => { const req = process.mainModule.require.bind(process.mainModule); const win = req('electron').BrowserWindow.getAllWindows().find((item) => item.getContentBounds().width > 500); win.setSize(940, 700); })()`);
+  await shell.waitForFunction(() => innerWidth === 940);
+  const narrow = await shell.evaluate(() => ({
+    width: innerWidth,
+    titleLeft: document.querySelector('[data-testid="feedback-editor"] strong').getBoundingClientRect().left,
+    controls: ['feedback-copy', 'feedback-open-wechat', 'feedback-open-wecom', 'feedback-cancel'].map((id) => {
+      const rect = document.querySelector('[data-testid="' + id + '"]').getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    }), height: innerHeight,
+  }));
+  check('940px 编辑器的复制、聊天和退出按钮全部可见', narrow.controls.every((rect) => rect.left >= 0 && rect.right <= narrow.width && rect.top >= 0 && rect.bottom <= narrow.height));
+  check('macOS 编辑器标题避开原生窗口按钮', process.platform !== 'darwin' || narrow.titleLeft >= 80);
+  await shell.screenshot({ path: '/tmp/diteng-feedback-narrow-editor.png' });
+  await mainEval(`(() => { const req = process.mainModule.require.bind(process.mainModule); const win = req('electron').BrowserWindow.getAllWindows().find((item) => item.getContentBounds().width > 500); win.setBounds(${JSON.stringify(originalWindow.bounds)}); })()`);
+  await shell.waitForFunction((width) => innerWidth === width, originalWindow.contentBounds.width);
+  await shell.screenshot({ path: '/tmp/diteng-feedback-edited.png' });
+
+  await installClipboardProbe(0);
+  await mainEval('globalThis.__ditengFeedbackProbe.isFail = true');
+  await shell.click('[data-testid="feedback-copy"]');
+  await shell.waitForSelector('[data-testid="feedback-error"]');
+  check('复制失败保留标注并恢复按钮可重试', await editor.getAttribute('data-shape-count') === '2' && await shell.locator('[data-testid="feedback-copy"]').isEnabled());
+  await installClipboardProbe(1200);
+  await shell.click('[data-testid="feedback-tool-select"]');
+  geometry = await readEditorGeometry();
+  const selectPoint = imagePointToClient(geometry, moveTo);
+  await shell.mouse.click(selectPoint.x, selectPoint.y);
+  check('导出前已有选框，验证会排除编辑手柄', await shell.locator('[data-testid="feedback-selection"]').count() === 1);
+  const exportSamples = [...movedSamples, { group: 'selectionHandle', x: Math.round(from.x + moveTo.x - middle.x), y: Math.round(from.y + moveTo.y - middle.y - 12) }];
+  const pixelsBeforeExport = await readCanvasPixels(exportSamples);
+  await shell.click('[data-testid="feedback-zoom-in"]');
+  await shell.evaluate(() => {
+    document.querySelector('[data-testid="feedback-editor-canvas"]').focus();
+    const button = document.querySelector('[data-testid="feedback-copy"]');
+    button.click(); button.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  await waitUntil(async () => (await readClipboardProbe())?.writes === 1, 5000, 50);
+  check('慢复制期间禁用所有完成入口', await shell.locator('[data-testid="feedback-copy"]').isDisabled() && await shell.locator('[data-testid="feedback-open-wechat"]').isDisabled() && await shell.locator('[data-testid="feedback-cancel"]').isDisabled());
+  await waitForEditorClosed();
+  const exported = await waitForClipboardImage('/tmp/diteng-feedback-edited-export.png', exportSamples);
+  check('缩放后导出仍为完整原分辨率且箭头坐标不偏移', exported.width === geometry.canvasWidth && exported.height === geometry.canvasHeight && isNearColor(exported.points[0], ARROW_RED), JSON.stringify({ width: exported.width, height: exported.height, expected: [geometry.canvasWidth, geometry.canvasHeight], pixel: exported.points[0] }));
+  check('复制按钮连点与 Enter 交替触发只写入一次', (await readClipboardProbe()).writes === 1);
+  check('导出图不含选框和白色编辑手柄', !isColorChanged(exported.points[1], pixelsBeforeExport[1]));
+  await shell.click('[data-testid="feedback-resume"]');
+  await waitForEditorReady();
+  check('复制后继续编辑保留全部标注与撤销历史', await editor.getAttribute('data-shape-count') === '2' && await shell.locator('[data-testid="feedback-undo"]').isEnabled());
+  await shell.click('[data-testid="feedback-cancel"]');
+  await shell.click('[data-testid="feedback-button"]');
+  check('重新截图前明确提示替换标注并提供继续编辑', await shell.locator('[data-testid="feedback-replace"]').count() === 1 && await shell.locator('[data-testid="feedback-resume-choice"]').count() === 1);
+  await shell.click('[data-testid="feedback-resume-choice"]');
+  await waitForEditorReady();
+  check('从再次反馈入口也能找回原标注', await editor.getAttribute('data-shape-count') === '2');
+  await shell.click('[data-testid="feedback-cancel"]');
+  shell.off('pageerror', recordError);
+  check('新版编辑操作没有 renderer 异常', consoleErrors.length === 0, consoleErrors.join(' | '));
+}
 
 // ============================== 主流程 ==============================
 
@@ -1527,6 +1693,7 @@ async function run() {
     button?.click();
     button?.click();
   });
+  await confirmFreshScreenshot();
   const rapidGeometry = await waitForEditorReady(20_000);
   const rapidEditorCount = await shell.locator('[data-testid="feedback-editor"]').count();
   check(
@@ -1569,6 +1736,7 @@ async function run() {
     try {
       await clearClipboard();
       await shell.click('[data-testid="feedback-button"]');
+      await confirmFreshScreenshot();
       const failToast = await waitForFeedbackToast();
       const editorCountAfterFail = await shell.locator('[data-testid="feedback-editor"]').count();
       check(
@@ -1603,9 +1771,11 @@ async function run() {
     skip('截图失败时不打开标注编辑器', '依赖失败注入');
   }
 
+  await runEditingChecks();
   logInfo(`编辑器截图：${EDITOR_PATH}`);
   logInfo(`Toast 截图：${TOAST_PATH}`);
   logInfo(`剪贴板截图：${CLIP_PATH}`);
+
   return 0;
 }
 

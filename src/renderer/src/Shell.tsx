@@ -33,7 +33,7 @@ import {
 } from './Settings';
 import type { SettingsCategoryKey } from './Settings';
 import { FeedbackEditor } from './FeedbackEditor';
-import type { FeedbackEditorResult } from './FeedbackEditor';
+import type { FeedbackEditorDraft, FeedbackEditorResult } from './FeedbackEditor';
 import { applyChromeColor } from './chrome-color';
 import { probePageSurface } from './page-surface';
 import type { PageSurface } from './page-surface';
@@ -135,6 +135,16 @@ export function Shell() {
   const [feedbackToast, setFeedbackToast] = useState<FeedbackToast | null>(null);
   /** 待标注的整窗截图 PNG：非空即打开标注编辑器浮层 */
   const [feedbackShot, setFeedbackShot] = useState<Uint8Array | null>(null);
+  const [feedbackDraft, setFeedbackDraft] = useState<FeedbackEditorDraft | null>(null);
+  const [isFeedbackChoiceOpen, setIsFeedbackChoiceOpen] = useState(false);
+  useEffect(() => {
+    if (!feedbackDraft) return;
+    const timer = setTimeout(() => setFeedbackDraft(null), 5 * 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [feedbackDraft]);
+  useEffect(() => {
+    if (isFeedbackChoiceOpen) document.querySelector<HTMLButtonElement>('[data-testid="feedback-resume-choice"]')?.focus();
+  }, [isFeedbackChoiceOpen]);
   // 标签页顶部底色（地址栏跟随网页内容变色）：按标签存，切换标签直接复用，采不到时留空走应用主题默认色
   const [pageSurfaces, setPageSurfaces] = useState<Record<string, PageSurface>>({});
   const nextIdRef = useRef(1);
@@ -291,8 +301,10 @@ export function Shell() {
    * 一键反馈：主进程把整个主窗画面（rail + 工具栏 + 当前页）截成 PNG 字节，
    * 壳打开标注编辑器；复制与打开聊天应用由编辑器/本组件完成。
    */
-  const captureFeedback = useCallback(async () => {
+  const captureFeedback = useCallback(async (isReplacing = false) => {
     if (isFeedbackCapturingRef.current) return;
+    if (feedbackDraft && !isReplacing) { setIsFeedbackChoiceOpen(true); return; }
+    setIsFeedbackChoiceOpen(false);
     isFeedbackCapturingRef.current = true;
     // 上一次提示不能留在画面里（用户可能连续反馈）
     setFeedbackToast(null);
@@ -304,7 +316,7 @@ export function Shell() {
     try {
       await waitForPaint();
       const result = await window.diteng.captureFeedbackScreenshot();
-      if (result.ok) setFeedbackShot(result.png);
+      if (result.ok) { setFeedbackDraft(null); setFeedbackShot(result.png); }
       else setFeedbackToast({ kind: 'fail', title: '截图失败', desc: result.message });
     } catch {
       setFeedbackToast({ kind: 'fail', title: '截图失败', desc: '请稍后重试' });
@@ -312,7 +324,7 @@ export function Shell() {
       if (platformMarker) root.setAttribute('data-platform', platformMarker);
       isFeedbackCapturingRef.current = false;
     }
-  }, []);
+  }, [feedbackDraft]);
 
   /**
    * 标注编辑器收尾：复制成功时按目标应用启动微信/企微并给出粘贴引导；
@@ -321,6 +333,7 @@ export function Shell() {
   const closeFeedbackEditor = useCallback((result: FeedbackEditorResult) => {
     setFeedbackShot(null);
     if (result.action === 'cancel') return;
+    if (feedbackShot) setFeedbackDraft({ png: feedbackShot, history: result.history });
     const target = result.target;
     if (!target) {
       setFeedbackToast({
@@ -355,7 +368,7 @@ export function Shell() {
           desc: `请手动打开${label}后粘贴发送`,
         });
       });
-  }, []);
+  }, [feedbackShot]);
 
   // 挂载：会话/配置拉取、首个标签（登录落点）、guest 开标签请求、会话变化推送
   useEffect(() => {
@@ -726,6 +739,7 @@ export function Shell() {
               <div className={styles.feedbackToastBody}>
                 <div className={styles.feedbackToastTitle}>{feedbackToast.title}</div>
                 <div className={styles.feedbackToastDesc}>{feedbackToast.desc}</div>
+                {feedbackDraft && <button type="button" className={styles.feedbackResume} data-testid="feedback-resume" onClick={() => { setFeedbackShot(feedbackDraft.png); setFeedbackToast(null); }}>继续编辑</button>}
               </div>
               <button
                 type="button"
@@ -740,7 +754,26 @@ export function Shell() {
             </div>
           )}
           {/* 截图标注编辑器：壳内全屏浮层，固定定位不受布局影响；关闭后按结果提示 */}
-          {feedbackShot && <FeedbackEditor png={feedbackShot} onClose={closeFeedbackEditor} />}
+          {feedbackShot && <FeedbackEditor png={feedbackShot} initialHistory={feedbackDraft?.png === feedbackShot ? feedbackDraft.history : undefined} onClose={closeFeedbackEditor} />}
+          {isFeedbackChoiceOpen && <div className={styles.feedbackChoiceBackdrop}>
+            <div className={styles.feedbackChoice} role="alertdialog" aria-modal="true" aria-labelledby="feedback-choice-title" aria-describedby="feedback-choice-desc"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') { setIsFeedbackChoiceOpen(false); event.stopPropagation(); }
+                if (event.key === 'Tab') {
+                  const buttons = [...event.currentTarget.querySelectorAll('button')];
+                  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                  event.preventDefault(); buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus();
+                }
+              }}>
+              <strong id="feedback-choice-title">继续编辑上一次截图？</strong>
+              <p id="feedback-choice-desc">重新截图会替换上一次截图和标注。</p>
+              <div className={styles.feedbackChoiceActions}>
+                <button type="button" onClick={() => setIsFeedbackChoiceOpen(false)}>取消</button>
+                <button type="button" data-testid="feedback-replace" onClick={() => void captureFeedback(true)}>重新截图</button>
+                <button type="button" data-testid="feedback-resume-choice" onClick={() => { if (feedbackDraft) setFeedbackShot(feedbackDraft.png); setFeedbackToast(null); setIsFeedbackChoiceOpen(false); }}>继续编辑</button>
+              </div>
+            </div>
+          </div>}
         </main>
 
       </div>

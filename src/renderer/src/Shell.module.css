@@ -1028,3 +1028,51 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
+
+.feedbackResume {
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.feedbackChoiceBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.feedbackChoice {
+  width: 380px;
+  max-width: calc(100vw - 40px);
+  padding: 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+}
+
+.feedbackChoice p { color: var(--dsw-alias-label-secondary); }
+.feedbackChoiceActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.feedbackChoiceActions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.feedbackChoiceActions button:last-child {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  border-color: transparent;
+}
