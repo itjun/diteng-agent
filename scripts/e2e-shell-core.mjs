@@ -102,9 +102,14 @@ try {
   assert.equal(await main.getByTestId('app-menu-button').evaluate(element => element === document.activeElement), true);
   await main.getByTestId('app-menu-button').click();
   await main.screenshot({ path: join(output, '00-app-menu.png') });
+  await main.keyboard.press('Escape');
+  for (const id of ['url-bar-copy', 'feedback-button', 'open-ai']) {
+    assert.equal(await main.locator(`[data-testid="browser-toolbar"] > [role="group"][aria-label="页面操作"] [data-testid="${id}"]`).isVisible(), true);
+  }
+  await main.evaluate(() => { navigator.clipboard.writeText = async (value) => { window.__copiedPageUrl = value; }; });
   await main.getByTestId('url-bar-copy').click();
-  await main.getByTestId('url-bar-copy').getByText('已复制', { exact: true }).waitFor();
-  const copiedUrl = await electron.evaluate(({ clipboard }) => clipboard.readText());
+  await waitFor(async () => await main.getByTestId('url-bar-copy').getAttribute('aria-label') === '已复制');
+  const copiedUrl = await main.evaluate(() => window.__copiedPageUrl);
   assert.equal(new URL(copiedUrl).searchParams.has('sid'), false);
   assert.equal(new URL(copiedUrl).pathname, '/100001/FrmDefault');
   await main.mouse.click(650, 450);
@@ -113,7 +118,7 @@ try {
   await openMenuItem('new-tab');
   await waitFor(async () => (await main.evaluate(() => window.__ditengTabsList())).tabs.length === tabCount + 1);
   assert.equal(await main.getByTestId('app-menu').count(), 0);
-  await openMenuItem('feedback-button');
+  await main.getByTestId('feedback-button').click();
   await main.getByTestId('feedback-editor').waitFor();
   assert.equal(await main.getByTestId('app-menu').count(), 0);
   await main.getByTestId('feedback-cancel').click();
@@ -137,7 +142,8 @@ try {
   assert.equal((await guests()).length, countWithAccounts);
   const webSnapshot = await guests();
   for (const [entry, module] of [['open-messages', 'messages'], ['open-ai', 'ai']]) {
-    await openMenuItem(entry);
+    if (entry === 'open-ai') await main.getByTestId(entry).click();
+    else await openMenuItem(entry);
     await main.getByTestId(`module-${module}`).waitFor();
     assert.deepEqual(await guests(), webSnapshot);
     assert.equal(await main.getByTestId('nav-reload').isDisabled(), true);
@@ -197,6 +203,12 @@ try {
   await main.screenshot({ path: join(output, '04-narrow.png') });
   assert.equal(await main.getByTestId('settings-content').evaluate(element => element.scrollWidth > element.clientWidth), false);
   await main.getByTestId('settings-back').click();
+  for (const id of ['url-bar-copy', 'feedback-button', 'open-ai']) {
+    const box = await main.getByTestId(id).boundingBox();
+    const toolbar = await main.getByTestId('browser-toolbar').boundingBox();
+    assert.ok(box.x >= toolbar.x && box.x + box.width <= toolbar.x + toolbar.width && box.y >= toolbar.y && box.y + box.height <= toolbar.y + toolbar.height);
+  }
+  await main.screenshot({ path: join(output, '04-narrow-toolbar.png') });
   await main.getByRole('button', { name: '收起侧栏', exact: true }).click();
   await main.getByTestId('app-menu-button').click();
   assert.equal(await main.getByTestId('open-messages').isVisible(), true);

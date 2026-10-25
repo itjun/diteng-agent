@@ -214,6 +214,21 @@
   flex: none;
 }
 
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin-right: 3px;
+  padding-right: 6px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+}
+
+.toolbarActions .toolbarButton[aria-pressed='true'] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
 /* 地址占满导航与操作之间的空间，长网址换行后撑高工具栏，截图不丢功能路径。 */
 .toolbarAddress {
   display: flex;

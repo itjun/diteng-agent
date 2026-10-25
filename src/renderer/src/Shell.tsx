@@ -1119,6 +1119,17 @@ function ContentToolbar({
       <div className={styles.toolbarAddress} data-testid="url-bar" role="group" aria-label="当前页面信息">
         <span className={styles.toolbarAddressText} data-testid="url-bar-text" title={locationText}>{locationText}</span>
       </div>
+      <div className={styles.toolbarActions} role="group" aria-label="页面操作">
+        <ToolbarButton label={copyLabel} testId="url-bar-copy" disabled={!hasUrl} onClick={() => void copyUrl()}>
+          {copyState === 'ok' ? <CheckIcon /> : <CopyIcon />}
+        </ToolbarButton>
+        <ToolbarButton label="一键反馈" testId="feedback-button" onClick={onFeedback}>
+          <CameraIcon />
+        </ToolbarButton>
+        <ToolbarButton label="AI 助手" testId="open-ai" pressed={isChatActive} disabled={isModuleDisabled} onClick={onChat}>
+          <ChatIcon />
+        </ToolbarButton>
+      </div>
       <button ref={menuButtonRef} type="button" className={`${styles.toolbarButton} ${styles.appMenuButton}`} data-testid="app-menu-button"
         title="功能与设置" aria-label={`功能与设置${unreadCount > 0 ? `，${unreadCount} 条未读消息` : ''}`} aria-haspopup="menu" aria-expanded={isMenuOpen} aria-controls={isMenuOpen ? 'app-menu' : undefined}
         onClick={toggleMenu} onKeyDown={(event) => {
@@ -1149,16 +1160,6 @@ function ContentToolbar({
           <button type="button" role="menuitemcheckbox" aria-checked={isMessagesActive} data-testid="open-messages" disabled={isModuleDisabled}
             title={messageLabel} aria-label={`消息中心，${unreadCount >= 0 ? `${unreadCount} 条未读` : '未读数待同步'}，${messageLabel}`} onClick={() => runMenuAction(onMessages)}>
             <BellIcon /><span>消息中心</span>{unreadCount > 0 ? <span className={styles.appMenuBadge}>{unreadCount > 99 ? '99+' : unreadCount}</span> : isMessagesActive ? <CheckIcon /> : null}
-          </button>
-          <button type="button" role="menuitemcheckbox" aria-checked={isChatActive} data-testid="open-ai" disabled={isModuleDisabled} onClick={() => runMenuAction(onChat)}>
-            <ChatIcon /><span>AI 助手</span>{isChatActive && <CheckIcon />}
-          </button>
-          <div role="separator" />
-          <button type="button" role="menuitem" data-testid="url-bar-copy" disabled={!hasUrl} title={copyLabel} onClick={() => void copyUrl()}>
-            {copyState === 'ok' ? <CheckIcon /> : <CopyIcon />}<span>{copyState === 'idle' ? '复制页面链接' : copyLabel}</span>
-          </button>
-          <button type="button" role="menuitem" data-testid="feedback-button" onClick={() => runMenuAction(onFeedback)}>
-            <CameraIcon /><span>一键反馈</span>
           </button>
           <div role="separator" />
           <button type="button" role="menuitem" data-testid="open-settings" onClick={() => runMenuAction(onSettings)}>
