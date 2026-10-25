@@ -7,8 +7,8 @@
  * 3. 卡片/地址栏底色跟随网页顶部实际底色（页面顶部导航条 + theme-color 两档）；
  * 4. 深色网页自动切深色工具条文字（tone=dark），浅色网页用深色文字；
  * 5. 设置页卡片与网页卡片同规格（四边 5px）；
- * 6. Chat 图标颜色跟随外围颜色（设置页选海蓝 → 图标变 #3b6fd4）；
- * 7. 收起侧栏后保留 76px 窄栏，卡片仍四边 5px；
+ * 6. 外围颜色切换后，功能栏 Chat 图标仍使用与同组入口一致的主题色；
+ * 7. 收起侧栏后内容区铺满窗口，卡片仍四边 5px；
  * 8. 多标签按标签缓存底色，切换标签即时换色。
  *
  * 安全边界（硬性）：
@@ -388,23 +388,25 @@ try {
     `page=${JSON.stringify(settingsPage)}`,
   );
   await shot('settings');
-  // Chat 图标跟随外壳颜色：外观页选「海蓝」后再关闭设置
+  // 功能栏沿用主题标签色，外围色切换后仍清晰可读。
+  await shell.click('[data-testid="settings-nav-appearance"]');
   await shell.click('[data-testid="settings-chrome-blue"]');
   await sleep(400);
   await shell.click('[data-testid="settings-back"]');
   await sleep(500);
   const chatAccent = await shell.evaluate(() => {
-    const icon = document.querySelector('[data-testid="toolbar-chat"] span');
+    const icon = document.querySelector('[data-testid="open-ai"] > span');
     const svg = icon?.querySelector('svg');
     return {
       accent: getComputedStyle(document.documentElement).getPropertyValue('--dsw-chrome-accent').trim(),
+      labelColor: getComputedStyle(document.querySelector('[data-testid="open-messages"]')).color,
       iconColor: icon ? getComputedStyle(icon).color : '',
       iconFill: svg ? getComputedStyle(svg).fill : '',
       iconStroke: svg ? getComputedStyle(svg).stroke : '',
     };
   });
   check(
-    'Chat 图标颜色跟随外围颜色（海蓝 #3b6fd4）',
+    'Dia 式 AI 入口图标跟随外围强调色',
     chatAccent.accent === '#3b6fd4' && chatAccent.iconColor === 'rgb(59, 111, 212)',
     `accent=${chatAccent.accent} icon=${chatAccent.iconColor}`,
   );
@@ -426,7 +428,7 @@ try {
   check(
     '收起侧栏后卡片仍四边 5px',
     Boolean(collapsed) &&
-      Math.abs(collapsed.x - 81) < 1.5 &&
+      Math.abs(collapsed.x - 5) < 1.5 &&
       Math.abs(collapsed.y - 5) < 1.5 &&
       Math.abs(collapsed.width - collapsed.right - 5) < 1.5 &&
       Math.abs(collapsed.height - collapsed.bottom - 5) < 1.5,
@@ -440,8 +442,13 @@ try {
   // tab1 切回深色页；把 mock 调回浅色后新建 tab2（浅色页），来回切换应分别得到深/浅底色
   await setStyle('dark');
   await fetch(`${mock.base}/__style?name=light`);
-  await shell.click('[data-testid="new-tab"]');
-  await shell.click('[data-testid="quicklink-erp"]');
+  await mainEval(`(() => {
+    const { BrowserWindow } = process.mainModule.require('electron');
+    const owner = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('#/main'));
+    const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+    owner.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'T', modifiers });
+    owner.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'T', modifiers });
+  })()`);
   await sleep(2800);
   const tab2Layout = await readLayout();
   const tabCount = await shell.evaluate(() => window.__ditengTabsList?.().tabs.length ?? 0);

@@ -518,7 +518,7 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
     ...(process.platform === 'darwin' && {
       titleBarStyle: 'hiddenInset' as const,
-      // 红绿灯下移 2px：卡片上边距 5px 后，rail 头部内容与卡片内地址栏同一基线（中心 y=24）
+      // 红绿灯位于标签侧栏顶部；收起侧栏时，内容工具栏预留同一位置。
       trafficLightPosition: { x: 16, y: 18 },
       vibrancy: 'sidebar' as const,
       // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）

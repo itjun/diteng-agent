@@ -129,17 +129,10 @@ async function shot(name) {
   return path;
 }
 
-async function readUserChip() {
-  await shell.waitForSelector('[data-testid="user-chip"]', { timeout: 10_000 });
-  const text = ((await shell.textContent('[data-testid="user-chip"]')) ?? '').replace(/\s+/g, ' ').trim();
-  const title = (await shell.getAttribute('[data-testid="user-chip"]', 'title')) ?? '';
-  return { text, title };
-}
-
 /** 进设置页 → 账号分类；账号卡名/代码 testid 见 task-2（settings-corp-name / settings-corp-no） */
 async function openSettingsAccount() {
-  await shell.waitForSelector('[data-testid="user-chip"] [data-testid="open-settings"]', { timeout: 10_000 });
-  await shell.click('[data-testid="user-chip"] [data-testid="open-settings"]');
+  await shell.waitForSelector('[data-testid="open-settings"]', { timeout: 10_000 });
+  await shell.click('[data-testid="open-settings"]');
   await shell.waitForSelector('[data-testid="settings-nav-account"]', { timeout: 10_000 });
   await shell.click('[data-testid="settings-nav-account"]');
   await shell.waitForSelector('[data-testid="settings-corp-name"]', { timeout: 10_000 });
@@ -193,18 +186,9 @@ function checkSession(label, session, expected) {
   );
 }
 
-async function checkUserChip(label, expected) {
-  const matched = await waitUntil(async () => {
-    const chip = await readUserChip();
-    return chip.text.includes(expected.corpName) ? chip : null;
-  }, 15_000);
-  const actual = matched ?? (await readUserChip().catch(() => ({ text: '(读取失败)', title: '' })));
-  check(
-    `${label} 用户行显示账套名称`,
-    Boolean(matched),
-    `期望含=${expected.corpName} 实际="${actual.text}" title="${actual.title}"`,
-  );
-  return actual;
+async function checkSidebarFooter(label) {
+  check(`${label} 侧栏无账号信息`, await shell.locator('[data-testid="user-chip"]').count() === 0);
+  check(`${label} 底部仅保留设置入口`, await shell.locator('[data-testid="sidebar-footer"] button').count() === 1 && await shell.locator('[data-testid="open-settings"]').isVisible());
 }
 
 /** 找 ERP webview guest target（playwright pages() 不可见，走原生 CDP Target.getTargets） */
@@ -225,14 +209,14 @@ async function findErpTarget() {
 }
 
 /** 在 ERP guest 内执行表达式（attach → Runtime.evaluate → detach）；固定注入初始标签的 target */
-async function evalInGuest(expression) {
+async function evalInGuest(expression, isUserGesture = false) {
   const targetId = erpTargetId;
   if (!targetId) throw new Error('未找到 ERP webview target');
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   try {
     const result = await cdp.send(
       'Runtime.evaluate',
-      { expression, returnByValue: true, awaitPromise: true },
+      { expression, returnByValue: true, awaitPromise: true, userGesture: isUserGesture },
       sessionId,
     );
     if (result.exceptionDetails) {
@@ -326,7 +310,7 @@ try {
     initial?.corpName === CORP_B.corpName,
     `实际=${JSON.stringify(initial?.corpName)}（登录链路应经 getTokenInfo + 账套列表 ShortName_ 解析）`,
   );
-  await checkUserChip('初始', CORP_B);
+  await checkSidebarFooter('初始');
 
   await openSettingsAccount();
   await checkSettingsCard('初始', CORP_B);
@@ -343,7 +327,7 @@ try {
   // 壳内切账套入口已移除，网页内切换后应关闭其他标签：先多开一个标签，再切回当前标签发起切换。
   const initialTabs = await tabsState();
   const currentTabId = initialTabs.activeTabId;
-  await shell.click('[data-testid="new-tab"]');
+  await evalInGuest("window.open(location.href, '_blank'); void 0", true);
   const twoTabs = await waitUntil(async () => {
     const state = await tabsState();
     return state.tabs.length === initialTabs.tabs.length + 1 ? state : null;
@@ -406,7 +390,7 @@ try {
     Boolean(tabA),
     JSON.stringify((await tabsState()).tabs.map((tab) => ({ url: tab.url, corpNo: tab.corpNo }))),
   );
-  await checkUserChip('场景A', CORP_A);
+  await checkSidebarFooter('场景A');
   await openSettingsAccount();
   await checkSettingsCard('场景A', CORP_A);
   await shot('diteng-corp-sync-a-settings');
@@ -454,7 +438,7 @@ try {
   );
   await shot('diteng-corp-sync-b-settings');
   await closeSettings();
-  await checkUserChip('场景B', CORP_B);
+  await checkSidebarFooter('场景B');
 
   // ============================== C. 经典页同 token（同 sid）整页导航切账套 ==============================
   // 真实网页版页头账套卡片：switchUser(code) → 服务端只刷新同一 token 会话选项 → location.href = data.url
@@ -508,7 +492,7 @@ try {
     Boolean(tabC1),
     JSON.stringify((await tabsState()).tabs.map((tab) => ({ url: tab.url, corpNo: tab.corpNo }))),
   );
-  await checkUserChip('场景C1', CORP_A);
+  await checkSidebarFooter('场景C1');
   await openSettingsAccount();
   await checkSettingsCard('场景C1', CORP_A);
   await shot('diteng-corp-sync-c1-settings');
@@ -556,7 +540,7 @@ try {
     Boolean(tabC2),
     JSON.stringify((await tabsState()).tabs.map((tab) => ({ url: tab.url, corpNo: tab.corpNo }))),
   );
-  await checkUserChip('场景C2', CORP_B);
+  await checkSidebarFooter('场景C2');
   await openSettingsAccount();
   await checkSettingsCard('场景C2', CORP_B);
   await shot('diteng-corp-sync-c2-settings');

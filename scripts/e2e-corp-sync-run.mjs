@@ -229,8 +229,8 @@ async function verifyRestoredEnvironment() {
       `还原后会话：corpNo=${session?.corpNo} userCode=${session?.userCode} ` +
         `corpName=${JSON.stringify(session?.corpName)} homeForm=${session?.homeForm}`,
     );
-    await shell.waitForSelector('[data-testid="user-chip"] [data-testid="open-settings"]', { timeout: 15_000 });
-    await shell.click('[data-testid="user-chip"] [data-testid="open-settings"]');
+    await shell.waitForSelector('[data-testid="open-settings"]', { timeout: 15_000 });
+    await shell.click('[data-testid="open-settings"]');
     await shell.waitForSelector('[data-testid="settings-nav-account"]', { timeout: 10_000 });
     await shell.click('[data-testid="settings-nav-account"]');
     await shell.waitForSelector('[data-testid="settings-corp-name"]', { timeout: 10_000 });

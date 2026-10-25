@@ -67,7 +67,7 @@ export function NotificationSettings({ state, stateError, onMessages }: {
     <section className={styles.section} aria-label="消息接收">
       <h3 className={styles.sectionTitle}>消息接收</h3>
       <div className={styles.rowGroup}>
-        <SettingRow title="消息中心" desc="未读总数涵盖您有权限的全部账套，进入后查看消息与对话。">
+        <SettingRow title="消息中心" desc="独立消息模块的入口已保留，内容功能稍后提供。">
           <div className={styles.rowActions}><span className={styles.rowValue} data-testid="notification-unread">{unreadLabel}</span><button type="button" className={styles.actionButton} onClick={onMessages}>查看消息</button></div>
         </SettingRow>
         <SettingRow title="实时接收" desc={stateError || messageConnectionLabel(state)}>

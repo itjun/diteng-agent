@@ -54,6 +54,12 @@ const vite=spawn(join(root,'node_modules/.bin/vite'),['--host','127.0.0.1','--po
 let viteLogs='';vite.stderr.on('data',data=>viteLogs+=data);vite.stdout.on('data',data=>viteLogs+=data);
 const viteUrl=`http://127.0.0.1:${vitePort}`;
 let electron;
+const openNewTab = () => electron.evaluate(({ BrowserWindow }) => {
+  const owner = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('#/main'));
+  const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+  owner.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'T', modifiers });
+  owner.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'T', modifiers });
+});
 const waitFor=async(test,timeout=15000)=>{const start=Date.now();while(Date.now()-start<timeout){if(await test())return;await new Promise(resolve=>setTimeout(resolve,80));}throw new Error('等待条件超时');};
 try {
   await waitFor(async()=>{try{return (await fetch(viteUrl)).ok;}catch{return false;}});
@@ -69,7 +75,7 @@ try {
   await login.evaluate(base=>{void window.diteng.login({serverBase:base,loginId:'test',password:'test-only',rememberPassword:false});},base);
   let main;
   await waitFor(async()=>{main=electron.windows().find(page=>page.url().includes('#/main'));return Boolean(main);});
-  await main.waitForSelector('[data-testid="new-tab"]');
+  await main.waitForSelector('[data-testid="rail-tabs"]');
   await waitFor(()=>electron.evaluate(({webContents})=>webContents.getAllWebContents().some(item=>item.getType()==='webview'&&item.getURL().includes('FrmDefault'))));
   const guestIds=()=>electron.evaluate(({webContents})=>webContents.getAllWebContents().filter(item=>item.getType()==='webview').map(item=>item.id));
   const execute=(id,script)=>electron.evaluate(({webContents},{id,script})=>webContents.fromId(id).executeJavaScript(script),{id,script});
@@ -78,7 +84,7 @@ try {
   const cancelled=await execute(source,`window.testSwitch('a2')`);
   assert.equal(cancelled.cancelled,true);assert.equal(switches,0);assert.equal((await main.evaluate(()=>window.diteng.getSession())).corpNo,'100001');
   console.log('PASS 原请求前取消：服务端0次切换，页面和身份保持');
-  await main.getByTestId('new-tab').click();await main.getByTestId('quicklink-erp').click();await waitFor(async()=> (await guestIds()).length===2);
+  await openNewTab();await waitFor(async()=> (await guestIds()).length===2);
   await electron.evaluate(()=>{globalThis.__confirmMode='wait';});
   await execute(source,`void window.testSwitch('a2')`);
   await waitFor(()=>electron.evaluate(()=>globalThis.__confirmWaiters.length===1));
@@ -98,16 +104,16 @@ try {
   await waitFor(()=>execute(source,`location.pathname.startsWith('/100001/')`));
   assert.equal(switches,2);assert.deepEqual(expectedHeaders,['100001','100002']);
   console.log('PASS HTTP 500但token已变：权威核验后落到新账套，未保留旧身份页');
-  await main.getByTestId('toolbar-chat').click();
-  await waitFor(async()=> (await guestIds()).length===2);
-  const aiGuest=(await guestIds()).find(id=>id!==source);
-  const aiUrl=new URL(await execute(aiGuest,'location.href'));
-  assert.equal(aiUrl.origin,base);assert.equal(aiUrl.pathname,'/100001/chat');
-  assert.equal(aiUrl.searchParams.get('sid'),'mock-token');
+  await main.getByTestId('open-ai').click();
+  await main.getByTestId('module-ai').waitFor();
+  assert.deepEqual(await guestIds(),[source]);
   assert.equal(await main.evaluate(()=>typeof window.diteng.agent),'undefined');
+  await main.getByTestId('nav-back').click();
+  await openNewTab();
+  await waitFor(async()=> (await guestIds()).length===2);
   await main.bringToFront();
-  await main.getByTestId('toolbar-chat').focus();
-  // CDP Input.dispatchKeyEvent 不经过 Electron before-input-event；用原生输入入口验证快捷键。
+  await main.getByTestId('sidebar-toggle').focus();
+  // 使用原生输入入口验证关闭 Web 标签快捷键。
   await electron.evaluate(({BrowserWindow})=>{
     const owner=BrowserWindow.getAllWindows().find(window=>window.webContents.getURL().includes('#/main'));
     owner.focus();owner.webContents.focus();
@@ -115,7 +121,7 @@ try {
     owner.webContents.sendInputEvent({type:'keyUp',keyCode:'W',modifiers:['meta']});
   });
   await waitFor(async()=> (await guestIds()).length===1);
-  console.log('PASS 工具栏打开 Web AI 普通网页标签，无本地 AI API');
+  console.log('PASS AI 入口仅本地占位；工作区新建与关闭 Web 标签正常');
   // 仅在临时进程内捕获已有服务实例，驱动真实HTTP补查/窗口/IPC链路。
   await electron.evaluate(({app})=>{const {MqttService}=process.mainModule.require(`${app.getAppPath()}/dist/main/mqtt-service.js`);const original=MqttService.prototype.getState;MqttService.prototype.getState=function(){globalThis.__testMqtt=this;MqttService.prototype.getState=original;return original.call(this);};});
   await main.evaluate(()=>window.diteng.getMqttState());

@@ -225,15 +225,15 @@ if (info.isMac) {
   check('rail 保持实心', parseAlpha(info.railBg) === 1, `backgroundColor=${info.railBg}`);
 }
 
-// 4. 账户行不再弹出覆盖网页的退出菜单，直接进入设置，Escape 返回原页面。
+// 4. 底部设置入口不生成退出菜单，Escape 返回原页面。
 {
-  await shell.click('[data-testid="user-chip"]');
+  await shell.click('[data-testid="open-settings"]');
   await shell.waitForSelector('[data-testid="settings-page"]');
-  check('账户行打开设置且不生成退出浮层',
+  check('设置入口不生成退出浮层',
     (await shell.locator('[data-testid="user-card"], [data-testid="logout"]').count()) === 0);
   await shell.screenshot({ path: '/tmp/diteng-vibrancy-card.png' });
   await shell.keyboard.press('Escape');
-  await shell.waitForSelector('[data-testid="user-chip"]');
+  await shell.waitForSelector('[data-testid="open-settings"]');
   check('Escape 返回网页', (await shell.locator('[data-testid="settings-page"]').count()) === 0);
 }
 

@@ -24,6 +24,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   /* 内容列铺外围色：卡片四周 5px 留白露出这层底色，与 rail 连成一体 */
   background: var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill));
@@ -56,7 +57,7 @@
   background: var(--card-surface, var(--dsw-alias-bg-base));
 }
 
-/* ============ 左右两栏各自的顶部工具区 ============ */
+/* ============ 侧栏与内容区顶部工具栏 ============ */
 
 .sidebarToolbar,
 .contentToolbar {
@@ -73,15 +74,15 @@
   -webkit-app-region: drag;
 }
 
-/* 左侧工具栏属于 rail：背景完全沿用 rail。
-   卡片上边距 5px（红绿灯/栏开关所在的整行比卡片顶边高 5px），
-   这里补 5px 上内边距让 rail 头部与卡片内地址栏内容同一基线（红绿灯位置同步下移 2px，见主进程）。 */
+/* 顶部与内容卡片中的工具栏对齐，按钮以外的空白可拖动窗口。 */
 .sidebarToolbar {
   height: 43px;
-  padding-top: 5px;
+  padding: 5px 8px 0;
   background: transparent;
-  overflow: hidden;
+  min-width: 0;
 }
+
+:global(html[data-platform='darwin']) .contentToolbar[data-sidebar-collapsed='true'] { padding-left: 84px; }
 
 /* 右侧工具栏在卡片内部：底色与卡片一致（跟随网页底色），不再铺外围色 */
 .contentToolbar {
@@ -176,13 +177,6 @@
   --dsw-chrome-fill: color-mix(in srgb, #d05a7a 32%, var(--dsw-specific-sidebar-fill));
 }
 
-/* macOS 红绿灯落在左栏内部，由左侧工具栏自行让位；栏开关贴 rail 右上角（对齐 DeepSeek Harness 顶栏）。
-   Windows 不套用：DSH 桌面版在 Windows 仍把开关放在标题栏左侧。 */
-:global(html[data-platform='darwin']) .sidebarToolbar {
-  justify-content: flex-end;
-  padding-left: 84px;
-}
-
 /* 32px 方形图标命中区：克制的 hover 底色，不用描边按钮 */
 .toolbarButton {
   display: inline-flex;
@@ -209,17 +203,6 @@
   color: var(--dsw-alias-label-dimmed);
   cursor: default;
   opacity: 0.42;
-}
-
-/* rail 右上角栏开关：28px 命中区，与 DeepSeek Harness 顶栏开关同尺寸 */
-.railToggleButton {
-  width: 28px;
-  height: 28px;
-}
-
-/* DSH 顶栏开关 hover 只加底色、图标保持次级灰 */
-.railToggleButton:hover:not(:disabled) {
-  color: var(--dsw-alias-label-secondary);
 }
 
 /* Dia 式导航组：后退/前进/刷新紧邻完整网址。 */
@@ -263,120 +246,65 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.toolbarCopy {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
+/* 统一应用菜单：右上角三点入口，沿用网页卡片的明暗 token。 */
+.appMenuButton {
+  position: relative;
+  z-index: 351;
 }
 
-.toolbarCopy:hover:not(:disabled) {
+.appMenuButton[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-primary);
 }
 
-.toolbarCopy:disabled {
-  cursor: default;
-  opacity: 0.35;
+.appMenuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 340;
+  -webkit-app-region: no-drag;
 }
 
-/* 右上角 Chat：Dia 式低矮胶囊，实际打开当前账套的 AI 助手 */
-.toolbarChat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 32px;
-  padding: 0 12px 0 10px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
+.appMenu {
+  position: fixed;
+  z-index: 350;
+  width: min(288px, calc(100vw - 16px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 28px #0003;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-.toolbarChat:hover:not(:disabled) {
-  border-color: var(--dsw-alias-border-l3);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.toolbarChat:disabled {
-  cursor: default;
-  opacity: 0.42;
-}
-
-/* Chat 图标跟随外壳颜色：设置页选了预设色时用 --dsw-chrome-accent（chrome-color.ts 写入），
-   auto/未设置时回落主题中性色 */
-.toolbarChatIcon {
-  display: inline-flex;
-  color: var(--dsw-chrome-accent, var(--dsw-alias-label-secondary));
-}
-
-.toolbarChat:hover:not(:disabled) .toolbarChatIcon {
-  color: var(--dsw-chrome-accent, var(--dsw-alias-label-primary));
-}
-
-/* 深色网页卡片：Chat 胶囊底是深色，外围色提亮后再作图标色才可辨识 */
-.contentCard[data-tone='dark'] .toolbarChatIcon,
-.contentCard[data-tone='dark'] .toolbarChat:hover:not(:disabled) .toolbarChatIcon {
-  color: color-mix(in srgb, var(--dsw-chrome-accent, var(--dsw-alias-label-secondary)) 45%, #ffffff);
-}
-
-/* 一键反馈：与 Chat 同尺寸的低强调胶囊，截图动作不与 Chat 争主动作 */
-.toolbarFeedback {
-  display: inline-flex;
+.appMenu button {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 32px;
-  margin-right: 6px;
-  padding: 0 12px 0 10px;
-  border: 0.5px solid transparent;
-  border-radius: 9px;
+  gap: 12px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
-  -webkit-app-region: no-drag;
 }
 
-.toolbarFeedback:hover {
-  border-color: var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.toolbarFeedbackIcon {
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.toolbarFeedback:hover .toolbarFeedbackIcon {
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 复制成功/失败反馈 */
-.toolbarCopyOk {
-  color: var(--dsw-alias-state-business-primary);
-}
-
-.toolbarCopyFail {
-  color: var(--dsw-alias-state-error-primary);
-}
+.appMenu button > svg { flex: none; color: var(--dsw-alias-label-secondary); }
+.appMenu button > span:first-of-type { flex: 1; }
+.appMenu button:hover:not(:disabled),
+.appMenu button:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
+.appMenu button:disabled { color: var(--dsw-alias-label-tertiary); opacity: 0.5; cursor: default; }
+.appMenu [role='separator'] { height: 1px; margin: 6px -6px; background: var(--dsw-alias-border-l2); }
+.appMenuShortcut { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.appMenuBadge { padding: 0 6px; border-radius: 8px; background: var(--dsw-alias-state-error-primary); color: #fff; font-size: 11px; line-height: 18px; }
 
 /* 刷新图标固定 16px 网格，避免 span 按文字行高计算后视觉上移 */
 .toolbarIcon {
@@ -415,121 +343,10 @@
   border: none;
 }
 
-/* 新建标签页及关闭全部标签后的起始页 */
-.newTabPage {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  box-sizing: border-box;
-  padding: clamp(36px, 9vh, 110px) 24px 32px;
-  overflow-y: auto;
-  background: var(--dsw-alias-bg-base);
-}
-
-.addressForm {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: min(520px, 100%);
-  flex: none;
-  margin-top: 28px;
-}
-
-.addressWrap {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  height: 36px;
-  padding: 0 10px;
-  background: var(--dsw-specific-login-input);
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-sm);
-}
-
-.addressWrap:focus-within {
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-.addressInput {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 13px;
-  line-height: 22px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.addressInput::placeholder {
-  color: var(--dsw-alias-label-secondary);
-}
-
-.addressGo {
-  height: 36px;
-  padding: 0 16px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-foreground);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.addressGo:hover {
-  background: var(--dsw-alias-button-primary-hover);
-}
-
-.newTabHint {
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.quicklinks {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: min(520px, 100%);
-  gap: 12px;
-  margin-top: 28px;
-  flex: none;
-}
-
-.quicklink {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  box-sizing: border-box;
-  min-width: 0;
-  padding: 18px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-md);
-  background: var(--dsw-alias-bg-layer-1);
-  cursor: pointer;
-}
-
-.quicklink:hover:not(:disabled) {
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-.quicklink:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.quicklinkTitle {
-  font-size: 14px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.quicklinkDesc {
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-}
+/* 消息和 AI 为独立模块，当前只保留本地占位。 */
+.modulePlaceholder { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+.modulePlaceholder h1 { margin: 0 0 8px; font-size: 20px; font-weight: 500; color: var(--dsw-alias-label-primary); }
+.modulePlaceholder p { margin: 0; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 
 .shell {
   display: flex;
@@ -540,7 +357,7 @@
 
 /* ============ 左侧竖向标签栏（rail） ============ */
 
-/* 根布局：左 rail 与右内容双列 */
+/* Dia 式布局：标签侧栏与浏览内容两列。 */
 .shellRail {
   flex-direction: column;
 }
@@ -563,11 +380,11 @@
   display: flex;
   flex-direction: column;
   flex: none;
-  /* 宽度由 Shell 按拖拽状态 inline 设置（默认 224，保留自定义宽度） */
+  /* 标签侧栏默认 224px，支持拖宽和完全收起。 */
   box-sizing: border-box;
   background: var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill));
-  /* 与右侧外围色同色，去掉竖向分隔线让 rail 与卡片外框连成一条连续边带 */
-  border-right: none;
+  border-left: none;
+  min-width: 0;
   user-select: none;
 }
 
@@ -615,33 +432,6 @@
 
 /* 侧栏与卡片外框统一使用 sidebar-fill 实底色（与 Windows 版侧栏灰一致），macOS 不再叠加半透明 tint；
    内容卡片（网页/设置页）四角 16px 圆角、四周 5px 留白悬浮在这层外围色上。 */
-/* 新建标签：dsh 侧栏"新会话"按钮语言——通栏、radius 8、hover 高亮 */
-.railNewTab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  align-self: stretch;
-  flex: none;
-  height: 34px;
-  /* rail 头部已含 5px 上内边距，这里不再留上边距：首个标签行与卡片内网页内容顶部对齐 */
-  margin: 0 12px;
-  padding: 0 12px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.railNewTab:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 标签列表：纵向滚动（细滚动条走全局 scrollbar.css token） */
 .railTabs {
   display: flex;
   flex-direction: column;
@@ -650,7 +440,7 @@
   min-height: 0;
   box-sizing: border-box;
   margin-top: 8px;
-  padding: 0 8px;
+  padding: 0 8px 12px;
   overflow-y: auto;
 }
 
@@ -744,163 +534,30 @@
   opacity: 1;
 }
 
-/* 底部账套身份与设置入口 */
-.railFooter {
-  flex: none;
-  padding: 10px 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-}
-
-/* ============ 底部用户行 + 用户卡片 ============ */
-
-.userChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  height: 34px;
-  max-width: 220px;
-  padding: 0 6px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.userChip:hover:not(:disabled) {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.userChip:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-/* rail 内通栏 */
-.userChipRail {
-  width: 100%;
-  max-width: none;
-}
-
-/* 圆形头像：品牌蓝底（--dsw-static-deepseek-500 = rgb(65,118,230)）+ 首字符，账套无关 */
-.userAvatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--dsw-alias-state-business-primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.userChipName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.userGear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: var(--dsw-radius-xs);
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-}
-
-.userGear:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-
-/* 窄栏保留标签、助手和设置；macOS 红绿灯仍占据左上角第一行。 */
-.railCompact .sidebarToolbar,
-:global(html[data-platform='darwin']) .railCompact .sidebarToolbar {
-  height: 80px;
-  padding: 38px 0 0;
-  justify-content: center;
-}
-
-.railCompact .railNewTab {
-  justify-content: center;
-  margin: 2px 14px;
-  padding: 0;
-}
-
-.railCompact .railNewTab span,
-.railCompact .railTabTitle,
-.railCompact .userChipName,
-.railCompact .userAvatar {
-  display: none;
-}
-
-.railCompact .railTabSelect {
-  justify-content: center;
-  padding: 0;
-}
-
-.railCompact .railTabClose {
+.unreadBadge {
   position: absolute;
-  right: 0;
-  top: -5px;
-  width: 22px;
-  height: 22px;
-  background: var(--dsw-specific-menu);
+  top: 0;
+  right: -4px;
+  min-width: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--dsw-alias-state-error-primary);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
 }
-
-.railCompact .railFooter { padding: 8px 14px 12px; }
-.railCompact .userChip { justify-content: center; }
-
-.startHeading { width: min(520px, 100%); flex: none; }
-.startHeading > span { color: var(--dsw-alias-label-secondary); font-size: 12px; }
-.startHeading h1 { margin: 8px 0; font-size: 24px; line-height: 32px; font-weight: 600; color: var(--dsw-alias-label-primary); }
-.startHeading p { margin: 0; font-size: 13px; line-height: 22px; color: var(--dsw-alias-label-secondary); }
-.quicklink > svg { color: var(--dsw-alias-state-business-primary); margin-bottom: 4px; }
-.railAction { display: flex; position: relative; align-items: center; gap: 10px; min-height: 50px; width: 100%; padding: 8px; border: 0; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; }
-.railAction > svg { flex: none; color: var(--dsw-alias-label-secondary); }
-.railAction:hover,
-.identityButton:hover,
-.settingsButton:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
-.railActionText { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
-.railActionText strong,
-.railActionText small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.railActionText strong { font-size: 12px; line-height: 17px; font-weight: 500; color: var(--dsw-alias-label-primary); }
-.railActionText small { font-size: 10px; line-height: 14px; font-weight: 400; color: var(--dsw-alias-label-secondary); }
-.railActionHint { flex: none; font-size: 11px; color: var(--dsw-alias-label-secondary); }
-.statusOnline,
-.statusPending { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); vertical-align: 1px; }
-.statusOnline { background: #3f8f6b; }
-.unreadBadge { flex: none; min-width: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--dsw-alias-state-business-primary); color: #fff; font-size: 10px; line-height: 17px; text-align: center; }
-.identityRow { display: flex; align-items: center; gap: 4px; padding-top: 6px; margin-top: 4px; border-top: 0.5px solid var(--dsw-alias-border-l2); }
-.identityButton { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 42px; padding: 6px; border: none; border-radius: var(--dsw-radius-sm); background: transparent; text-align: left; cursor: pointer; }
-.settingsButton { display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
-.railCompact .railAction { justify-content: center; min-height: 38px; padding: 8px 0; }
-.railCompact .railActionText,
-.railCompact .railActionHint { display: none; }
-.railCompact .unreadBadge { position: absolute; top: 0; right: -5px; }
-.railCompact .identityRow { flex-direction: column; gap: 4px; }
-.railCompact .identityButton { flex: none; width: 32px; height: 32px; min-height: 32px; justify-content: center; padding: 0; }
-.railCompact .identityButton .userAvatar { display: inline-flex; }
-.newTabPage button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
-@media (max-height: 600px) { .railAction { min-height: 38px; } .railActionText small { display: none; } }
+.messageWarning {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--card-surface, var(--dsw-alias-bg-base));
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+}
 
 .railTabSelect {
   display: flex;
@@ -918,8 +575,6 @@
   cursor: pointer;
 }
 
-.railNewTab { color: var(--dsw-alias-label-primary); }
-.railNewTab[aria-pressed='true'] { background: var(--dsw-specific-sidebar-nav-item-active); }
 
 .tabMenu {
   position: fixed;
@@ -949,7 +604,9 @@
 .tabMenu button:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
 .tabMenu [role='separator'] { height: 1px; margin: 4px; background: var(--dsw-alias-border-l2); }
 .rail button:focus-visible,
-.tabMenu button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.contentToolbar button:focus-visible,
+.tabMenu button:focus-visible,
+.appMenu button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 
 @media (max-width: 1050px) {
   .toolbarAddress { margin-inline: 2px; padding-left: 4px; }

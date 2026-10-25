@@ -1,6 +1,6 @@
 import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
 /**
- * 真机验证：同域 window.open 自动补 sid/CLIENTID/device → AI 对话页作为客户端新标签打开。
+ * 真机验证：同域 window.open 自动补 sid/CLIENTID/device；AI 入口仅切换本地占位。
  * 账套切换已统一由网页版（页头账套卡片）完成，客户端不再提供切换入口，本脚本不含切账套步骤。
  * 前置：vite(5173) 和 electron(--remote-debugging-port=9223) 已运行。
  * 用法：node scripts/e2e-nav-ai.mjs
@@ -65,28 +65,15 @@ const openedTab = tabsAfterOpen.tabs[tabsAfterOpen.tabs.length - 1];
 const hasSid = /[?&]sid=[^&]+/.test(openedTab.url) && /[?&]CLIENTID=[^&]+/.test(openedTab.url);
 console.log('CHECK 任务A window.open 补 sid:', hasSid ? 'OK' : 'FAIL', maskUrl(openedTab.url));
 
-// 3. AI 对话页（作为客户端新标签，外链白名单内）
-// 先关到 0 个标签露出新建标签页（标签状态在渲染层，逐个点关闭 ×），再点 quicklink-ai
-for (let guard = 0; guard < 10; guard++) {
-  if ((await shell.locator('[data-testid^="tab-close-"]').count()) === 0) break;
-  await shell.locator('[data-testid^="tab-close-"]').first().click();
-  await shell.waitForTimeout(300);
-}
-await shell.waitForSelector('[data-testid="quicklink-ai"]:not([disabled])', { timeout: 10_000 });
-await shell.click('[data-testid="quicklink-ai"]');
-await shell.waitForTimeout(5000);
-const tabsAfterAi = await shell.evaluate(() => window.__ditengTabsList());
-const aiTab = tabsAfterAi.tabs.find((t) => /\/chat/.test(t.url));
-console.log('CHECK AI 标签:', aiTab ? maskUrl(aiTab.url) : 'FAIL（未见 /chat 标签）');
-let aiPage = null;
-for (let i = 0; i < 20 && !aiPage; i++) {
-  await shell.waitForTimeout(1000);
-  aiPage = allPages().find((p) => /\/chat/.test(p.url()));
-}
-if (aiPage) {
-  await aiPage.waitForLoadState('domcontentloaded').catch(() => {});
-  console.log('CHECK AI 页面标题:', (await aiPage.title().catch(() => '')) || '(空)');
-}
+// 3. AI 独立模块保留入口，工作区标签和当前页面保持不变。
+const beforeAi = await shell.evaluate(() => window.__ditengTabsList());
+await shell.click('[data-testid="open-ai"]');
+await shell.waitForSelector('[data-testid="module-ai"]');
+const afterAi = await shell.evaluate(() => window.__ditengTabsList());
+if (JSON.stringify(beforeAi) !== JSON.stringify(afterAi)) throw new Error('AI 占位入口改变了工作区标签');
+console.log('CHECK AI 入口本地占位、不创建线上页面: OK');
+await shell.click('[data-testid="nav-back"]');
+await shell.waitForSelector('[data-testid="browser-toolbar"]');
 
 await shell.screenshot({ path: '/tmp/diteng-nav-ai.png' });
 console.log('截图: /tmp/diteng-nav-ai.png');

@@ -360,8 +360,8 @@ for (let i = 0; i < 20; i++) {
 const isDark = await shell.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'));
 if (isDark) {
   // 外观入口统一在设置页：齿轮 → 外观（默认分类）→ 浅色 → ESC 返回标签视图
-  await shell.waitForSelector('[data-testid="user-chip"] [data-testid="open-settings"]', { timeout: 10_000 });
-  await shell.click('[data-testid="user-chip"] [data-testid="open-settings"]');
+  await shell.waitForSelector('[data-testid="open-settings"]', { timeout: 10_000 });
+  await shell.click('[data-testid="open-settings"]');
   await shell.waitForSelector('[data-testid="settings-theme-light"]', { timeout: 5_000 });
   await shell.click('[data-testid="settings-theme-light"]');
   await shell.waitForTimeout(500);

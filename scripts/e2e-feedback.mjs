@@ -604,7 +604,7 @@ async function readLayout() {
       rail: rectOf(document.querySelector('[data-testid="tabstrip"]')),
       toolbar: rectOf(document.querySelector('[data-testid="browser-toolbar"]')),
       webview: rectOf(activeWebview),
-      chat: rectOf(document.querySelector('[data-testid="toolbar-chat"]')),
+      chat: rectOf(document.querySelector('[data-testid="open-ai"]')),
       feedbackButton: feedback
         ? {
             disabled: Boolean(feedback.disabled),

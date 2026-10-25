@@ -8,15 +8,6 @@ import { NotificationSettings } from './NotificationSettings';
 import { SettingRow } from './SettingRow';
 import { version as APP_VERSION } from '../../../package.json';
 
-/**
- * AI 站点展示推导：与主进程 config.ts resolveAiBase 同规则（仅设置页展示用；
- * 手改 aiBase 空串时按 serverBase 推导，生产 m.cdcp.site → https://ai.cdcp.site，其余回本地 dev）。
- */
-function deriveAiBase(config: AppConfig): string {
-  if (config.aiBase.trim()) return config.aiBase.trim().replace(/\/+$/, '');
-  return config.serverBase.includes('cdcp.site') ? 'https://ai.cdcp.site' : 'http://127.0.0.1:3060';
-}
-
 /** 设置分类：key 同时用于 data-testid=settings-nav-{key} */
 export type SettingsCategoryKey = 'account' | 'appearance' | 'connection' | 'notifications' | 'about';
 
@@ -294,12 +285,6 @@ export function SettingsPage({
         title: '服务器地址',
         desc: '当前登录使用的服务器',
         control: { kind: 'value', testid: 'settings-server-base', text: config?.serverBase ?? '' },
-      },
-      {
-        key: 'ai-base',
-        title: 'AI 站点',
-        desc: '当前账套的 AI 助手站点',
-        control: { kind: 'value', testid: 'settings-ai-base', text: config ? deriveAiBase(config) : '' },
       },
       {
         key: 'device', title: '设备标识', desc: '联系客服排查登录问题时使用（前 8 位）',

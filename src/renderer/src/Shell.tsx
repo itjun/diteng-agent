@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties, FormEvent, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { DotsVerticalIcon, PlusIcon } from '@radix-ui/react-icons';
 import type {
   FeedbackChatApp,
   SessionSummary,
@@ -11,7 +12,6 @@ import type {
 import type { WebviewDomEvent, WebviewElement } from './env';
 import {
   AlertIcon,
-  AccountBookIcon,
   BackIcon,
   BellIcon,
   CameraIcon,
@@ -20,8 +20,6 @@ import {
   CloseIcon,
   CopyIcon,
   ForwardIcon,
-  HomeIcon,
-  PlusIcon,
   ReloadIcon,
   SettingsIcon,
   SidebarToggleIcon,
@@ -35,6 +33,7 @@ import type { SettingsCategoryKey } from './Settings';
 import { FeedbackEditor } from './FeedbackEditor';
 import type { FeedbackEditorDraft, FeedbackEditorResult } from './FeedbackEditor';
 import { applyChromeColor } from './chrome-color';
+import { useThemeSetting } from './use-theme';
 import { probePageSurface } from './page-surface';
 import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
@@ -46,7 +45,7 @@ const isMacPlatform = /Macintosh/.test(navigator.userAgent);
 /** 剪贴板粘贴快捷键文案：反馈成功提示里引导用户到聊天窗口粘贴 */
 const PASTE_SHORTCUT = isMacPlatform ? '⌘V' : 'Ctrl+V';
 const DEFAULT_RAIL_WIDTH = 224;
-/** 导航已移至内容区，侧栏只需容纳红绿灯和展开开关。 */
+/** 标签侧栏宽度；沿用原有持久化范围。 */
 const RAIL_WIDTH_MIN = 200;
 const RAIL_WIDTH_MAX = 480;
 
@@ -106,19 +105,21 @@ function corpNoOfUrl(url: string): string {
  * 主窗壳：左侧竖向标签栏（rail）+ 内容区都在渲染层，每 tab 一个 <webview>（页内合成，与 macOS 整窗 vibrancy 兼容）。
  * 标签状态（id/url/title/favicon/corpNo/isLoading）归渲染层，标题/favicon/loading 由 webview 元素事件维护；
  * URL 策略（分类 + 同域补 sid）归主进程：任何开标签入口先经 tabs:resolve 拿最终 URL 再建 webview。
- * 左栏拥有独立顶部工具区；右栏另起页面信息与助手入口，两栏从窗口顶部到底部完全分开。
- * 壳内另有「设置页」视图：rail 原地切换为设置导航，内容区替换为设置项（webview 隐藏不销毁），
+ * Dia 式两栏布局：左侧只放标签，右侧顶部放侧栏开关、导航与统一应用菜单。
+ * 壳内另有「设置页」视图：标签侧栏切换为设置导航，内容区替换为设置项（webview 隐藏不销毁），
  * ESC/返回切回标签视图。
- * 关闭到 0 个 tab 时内容区被新建标签页覆盖，窗口不销毁。
+ * 工作区只展示 Web；消息与 AI 是本地独立模块，暂时仅保留占位入口。
  */
 export function Shell() {
+  useThemeSetting();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [activeTabId, setActiveTabId] = useState('');
   const [session, setSession] = useState<SessionSummary | null>(null);
   const { state: messageState, error: messageError } = useMessageState();
   const [isReloggingIn, setIsReloggingIn] = useState(false);
   const isReloggingInRef = useRef(false);
-  const isOpeningWorkspaceRef = useRef(false);
+  const isOpeningAccountsRef = useRef(false);
+  const [activeModule, setActiveModule] = useState<'workspace' | 'messages' | 'ai'>('workspace');
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   // 0=未自定义；旧版手动保存的宽度继续尊重，双击恢复紧凑默认宽度。
@@ -151,23 +152,16 @@ export function Shell() {
   const webviewRefs = useRef(new Map<string, WebviewElement>());
   const activeTabIdRef = useRef('');
   activeTabIdRef.current = activeTabId;
-  const blankTabIdRef = useRef('');
-  blankTabIdRef.current = tabs.find((tab) => tab.id === activeTabId && !tab.url)?.id ?? '';
+  const isWebVisibleRef = useRef(true);
+  isWebVisibleRef.current = activeModule === 'workspace' && !isSettingsOpen;
   // 防重不落到 state：截图只有百毫秒级，处理中再点直接忽略，也避免禁用态被截进画面
   const isFeedbackCapturingRef = useRef(false);
 
   /** 开新标签（URL 必须经主进程 resolve 拿到的最终值），并激活 */
   const openTab = useCallback((url: string, corpNo: string) => {
     const id = String(nextIdRef.current++);
-    const activeId = activeTabIdRef.current;
-    const isBlank = blankTabIdRef.current === activeId && Boolean(activeId);
-    const targetId = isBlank ? activeId : id;
-    setTabs((prev) => {
-      const blank = prev.find((tab) => tab.id === targetId && !tab.url);
-      const next = { id: targetId, url, title: '', favicon: '', corpNo, isLoading: true };
-      return blank ? prev.map((tab) => tab.id === blank.id ? next : tab) : [...prev, next];
-    });
-    setActiveTabId(targetId);
+    setTabs((prev) => [...prev, { id, url, title: '', favicon: '', corpNo, isLoading: true }]);
+    setActiveTabId(id);
   }, []);
 
   /** 经主进程开标签：in-app 拿最终 URL 建 webview；external 已由主进程转系统浏览器，返回结果供调用方提示 */
@@ -186,15 +180,18 @@ export function Shell() {
 
   const activateTab = useCallback((id: string) => {
     setIsSettingsOpen(false);
+    setActiveModule('workspace');
     setActiveTabId(id);
   }, []);
 
+  /** 工作区新标签直接打开 Web 首页，不承载本地消息或 AI 功能。 */
   const createNewTab = useCallback(() => {
-    const id = `new-${nextIdRef.current++}`;
-    setTabs((prev) => [...prev, { id, url: '', title: '新建标签页', favicon: '', corpNo: '', isLoading: false }]);
-    setActiveTabId(id);
     setIsSettingsOpen(false);
-  }, []);
+    setActiveModule('workspace');
+    void resolveAndOpen({ home: true }).then((result) => {
+      if (!result.ok) setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: result.message });
+    }).catch(() => setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: '请稍后重试' }));
+  }, [resolveAndOpen]);
 
   /** webview 事件回写标签元数据（title/favicon/loading/url，导航跨账套时重记 corpNo） */
   const updateTab = useCallback(
@@ -213,13 +210,13 @@ export function Shell() {
     }
     if (id === activeTabIdRef.current) {
       setNavigationState(navigationStateOf(webview ?? undefined));
-      try { window.diteng.tabsSetActiveGuest(webview?.getWebContentsId() ?? null); } catch { window.diteng.tabsSetActiveGuest(null); }
+      try { window.diteng.tabsSetActiveGuest(isWebVisibleRef.current ? webview?.getWebContentsId() ?? null : null); } catch { window.diteng.tabsSetActiveGuest(null); }
     }
   }, []);
 
   /** 仅当前可见标签的历史状态驱动工具栏前进/后退按钮 */
   const handleNavigationState = useCallback((id: string, state: NavigationState) => {
-    if (id === activeTabIdRef.current) {setNavigationState(state);try { window.diteng.tabsSetActiveGuest(webviewRefs.current.get(id)?.getWebContentsId() ?? null); } catch { /* guest 未 ready */ }}
+    if (id === activeTabIdRef.current) {setNavigationState(state);try { window.diteng.tabsSetActiveGuest(isWebVisibleRef.current ? webviewRefs.current.get(id)?.getWebContentsId() ?? null : null); } catch { /* guest 未 ready */ }}
   }, []);
 
   /** 网页顶部底色回写（同色重复上报不触发重渲染，避免每次加载都抖一下） */
@@ -232,8 +229,9 @@ export function Shell() {
   }, []);
 
   const toggleRail = useCallback(() => {
+    if (isSettingsOpen) return;
     setIsRailCollapsed((collapsed) => !collapsed);
-  }, []);
+  }, [isSettingsOpen]);
 
   const navigateBack = useCallback(() => {
     const webview = webviewRefs.current.get(activeTabIdRef.current);
@@ -252,11 +250,13 @@ export function Shell() {
   }, []);
 
   /** 固定入口复用当前账套已有页面；普通业务链接仍允许多标签。 */
-  const openWorkspace = useCallback(async (destination: 'ai' | 'accounts' | 'messages') => {
-    if (isOpeningWorkspaceRef.current) return;
-    isOpeningWorkspaceRef.current = true;
+  const openAccounts = useCallback(async () => {
+    if (isOpeningAccountsRef.current) return;
+    isOpeningAccountsRef.current = true;
+    setIsSettingsOpen(false);
+    setActiveModule('workspace');
     try {
-      const result = await window.diteng.tabsResolve(destination === 'ai' ? { ai: true } : { page: destination });
+      const result = await window.diteng.tabsResolve({ page: 'accounts' });
       if (!result.ok) {
         setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: result.message });
         return;
@@ -267,20 +267,18 @@ export function Shell() {
         if (!tab.url || tab.corpNo !== result.corpNo) return false;
         try {
           const url = new URL(tab.url);
-          return url.pathname === target.pathname && (destination !== 'ai' || url.origin === target.origin);
+          return url.origin === target.origin && url.pathname === target.pathname;
         } catch { return false; }
       });
-      setIsSettingsOpen(false);
       if (existing) setActiveTabId(existing.id);
       else openTab(result.url, result.corpNo);
     } catch {
       setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: '请检查登录状态后重试' });
-    } finally { isOpeningWorkspaceRef.current = false; }
+    } finally { isOpeningAccountsRef.current = false; }
   }, [openTab]);
 
-  const openChat = useCallback(() => { void openWorkspace('ai'); }, [openWorkspace]);
-  const openAccounts = useCallback(() => { void openWorkspace('accounts'); }, [openWorkspace]);
-  const openMessages = useCallback(() => { void openWorkspace('messages'); }, [openWorkspace]);
+  const openChat = useCallback(() => { setActiveModule('ai'); setIsSettingsOpen(false); }, []);
+  const openMessages = useCallback(() => { setActiveModule('messages'); setIsSettingsOpen(false); }, []);
 
   const relogin = useCallback(async () => {
     if (isReloggingInRef.current) return;
@@ -384,9 +382,11 @@ export function Shell() {
       if (entry) openTab(entry.url, entry.corpNo);
     });
     const unsubscribeOpen = window.diteng.onTabsOpenRequest(({ url }) => {
+      setActiveModule('workspace');
+      setIsSettingsOpen(false);
       void resolveAndOpen({ url });
     });
-    // 账套切换后主进程推送新摘要，底部用户行与快捷入口文案随之刷新
+    // 账套切换后主进程推送新摘要，设置页身份与账套信息随之刷新
     const unsubscribeSession = window.diteng.onSessionChanged((summary) => setSession(summary));
     return () => {
       unsubscribeOpen();
@@ -409,7 +409,7 @@ export function Shell() {
     }
   }), [openTab,resolveAndOpen]);
 
-  // 激活态自愈：激活 tab 被关掉后落到剩余最后一个（与旧主进程实现一致），全关则空（新建标签页）
+  // 激活态自愈：激活 tab 被关掉后落到剩余最后一个（与旧主进程实现一致），全关则保留空白 Web 工作区
   useEffect(() => {
     setActiveTabId((current) => {
       if (current && tabs.some((tab) => tab.id === current)) return current;
@@ -420,8 +420,8 @@ export function Shell() {
   // 切标签后立即同步历史可用状态；webview 首次挂载还会由 registerWebview 再同步一次
   useEffect(() => {
     setNavigationState(navigationStateOf(webviewRefs.current.get(activeTabId)));
-    try { window.diteng.tabsSetActiveGuest(webviewRefs.current.get(activeTabId)?.getWebContentsId() ?? null); } catch { window.diteng.tabsSetActiveGuest(null); }
-  }, [activeTabId]);
+    try { window.diteng.tabsSetActiveGuest(isWebVisibleRef.current ? webviewRefs.current.get(activeTabId)?.getWebContentsId() ?? null : null); } catch { window.diteng.tabsSetActiveGuest(null); }
+  }, [activeTabId, activeModule, isSettingsOpen]);
 
   // 页面底色只保留仍存在的标签（关标签 / 切账套只保留当前标签）
   useEffect(() => {
@@ -459,12 +459,8 @@ export function Shell() {
     };
   }, [tabs, activeTabId]);
 
-  /** 设置齿轮保留上次分类；身份入口直接进入账号分类。 */
+  /** 设置入口保留上次分类。 */
   const openSettings = useCallback(() => {
-    setIsSettingsOpen(true);
-  }, []);
-  const openAccountSettings = useCallback(() => {
-    setSettingsCategory('account');
     setIsSettingsOpen(true);
   }, []);
 
@@ -486,16 +482,18 @@ export function Shell() {
       else if (action === 'new-tab') createNewTab();
       else if (action === 'close-tab') {
         if (isSettingsOpen) closeSettings();
+        else if (activeModule !== 'workspace') setActiveModule('workspace');
         else closeTab(activeTabIdRef.current);
       }
       else if (action === 'next-tab' || action === 'previous-tab') {
+        if (isSettingsOpen) return;
         const index = tabs.findIndex((tab) => tab.id === activeTabIdRef.current);
         const next = tabs[(index + (action === 'next-tab' ? 1 : -1) + tabs.length) % tabs.length];
         if (next) activateTab(next.id);
       }
     });
     return unsubscribe;
-  }, [openSettings, closeSettings, toggleRail, createNewTab, closeTab, activateTab, tabs, isSettingsOpen]);
+  }, [openSettings, closeSettings, toggleRail, createNewTab, closeTab, activateTab, tabs, isSettingsOpen, activeModule]);
 
   // ===== 侧栏宽度拖拽：拖拽期间盖全窗透明盾牌（z-index 高于一切，含 webview），
   // 否则指针移入 webview 区域后事件被路由进 guest 进程，宿主页收不到 move/up（真实拖拽同样会卡住）；
@@ -557,15 +555,16 @@ export function Shell() {
     return () => clearTimeout(timer);
   }, [feedbackToast]);
 
-  const corpDisplayName = session?.corpName || session?.corpNo || '未登录';
-  const userDisplayName = session?.userName || session?.loginId || '登录用户';
-  const messageLabel = messageError || messageConnectionLabel(messageState);
-  const messageSummary = messageError ? '状态读取失败' : messageState ? {
-    idle: '尚未连接', connecting: '正在连接', connected: '实时接收正常', reconnecting: '正在重新连接', unavailable: '定时同步',
-  }[messageState.connectionStatus] : '正在读取状态';
-
-  // 当前激活标签（激活态自愈保证有标签时必命中；0 标签为 undefined，地址栏显示新建标签页）
+  const messageLabel = messageError || `${messageState?.unreadError ? '未读数同步失败，' : ''}${messageConnectionLabel(messageState)}`;
+  const isMessageWarning = Boolean(messageError || messageState?.unreadError || (messageState && !messageState.connected));
+  const isWorkspaceVisible = !isSettingsOpen && activeModule === 'workspace';
+  const isSidebarVisible = isSettingsOpen || !isRailCollapsed;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
+
+  function returnToWorkspace() {
+    setIsSettingsOpen(false);
+    setActiveModule('workspace');
+  }
 
   // 内容卡片/地址栏底色跟随当前标签的网页顶部底色；没有采样结果（新建标签页、加载中）时
   // 不写 --card-surface，回落到应用主题的卡片底色。tone 决定工具条文字/图标走深色还是浅色档。
@@ -590,10 +589,11 @@ export function Shell() {
         />
       )}
       <div className={styles.workspace}>
-        <aside className={`${styles.rail} ${isRailCollapsed ? styles.railCompact : ''}`} data-testid="tabstrip" data-collapsed={isRailCollapsed} style={{ width: isRailCollapsed ? 76 : railWidth }}>
-            <SidebarToolbar isCollapsed={isRailCollapsed} onToggleRail={toggleRail} />
+        <aside className={styles.rail} data-testid="tabstrip" data-collapsed={!isSidebarVisible}
+          style={{ width: railWidth, display: isSidebarVisible ? undefined : 'none' }}>
+            <div className={styles.sidebarToolbar} data-testid="sidebar-toolbar" aria-hidden="true" />
             {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 224 */}
-            {!isRailCollapsed && <div
+            {isSidebarVisible && <div
               className={styles.railResizeHandle}
               data-testid="rail-resize-handle"
               role="separator"
@@ -606,21 +606,9 @@ export function Shell() {
                 activeCategory={settingsCategory}
                 onSelectCategory={selectSettingsCategory}
                 onBack={closeSettings}
-                isCompact={isRailCollapsed}
               />
             ) : (
               <>
-                <button
-                  type="button"
-                  data-testid="new-tab"
-                  className={styles.railNewTab}
-                  title="新建标签页"
-                  aria-label="新建标签页"
-                  onClick={createNewTab}
-                >
-                  <PlusIcon />
-                  <span>新建标签</span>
-                </button>
                 <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="标签页">
                   {tabs.map((tab) => (
                     <RailTab
@@ -640,28 +628,6 @@ export function Shell() {
                 </div>
               </>
             )}
-            <div className={styles.railFooter}>
-              <button type="button" className={styles.railAction} data-testid="open-messages" onClick={openMessages}
-                title={`消息中心 · ${messageLabel}`} aria-label={`消息中心，${messageState && messageState.unread >= 0 ? `${messageState.unread} 条未读` : '未读数待同步'}，${messageLabel}`}>
-                <BellIcon />
-                <span className={styles.railActionText}><strong>消息中心</strong><small><i className={messageState?.connected ? styles.statusOnline : styles.statusPending} />{messageSummary}</small></span>
-                {messageState && messageState.unread > 0 && <span className={styles.unreadBadge} data-testid="unread-badge">{messageState.unread > 99 ? '99+' : messageState.unread}</span>}
-              </button>
-              <button type="button" className={styles.railAction} data-testid="switch-account" onClick={openAccounts}
-                title={`当前账套 ${corpDisplayName}（${session?.corpNo ?? ''}）· 切换账套`} aria-label={`当前账套 ${corpDisplayName}，切换账套`}>
-                <AccountBookIcon />
-                <span className={styles.railActionText}><small>当前账套 · {session?.corpNo || '—'}</small><strong>{corpDisplayName}</strong></span>
-                <span className={styles.railActionHint}>切换</span>
-              </button>
-              <div className={styles.identityRow}>
-                <button type="button" className={styles.identityButton} data-testid="user-chip" onClick={openAccountSettings}
-                  title={`登录用户 ${userDisplayName} · 账号与账套`} aria-label={`登录用户 ${userDisplayName}，查看账号与账套`}>
-                  <span className={styles.userAvatar} aria-hidden="true">{userDisplayName.charAt(0)}</span>
-                  <span className={styles.railActionText}><strong>{userDisplayName}</strong><small>{session?.loginId || '查看登录身份'}</small></span>
-                </button>
-                <button type="button" className={styles.settingsButton} data-testid="open-settings" onClick={openSettings} title="设置" aria-label="打开设置"><SettingsIcon /></button>
-              </div>
-            </div>
           </aside>
 
         {/* 设置页直接接管内容区，不再复用浏览器工具栏；返回标签视图后恢复 webview 内容 */}
@@ -672,28 +638,37 @@ export function Shell() {
           <div
             className={styles.contentCard}
             data-testid="content-card"
-            data-tone={cardTone}
-            style={{ display: isSettingsOpen ? 'none' : undefined, ...cardStyle }}
+            data-tone={isWorkspaceVisible ? cardTone : undefined}
+            style={{ display: isSettingsOpen ? 'none' : undefined, ...(isWorkspaceVisible ? cardStyle : undefined) }}
           >
             {!isSettingsOpen && (
               <ContentToolbar
-                url={activeTab?.url ?? ''}
-                pageTitle={activeTab?.title ?? ''}
-                canGoBack={Boolean(activeTab) && navigationState.canGoBack}
-                canGoForward={Boolean(activeTab) && navigationState.canGoForward}
-                isLoading={Boolean(activeTab?.isLoading)}
-                hasActiveTab={Boolean(activeTab)}
-                onBack={navigateBack}
+                isRailCollapsed={isRailCollapsed}
+                onToggleRail={toggleRail}
+                url={isWorkspaceVisible ? activeTab?.url ?? '' : ''}
+                pageTitle={isWorkspaceVisible ? activeTab?.title ?? '' : activeModule === 'messages' ? '消息' : 'AI 助手'}
+                canGoBack={!isWorkspaceVisible || Boolean(activeTab) && navigationState.canGoBack}
+                canGoForward={isWorkspaceVisible && Boolean(activeTab) && navigationState.canGoForward}
+                isLoading={isWorkspaceVisible && Boolean(activeTab?.isLoading)}
+                hasActiveTab={isWorkspaceVisible && Boolean(activeTab)}
+                onBack={isWorkspaceVisible ? navigateBack : returnToWorkspace}
                 onForward={navigateForward}
                 onReload={reloadActiveTab}
-                chatDisabled={!session}
-                onChat={openChat}
+                onNewTab={createNewTab}
+                onSettings={openSettings}
                 onFeedback={() => void captureFeedback()}
+                onMessages={activeModule === 'messages' ? returnToWorkspace : openMessages}
+                onChat={activeModule === 'ai' ? returnToWorkspace : openChat}
+                isModuleDisabled={!session}
+                isMessagesActive={activeModule === 'messages'}
+                isChatActive={activeModule === 'ai'}
+                unreadCount={messageState?.unread ?? -1}
+                messageLabel={messageLabel}
+                isMessageWarning={isMessageWarning}
               />
             )}
-            {/* webview 宿主：非激活标签 display:none 隐藏（保留 DOM，guest 不销毁不重载）；
-                新建标签页盖在地址栏下方的页面区域里，与网页共用同一张卡片 */}
-            <div className={styles.viewport}>
+            {/* 工作区隐藏时保留 webview DOM，切回后继续原网页状态。 */}
+            <div className={styles.viewport} style={{ display: isWorkspaceVisible ? undefined : 'none' }}>
               {tabs.filter((tab) => tab.url).map((tab) => (
                 <TabWebview
                   key={tab.id}
@@ -705,16 +680,20 @@ export function Shell() {
                   onPageSurface={handlePageSurface}
                 />
               ))}
-              {!isSettingsOpen && !activeTab?.url && (
-                <NewTabPage key={activeTabId} session={session} openViaMain={resolveAndOpen} onChat={openChat} onMessages={openMessages} onAccounts={openAccounts} />
-              )}
+
             </div>
+            {!isSettingsOpen && activeModule !== 'workspace' && (
+              <section className={styles.modulePlaceholder} data-testid={`module-${activeModule}`} aria-label={activeModule === 'messages' ? '消息' : 'AI 助手'}>
+                <h1>{activeModule === 'messages' ? '消息' : 'AI 助手'}</h1>
+                <p>功能暂未开放</p>
+              </section>
+            )}
           </div>
 
           {isSettingsOpen && (
             <>
               <SettingsPage session={session} activeCategory={settingsCategory} messageState={messageState} messageError={messageError}
-                onAccounts={openAccounts} onMessages={openMessages} onRelogin={() => void relogin()} isReloggingIn={isReloggingIn} />
+                onAccounts={() => void openAccounts()} onMessages={openMessages} onRelogin={() => void relogin()} isReloggingIn={isReloggingIn} />
             </>
           )}
           {/* 一键反馈结果提示：复制/启动聊天应用后引导粘贴；浮在内容区底部，不占布局 */}
@@ -1000,33 +979,13 @@ function ToolbarButton({
   );
 }
 
-/** 左侧栏顶部只负责栏开关，按钮贴 rail 右上角（对齐 DeepSeek Harness 顶栏）；页面导航与地址栏留在右侧内容区。 */
-function SidebarToolbar({ onToggleRail, isCollapsed }: { onToggleRail: () => void; isCollapsed: boolean }) {
-  return (
-    <div
-      className={styles.sidebarToolbar}
-      data-testid="sidebar-toolbar"
-      role="toolbar"
-      aria-label="侧栏工具栏"
-    >
-      <ToolbarButton
-        label={isCollapsed ? '展开侧栏' : '收起侧栏'}
-        testId="sidebar-toggle"
-        pressed={!isCollapsed}
-        className={styles.railToggleButton}
-        onClick={onToggleRail}
-      >
-        <SidebarToggleIcon />
-      </ToolbarButton>
-    </div>
-  );
-}
-
 /**
  * 右侧内容区工具栏：导航组紧贴地址栏左侧（Chrome 式）。
  * 展示页面名与域名；复制链接剥离会话参数，不修改真实导航地址。仅浏览页使用，设置页不渲染。
  */
 function ContentToolbar({
+  isRailCollapsed,
+  onToggleRail,
   url,
   pageTitle,
   canGoBack,
@@ -1036,10 +995,20 @@ function ContentToolbar({
   onBack,
   onForward,
   onReload,
-  chatDisabled,
-  onChat,
+  onNewTab,
+  onSettings,
   onFeedback,
+  onMessages,
+  onChat,
+  isModuleDisabled,
+  isMessagesActive,
+  isChatActive,
+  unreadCount,
+  messageLabel,
+  isMessageWarning,
 }: {
+  isRailCollapsed: boolean;
+  onToggleRail: () => void;
   url: string;
   pageTitle: string;
   canGoBack: boolean;
@@ -1049,14 +1018,56 @@ function ContentToolbar({
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
-  chatDisabled: boolean;
-  onChat: () => void;
+  onNewTab: () => void;
+  onSettings: () => void;
   onFeedback: () => void;
+  onMessages: () => void;
+  onChat: () => void;
+  isModuleDisabled: boolean;
+  isMessagesActive: boolean;
+  isChatActive: boolean;
+  unreadCount: number;
+  messageLabel: string;
+  isMessageWarning: boolean;
 }) {
   // 复制反馈：ok 成功 / fail 剪贴板不可用，2 秒后还原
   const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
   const safeUrl = shareablePageUrl(url);
   const hasUrl = Boolean(safeUrl);
+
+  const dismissMenu = useCallback(() => {
+    setIsMenuOpen(false);
+    menuButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    const dismiss = () => setIsMenuOpen(false);
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('blur', dismiss);
+    return () => {
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('blur', dismiss);
+    };
+  }, [isMenuOpen]);
+
+  function toggleMenu() {
+    if (isMenuOpen) { dismissMenu(); return; }
+    const bounds = menuButtonRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setMenuPosition({ top: bounds.bottom + 6, right: Math.max(8, window.innerWidth - bounds.right) });
+    setIsMenuOpen(true);
+  }
+
+  function runMenuAction(action: () => void) {
+    dismissMenu();
+    action();
+  }
 
   useEffect(() => {
     if (copyState === 'idle') return;
@@ -1081,9 +1092,13 @@ function ContentToolbar({
     <div
       className={styles.contentToolbar}
       data-testid="browser-toolbar"
+      data-sidebar-collapsed={isRailCollapsed}
       role="toolbar"
       aria-label="浏览器工具栏"
     >
+      <ToolbarButton label={isRailCollapsed ? '展开侧栏' : '收起侧栏'} testId="sidebar-toggle" pressed={!isRailCollapsed} onClick={onToggleRail}>
+        <SidebarToggleIcon />
+      </ToolbarButton>
       <div className={styles.toolbarNav}>
         <ToolbarButton label="后退" testId="nav-back" disabled={!canGoBack} onClick={onBack}>
           <BackIcon />
@@ -1103,135 +1118,54 @@ function ContentToolbar({
       </div>
       <div className={styles.toolbarAddress} data-testid="url-bar" role="group" aria-label="当前页面信息">
         <span className={styles.toolbarAddressText} data-testid="url-bar-text" title={locationText}>{locationText}</span>
-        <button
-          type="button"
-          className={[
-            styles.toolbarCopy,
-            copyState === 'ok' ? styles.toolbarCopyOk : '',
-            copyState === 'fail' ? styles.toolbarCopyFail : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          data-testid="url-bar-copy"
-          disabled={!hasUrl}
-          onClick={() => void copyUrl()}
-          title={copyLabel}
-          aria-label={copyLabel}
-        >
-          {copyState === 'ok' ? <CheckIcon /> : <CopyIcon />}
-        </button>
       </div>
-      <button
-        type="button"
-        className={styles.toolbarFeedback}
-        data-testid="feedback-button"
-        onClick={onFeedback}
-        title="一键反馈：截图后可标注，再复制并打开微信/企业微信粘贴发送"
-        aria-label="一键反馈（截图标注后复制给客服）"
-      >
-        <span className={styles.toolbarFeedbackIcon}>
-          <CameraIcon />
-        </span>
-        <span>反馈</span>
+      <button ref={menuButtonRef} type="button" className={`${styles.toolbarButton} ${styles.appMenuButton}`} data-testid="app-menu-button"
+        title="功能与设置" aria-label={`功能与设置${unreadCount > 0 ? `，${unreadCount} 条未读消息` : ''}`} aria-haspopup="menu" aria-expanded={isMenuOpen} aria-controls={isMenuOpen ? 'app-menu' : undefined}
+        onClick={toggleMenu} onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (!isMenuOpen) toggleMenu(); }
+        }}>
+        <DotsVerticalIcon width={18} height={18} />
+        {unreadCount > 0 ? <span className={styles.unreadBadge} data-testid="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+        {isMessageWarning ? <i className={styles.messageWarning} data-testid="message-warning" /> : null}
       </button>
-      <button
-        type="button"
-        className={styles.toolbarChat}
-        data-testid="toolbar-chat"
-        disabled={chatDisabled}
-        onClick={onChat}
-        title="打开 AI 助手"
-        aria-label="打开 AI 助手"
-      >
-        <span className={styles.toolbarChatIcon}>
-          <ChatIcon />
-        </span>
-        <span>AI 助手</span>
-      </button>
-    </div>
-  );
-}
-
-/** 新建标签页：地址栏 + 快捷入口（renderer 自绘，直接覆盖在 webview 宿主之上） */
-function NewTabPage({
-  session,
-  openViaMain,
-  onChat,
-  onMessages,
-  onAccounts,
-}: {
-  session: SessionSummary | null;
-  openViaMain: (request: TabsResolveRequest) => Promise<TabsResolveResult>;
-  onChat: () => void;
-  onMessages: () => void;
-  onAccounts: () => void;
-}) {
-  const [address, setAddress] = useState('');
-  const [hint, setHint] = useState('');
-  const [isOpening, setOpening] = useState(false);
-  const isOpeningRef = useRef(false);
-
-  async function openRequest(request: TabsResolveRequest) {
-    if (isOpeningRef.current) return;
-    isOpeningRef.current = true;
-    setOpening(true);
-    setHint('');
-    try {
-      const result = await openViaMain(request);
-      if (!result.ok) setHint(result.message);
-      else if (result.action === 'external') { setHint('外域地址已在系统浏览器打开'); setAddress(''); }
-    } catch { setHint('打开失败，请重试'); }
-    finally { isOpeningRef.current = false; setOpening(false); }
-  }
-
-  function openAddress(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const input = address.trim();
-    if (!input) return;
-    // 无协议时按 https 补全（浏览器地址栏同款容错）
-    const url = /^https?:\/\//i.test(input) ? input : `https://${input}`;
-    void openRequest({ url });
-  }
-
-  return (
-    <div className={styles.newTabPage}>
-      <div className={styles.startHeading}>
-        <span>当前账套 · {session?.corpNo || '—'}</span>
-        <h1>{session?.corpName || session?.corpNo || '工作区'}</h1>
-        <p>{session?.userName || '您好'}，从这里开始今天的工作。</p>
-      </div>
-      <div className={styles.quicklinks}>
-        <button type="button" className={styles.quicklink} data-testid="quicklink-erp" disabled={isOpening || !session} onClick={() => void openRequest({ home: true })}>
-          <HomeIcon /><span className={styles.quicklinkTitle}>ERP 首页</span><span className={styles.quicklinkDesc}>业务菜单与待办</span>
-        </button>
-        <button type="button" className={styles.quicklink} data-testid="quicklink-messages" disabled={!session} onClick={onMessages}>
-          <BellIcon /><span className={styles.quicklinkTitle}>消息中心</span><span className={styles.quicklinkDesc}>查看对话与未读消息</span>
-        </button>
-        <button type="button" className={styles.quicklink} data-testid="quicklink-ai" disabled={!session} onClick={onChat}>
-          <ChatIcon /><span className={styles.quicklinkTitle}>AI 助手</span><span className={styles.quicklinkDesc}>当前账套的企业助手</span>
-        </button>
-        <button type="button" className={styles.quicklink} data-testid="quicklink-accounts" disabled={!session} onClick={onAccounts}>
-          <AccountBookIcon /><span className={styles.quicklinkTitle}>切换账套</span><span className={styles.quicklinkDesc}>进入其他企业的工作区</span>
-        </button>
-      </div>
-      <form className={styles.addressForm} onSubmit={openAddress} noValidate aria-label="通过链接打开页面">
-        <div className={styles.addressWrap}>
-          <input
-            className={styles.addressInput}
-            data-testid="address-input"
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            aria-label="ERP 页面地址"
-            placeholder="粘贴 ERP 页面链接（可选）"
-            spellCheck={false}
-            autoComplete="off"
-          />
+      {isMenuOpen && <>
+        {/* 遮罩接住网页 guest 区域的外部点击，避免菜单打开时误操作网页。 */}
+        <div className={styles.appMenuBackdrop} data-testid="app-menu-backdrop" onPointerDown={dismissMenu} onContextMenu={(event) => { event.preventDefault(); dismissMenu(); }} />
+        <div ref={menuRef} id="app-menu" role="menu" aria-label="功能与设置" className={styles.appMenu} data-testid="app-menu" style={menuPosition}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); dismissMenu(); }
+            if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+              event.preventDefault();
+              const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+              const index = items.indexOf(document.activeElement as HTMLButtonElement);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+              items[next]?.focus();
+            }
+          }}>
+          <button type="button" role="menuitem" data-testid="new-tab" onClick={() => runMenuAction(onNewTab)}>
+            <PlusIcon /><span>打开新的标签页</span><span className={styles.appMenuShortcut}>{isMacPlatform ? '⌘T' : 'Ctrl+T'}</span>
+          </button>
+          <div role="separator" />
+          <button type="button" role="menuitemcheckbox" aria-checked={isMessagesActive} data-testid="open-messages" disabled={isModuleDisabled}
+            title={messageLabel} aria-label={`消息中心，${unreadCount >= 0 ? `${unreadCount} 条未读` : '未读数待同步'}，${messageLabel}`} onClick={() => runMenuAction(onMessages)}>
+            <BellIcon /><span>消息中心</span>{unreadCount > 0 ? <span className={styles.appMenuBadge}>{unreadCount > 99 ? '99+' : unreadCount}</span> : isMessagesActive ? <CheckIcon /> : null}
+          </button>
+          <button type="button" role="menuitemcheckbox" aria-checked={isChatActive} data-testid="open-ai" disabled={isModuleDisabled} onClick={() => runMenuAction(onChat)}>
+            <ChatIcon /><span>AI 助手</span>{isChatActive && <CheckIcon />}
+          </button>
+          <div role="separator" />
+          <button type="button" role="menuitem" data-testid="url-bar-copy" disabled={!hasUrl} title={copyLabel} onClick={() => void copyUrl()}>
+            {copyState === 'ok' ? <CheckIcon /> : <CopyIcon />}<span>{copyState === 'idle' ? '复制页面链接' : copyLabel}</span>
+          </button>
+          <button type="button" role="menuitem" data-testid="feedback-button" onClick={() => runMenuAction(onFeedback)}>
+            <CameraIcon /><span>一键反馈</span>
+          </button>
+          <div role="separator" />
+          <button type="button" role="menuitem" data-testid="open-settings" onClick={() => runMenuAction(onSettings)}>
+            <SettingsIcon /><span>设置</span><span className={styles.appMenuShortcut}>{isMacPlatform ? '⌘,' : 'Ctrl+,'}</span>
+          </button>
         </div>
-        <button type="submit" disabled={isOpening} className={styles.addressGo}>
-          打开
-        </button>
-      </form>
-      {hint && <p className={styles.newTabHint} role="status">{hint}</p>}
+      </>}
     </div>
   );
 }
