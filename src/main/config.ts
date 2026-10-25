@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
 import type { AppConfig, AppConfigPatch, ChromeColor, ThemeSetting, WindowBounds } from '../shared/types';
+import { CHROME_COLOR_OPTIONS } from '../shared/appearance';
 
 /** 线上生产环境地址（登录页默认预填；本地开发可直接手输其它地址） */
 const DEFAULT_SERVER_BASE = 'https://m.cdcp.site';
@@ -14,7 +15,7 @@ const LEGACY_DEFAULT_SERVER_BASE = 'http://127.0.0.1:8101';
 const CONFIG_VERSION = 2;
 
 /** 外围颜色合法取值（渲染层色板同序；auto = 自动黑白灰） */
-const CHROME_COLORS: ChromeColor[] = ['auto', 'ink', 'slate', 'green', 'blue', 'purple', 'orange', 'pink'];
+const CHROME_COLORS: ChromeColor[] = CHROME_COLOR_OPTIONS.map((option) => option.value);
 
 /** 历史账号保留上限：超出按最近登录时间淘汰，避免下拉列表无限增长 */
 const MAX_SAVED_ACCOUNTS = 10;

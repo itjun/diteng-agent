@@ -43,7 +43,7 @@
   min-width: 0;
   margin: 5px;
   overflow: hidden;
-  background: var(--card-surface, var(--dsw-alias-bg-base));
+  background: var(--card-surface, var(--dsw-app-page-fill));
   border-radius: 16px;
 }
 
@@ -54,7 +54,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--card-surface, var(--dsw-alias-bg-base));
+  background: var(--card-surface, var(--dsw-app-page-fill));
 }
 
 /* ============ 侧栏与内容区顶部工具栏 ============ */
@@ -119,62 +119,13 @@
 }
 
 
-/* ============ 外围颜色（设置 → 外观可选；auto 不设属性 = 默认黑白灰实底） ============ */
-/* 选中预设色时，用「预设色 + 侧栏实底」混出低饱和底色；深色主题加大预设色权重保持可辨识 */
-:global(html[data-chrome-color='ink'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #2b2d31 20%, var(--dsw-specific-sidebar-fill));
+/* 外围配色与设置预览共用同一组深浅色值。auto 移除属性后恢复主题默认值。 */
+:global(html[data-chrome-color] body) {
+  --dsw-chrome-fill: var(--dsw-chrome-fill-light);
 }
 
-:global(html[data-chrome-color='ink'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #2b2d31 32%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='slate'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #64748b 20%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='slate'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #64748b 32%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='green'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #3f8f6b 20%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='green'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #3f8f6b 32%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='blue'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #3b6fd4 20%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='blue'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #3b6fd4 32%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='purple'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #6d5bd0 20%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='purple'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #6d5bd0 32%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='orange'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #c97a2b 20%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='orange'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #c97a2b 32%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='pink'] body) {
-  --dsw-chrome-fill: color-mix(in srgb, #d05a7a 20%, var(--dsw-specific-sidebar-fill));
-}
-
-:global(html[data-chrome-color='pink'] body[data-ds-dark-theme]) {
-  --dsw-chrome-fill: color-mix(in srgb, #d05a7a 32%, var(--dsw-specific-sidebar-fill));
+:global(html[data-chrome-color] body[data-ds-dark-theme]) {
+  --dsw-chrome-fill: var(--dsw-chrome-fill-dark);
 }
 
 /* 32px 方形图标命中区：克制的 hover 底色，不用描边按钮 */
@@ -289,7 +240,7 @@
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-app-menu-fill);
   box-shadow: 0 8px 28px #0003;
   color: var(--dsw-alias-label-primary);
   -webkit-app-region: no-drag;
@@ -599,7 +550,7 @@
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-app-menu-fill);
   box-shadow: 0 6px 24px #0003;
 }
 .tabMenu button {

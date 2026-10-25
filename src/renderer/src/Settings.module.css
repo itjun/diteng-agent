@@ -12,7 +12,7 @@
   min-width: 0;
   margin: 5px;
   overflow: hidden;
-  background: var(--dsw-alias-bg-base);
+  background: var(--dsw-app-page-fill);
   border-radius: 16px;
 }
 
@@ -282,71 +282,6 @@
 
 /* ============ 控件 ============ */
 
-/* 分段选择器：胶囊容器 + 选中填充 */
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-  flex: none;
-  padding: 2px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-interactive-bg-active);
-}
-
-.segment,
-.segmentActive {
-  height: 24px;
-  padding: 0 12px;
-  border: none;
-  border-radius: var(--dsw-radius-xs);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.segment:hover {
-  color: var(--dsw-alias-label-primary);
-}
-
-.segmentActive {
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-/* 外围颜色色板（Dia 式圆形色点）：选中项加一圈强调色细环 */
-.swatches {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  flex: none;
-}
-
-.swatch,
-.swatchActive {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.16);
-  transition: transform 120ms ease;
-}
-
-.swatch:hover {
-  transform: scale(1.1);
-}
-
-.swatchActive {
-  box-shadow:
-    0 0 0 2px var(--dsw-alias-bg-base),
-    0 0 0 3.5px var(--dsw-alias-state-business-primary);
-}
-
 /* 占位禁用按钮（检查更新） */
 .disabledButton {
   flex: none;
@@ -365,7 +300,6 @@
 @media (max-width: 1000px) {
   .row { flex-wrap: wrap; gap: 12px; }
   .rowValue { max-width: 100%; }
-  .swatches { flex-wrap: wrap; }
 }
 
 .settingsRailCompact .back { padding: 0; justify-content: center; }
@@ -399,3 +333,6 @@
 .error { margin: 0; font-size: 12px; line-height: 20px; color: var(--dsw-alias-label-primary); padding: 10px 12px; border-left: 2px solid var(--dsw-alias-state-business-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .page button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+
+/* 外观页为可辨识的配色预览提供四列空间。 */
+.appearanceInner { width: min(980px, 100%); max-width: 980px; }

@@ -11,7 +11,8 @@ export type ThemeSetting = 'system' | 'light' | 'dark';
  * auto = 自动黑白灰（跟随深浅色主题的中性实底，默认值），其余为 Dia 式低饱和预设色。
  * 地址栏跟随网页内容取色，不属于外围色。
  */
-export type ChromeColor = 'auto' | 'ink' | 'slate' | 'green' | 'blue' | 'purple' | 'orange' | 'pink';
+export type { ChromeColor } from './appearance';
+import type { ChromeColor } from './appearance';
 
 /** 主进程统一解析后的应用实际外观；所有窗口共用，避免原生窗口与 CSS 主题分叉 */
 export interface ThemeState {

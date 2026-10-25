@@ -8,6 +8,9 @@ body,
 body {
   font-family: var(--dsw-font-family);
   -webkit-font-smoothing: antialiased;
+  /* 应用页面和菜单使用所选配色；经典外观分别回落到原有页面/浮层底色。 */
+  --dsw-app-page-fill: var(--dsw-chrome-fill, var(--dsw-alias-bg-base));
+  --dsw-app-menu-fill: var(--dsw-chrome-fill, var(--dsw-alias-bg-layer-1));
 }
 
 /* macOS 主窗：Shell 挂载后标记 html[data-platform='darwin']（见 Shell.tsx），

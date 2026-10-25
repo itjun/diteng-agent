@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, ChromeColor, MqttState, SessionSummary } from '../../shared/types';
+import type { AppConfig, MqttState, SessionSummary } from '../../shared/types';
 import { ArrowLeftIcon } from './theme-icons';
-import { useThemeSetting } from './use-theme';
-import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
+import { AppearanceSettings } from './AppearanceSettings';
 import styles from './Settings.module.css';
 import { NotificationSettings } from './NotificationSettings';
 import { SettingRow } from './SettingRow';
@@ -33,28 +32,8 @@ function categoryOf(key: SettingsCategoryKey): SettingsCategoryDef {
   return found ?? CATEGORIES[0];
 }
 
-/** 分段选择器选项（主题 / 标签布局共用形态） */
-interface SegmentOption {
-  value: string;
-  label: string;
-  testid: string;
-  onSelect: () => void;
-}
-
-/** 外围颜色色板选项（Dia 式圆形色点） */
-interface SwatchOption {
-  value: string;
-  label: string;
-  /** 色点填充（CSS 颜色或渐变），auto 用黑白双色渐变 */
-  swatch: string;
-  testid: string;
-  onSelect: () => void;
-}
-
-/** 行右侧控件形态：分段选择 / 外围颜色色板 / 只读值 / 占位禁用按钮 */
+/** 行右侧控件：只读值或占位禁用按钮。外观选择使用独立预览卡片。 */
 type RowControl =
-  | { kind: 'segmented'; ariaLabel: string; value: string; options: SegmentOption[] }
-  | { kind: 'swatches'; ariaLabel: string; value: string; options: SwatchOption[] }
   | { kind: 'value'; testid?: string; text: string }
   | { kind: 'disabledButton'; label: string };
 
@@ -109,45 +88,6 @@ export function SettingsRail({
 
 /** 行右侧控件渲染 */
 function RowControlView({ control }: { control: RowControl }) {
-  if (control.kind === 'segmented') {
-    return (
-      <div className={styles.segmented} role="radiogroup" aria-label={control.ariaLabel}>
-        {control.options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={control.value === option.value}
-            data-testid={option.testid}
-            className={control.value === option.value ? styles.segmentActive : styles.segment}
-            onClick={option.onSelect}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    );
-  }
-  if (control.kind === 'swatches') {
-    return (
-      <div className={styles.swatches} role="radiogroup" aria-label={control.ariaLabel}>
-        {control.options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={control.value === option.value}
-            aria-label={option.label}
-            title={option.label}
-            data-testid={option.testid}
-            className={control.value === option.value ? styles.swatchActive : styles.swatch}
-            style={{ background: option.swatch }}
-            onClick={option.onSelect}
-          />
-        ))}
-      </div>
-    );
-  }
   if (control.kind === 'disabledButton') {
     return (
       <button type="button" className={styles.disabledButton} disabled>
@@ -227,7 +167,6 @@ export function SettingsPage({
 }) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configError, setConfigError] = useState('');
-  const { themeSetting, setTheme } = useThemeSetting();
 
   // 账套名称随会话摘要下发；session:changed 推送后 Shell 更新 session，本页随之重渲染
   useEffect(() => {
@@ -236,49 +175,9 @@ export function SettingsPage({
 
   const activeCat = categoryOf(activeCategory);
 
-  /** 外围颜色：立即改 DOM（CSS 按 data-chrome-color 取混色）并落盘，无需重启 */
-  function selectChromeColor(value: ChromeColor) {
-    applyChromeColor(value);
-    setConfig((current) => (current ? { ...current, chromeColor: value } : current));
-    void window.diteng.setConfig({ chromeColor: value });
-  }
-
   const rowsByCategory: Record<SettingsCategoryKey, SettingRowDef[]> = {
     account: [],
-    appearance: [
-      {
-        key: 'theme',
-        title: '主题',
-        desc: '跟随系统深浅色或固定外观',
-        control: {
-          kind: 'segmented',
-          ariaLabel: '主题',
-          value: themeSetting,
-          options: [
-            { value: 'system', label: '跟随系统', testid: 'settings-theme-system', onSelect: () => setTheme('system') },
-            { value: 'light', label: '浅色', testid: 'settings-theme-light', onSelect: () => setTheme('light') },
-            { value: 'dark', label: '深色', testid: 'settings-theme-dark', onSelect: () => setTheme('dark') },
-          ],
-        },
-      },
-      {
-        key: 'chrome-color',
-        title: '外围颜色',
-        desc: '侧栏与悬浮卡片外框的底色，默认自动跟随黑白灰',
-        control: {
-          kind: 'swatches',
-          ariaLabel: '外围颜色',
-          value: config?.chromeColor ?? 'auto',
-          options: CHROME_COLOR_OPTIONS.map((option) => ({
-            value: option.value,
-            label: option.label,
-            swatch: option.swatch,
-            testid: `settings-chrome-${option.value}`,
-            onSelect: () => selectChromeColor(option.value),
-          })),
-        },
-      },
-    ],
+    appearance: [],
     connection: [
       {
         key: 'server-base',
@@ -310,7 +209,7 @@ export function SettingsPage({
   return (
     <div className={styles.page} data-testid="settings-page">
       <main className={styles.main}>
-        <div className={styles.mainInner} data-testid="settings-content">
+        <div className={`${styles.mainInner} ${activeCategory === 'appearance' ? styles.appearanceInner : ''}`} data-testid="settings-content">
           <header className={styles.pageHead}>
             <h2 className={styles.pageTitle} data-testid="settings-page-title">
               {activeCat.name}
@@ -343,6 +242,7 @@ export function SettingsPage({
                 </div>
               </section>
             </>}
+            {activeCategory === 'appearance' && <AppearanceSettings config={config} onConfigChange={setConfig} />}
             {activeCategory === 'notifications' && <NotificationSettings state={messageState} stateError={messageError} onMessages={onMessages} />}
             <SettingRows rows={rowsByCategory[activeCategory]} />
             {activeCategory === 'connection' && <div className={styles.rowGroup}>
