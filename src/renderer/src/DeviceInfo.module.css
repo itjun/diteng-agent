@@ -1,0 +1,45 @@
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-app-page-fill);
+}
+.content { max-width: 880px; margin: 0 auto; padding: 32px clamp(20px, 4vw, 56px) 48px; }
+.header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 32px; }
+.heading { display: flex; align-items: center; gap: 12px; }
+.heading > svg { color: var(--dsw-alias-label-secondary); }
+.heading h1 { font-size: 22px; font-weight: 600; margin: 0; }
+.actions { display: flex; gap: 8px; }
+.actions button, .copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+.actions svg, .copy svg { width: 16px; height: 16px; }
+.actions button:hover:not(:disabled), .copy:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.page button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.page button:disabled { opacity: 0.45; cursor: default; }
+.section + .section { margin-top: 28px; }
+.section h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.section dl { margin: 0; }
+.row { display: grid; grid-template-columns: 144px minmax(0, 1fr) 28px; align-items: start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.row dt, .row dd { font-size: 13px; line-height: 22px; }
+.row dt { color: var(--dsw-alias-label-secondary); }
+.row dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; user-select: text; }
+.row dd[data-unavailable] { color: var(--dsw-alias-label-tertiary); }
+.copy { width: 28px; height: 28px; padding: 6px; margin-top: -3px; background: transparent; }
+.copy:disabled { visibility: hidden; }
+.note, .status { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1.6; margin: 0 0 8px; }
+.error { color: var(--dsw-alias-state-error-primary); font-size: 13px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 980px) { .row { grid-template-columns: 112px minmax(0, 1fr) 28px; gap: 8px; } }

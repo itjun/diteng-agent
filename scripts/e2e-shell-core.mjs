@@ -62,7 +62,7 @@ const waitFor = async (test, timeout = 15000) => {
 };
 try {
   electron = await _electron.launch({ ...(executablePath ? { executablePath } : {}), args: [...(executablePath ? [] : ['.']), `--user-data-dir=${directory}`], cwd: resolve('.'), env, timeout: 25000 });
-  await electron.evaluate(({ dialog, Notification }) => {
+  await electron.evaluate(({ dialog, Notification, net }) => {
     globalThis.__confirmationResponse = 0;
     globalThis.__confirmationCount = 0;
     globalThis.__confirmationResolvers = [];
@@ -73,9 +73,24 @@ try {
       return { response: globalThis.__confirmationResponse };
     };
     Notification.prototype.show = function () { globalThis.__testNotificationCount++; };
+    globalThis.__publicIpCalls = 0;
+    globalThis.__publicIpMode = 'success';
+    const fetch = net.fetch.bind(net);
+    net.fetch = async (url, options) => {
+      if (url !== 'https://api64.ipify.org') return fetch(url, options);
+      globalThis.__publicIpCalls++;
+      globalThis.__publicIpOptions = { credentials: options.credentials, headers: options.headers };
+      if (globalThis.__publicIpMode === 'timeout') {
+        return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+      }
+      await new Promise(resolve => setTimeout(resolve, 150));
+      return new Response(globalThis.__publicIpMode === 'invalid' ? 'not-an-ip' : '203.0.113.12');
+    };
   });
   const login = await electron.firstWindow();
   await login.waitForFunction(() => Boolean(window.diteng));
+  assert.equal(await login.evaluate(() => window.diteng.getDeviceInfo().then(() => false, () => true)), true);
+  assert.equal((await login.evaluate(() => window.diteng.getPublicIp())).ok, false);
   const loginEntryUrl = login.url();
   await login.evaluate(base => { void window.diteng.login({ serverBase: base, loginId: 'test-login', password: 'local-only', rememberPassword: false }); }, base);
   let main;
@@ -85,7 +100,7 @@ try {
   await main.getByTestId('unread-badge').waitFor();
   assert.equal(await main.getByTestId('unread-badge').innerText(), '7');
   assert.equal(await main.getByTestId('user-chip').count(), 0);
-  assert.equal(await main.getByTestId('sidebar-footer').count(), 0);
+  assert.equal(await main.getByTestId('sidebar-footer').getByTestId('open-device-info').isVisible(), true);
   assert.equal(await main.getByTestId('app-menu-button').isVisible(), true);
   assert.equal(await main.getByTestId('switch-account').count(), 0);
   assert.equal(await main.getByTestId('new-tab').count(), 0);
@@ -157,6 +172,8 @@ try {
     await electron.evaluate(async ({ webContents }, id) => {
       await webContents.fromId(id).executeJavaScript('document.querySelector("input").value = "保留聊天草稿"');
     }, opened.id);
+    await main.getByTestId('open-device-info').click();
+    await main.getByTestId('device-info').waitFor();
     await main.getByTestId(entry).click();
     await waitFor(async () => await main.getByTestId(entry).getAttribute('aria-pressed') === 'true');
     assert.equal((await guests()).length, count + 1);
@@ -171,6 +188,72 @@ try {
   await waitFor(async () => await main.getByTestId('open-messages').getAttribute('aria-pressed') === 'true');
   assert.equal((await guests()).length, countBeforeMessages);
   console.log('PASS 消息重定向与 AI Chat 携带当前会话、连点和设置入口复用标签、保留网页草稿');
+
+  // 先验证真实本机采集，只输出断言结果；截图使用固定数据，不保存真实设备标识。
+  const device = await main.evaluate(() => window.diteng.getDeviceInfo());
+  assert.equal(device.clientId, 'local-test-device');
+  assert.ok(device.cpu && device.cpuCores > 0 && device.memoryTotal > 0 && device.displays.length > 0);
+  if (process.platform === 'darwin') assert.match(device.hardwareId, /^[0-9a-f-]{36}$/i);
+  await electron.evaluate(({ ipcMain }) => {
+    globalThis.__deviceInfoCalls = 0;
+    ipcMain.removeHandler('device:info');
+    ipcMain.handle('device:info', async () => {
+      globalThis.__deviceInfoCalls++;
+      await new Promise(resolve => setTimeout(resolve, 80));
+      return { hostname: '我的 MacBook Pro', model: 'MacBook Pro', hardwareId: '12345678-1234-1234-1234-123456789ABC', hardwareError: '', clientId: 'local-test-device',
+        system: 'macOS 26.0', architecture: 'arm64', cpu: 'Apple M4 Pro', cpuCores: 12, memoryTotal: 24 * 1024 ** 3, memoryFree: 8 * 1024 ** 3,
+        storage: { total: 1024 ** 4, available: 512 * 1024 ** 3 }, storageError: '', displays: [{ name: '内建显示器', width: 3024, height: 1964, scaleFactor: 2, isPrimary: true }],
+        networks: [{ name: 'en0', mac: '02:00:00:00:00:01', addresses: [{ address: '192.0.2.10', family: 'IPv4', netmask: '255.255.255.0' }] }], dnsServers: ['192.0.2.1'], appVersion: '0.2.4' };
+    });
+  });
+  await main.getByTestId('open-device-info').click();
+  await waitFor(() => main.getByTestId('device-refresh').isEnabled());
+  assert.equal(await main.getByTestId('device-client-id').innerText(), 'local-test-device');
+  assert.equal(await main.getByTestId('device-public-ip').innerText(), '203.0.113.12');
+  await main.getByRole('button', { name: '复制CLIENTID', exact: true }).click();
+  await waitFor(async () => await main.evaluate(() => window.__copiedPageUrl) === 'local-test-device');
+  await main.getByTestId('device-copy-all').click();
+  await waitFor(async () => /硬件码（UUID）/.test(await main.evaluate(() => window.__copiedPageUrl)));
+  assert.doesNotMatch(await main.evaluate(() => window.__copiedPageUrl), /local-test-token|sid=/);
+  await main.screenshot({ path: join(output, '07-device-info-light.png') });
+  const beforeRefresh = await electron.evaluate(() => [globalThis.__deviceInfoCalls, globalThis.__publicIpCalls]);
+  await main.evaluate(() => { const button = document.querySelector('[data-testid="device-refresh"]'); button.click(); button.click(); });
+  await waitFor(() => main.getByTestId('device-refresh').isEnabled());
+  assert.deepEqual(await electron.evaluate(() => [globalThis.__deviceInfoCalls, globalThis.__publicIpCalls]), beforeRefresh.map(value => value + 1));
+  await electron.evaluate(() => { globalThis.__publicIpMode = 'invalid'; });
+  await main.getByTestId('device-refresh').click();
+  await waitFor(async () => /获取失败/.test(await main.getByTestId('device-public-ip').innerText()));
+  await waitFor(() => main.getByTestId('device-refresh').isEnabled());
+  assert.match(await main.getByTestId('device-public-ip').innerText(), /获取失败/);
+  await electron.evaluate(() => { globalThis.__publicIpMode = 'timeout'; });
+  await main.getByTestId('device-refresh').click();
+  await waitFor(async () => await main.getByTestId('device-public-ip').innerText() === '正在获取…');
+  assert.equal(await main.getByTestId('device-client-id').innerText(), 'local-test-device');
+  await waitFor(() => main.getByTestId('device-refresh').isEnabled());
+  assert.match(await main.getByTestId('device-public-ip').innerText(), /获取失败/);
+  await electron.evaluate(() => { globalThis.__publicIpMode = 'success'; });
+  await main.getByTestId('device-refresh').click();
+  await waitFor(() => main.getByTestId('device-refresh').isEnabled());
+  assert.equal(await main.getByTestId('device-public-ip').innerText(), '203.0.113.12');
+  assert.equal((await electron.evaluate(() => globalThis.__publicIpOptions)).credentials, 'omit');
+  const infoGuestSnapshot = await guests();
+  for (const [width, height] of [[960, 640], [1360, 900]]) {
+    await electron.evaluate(({ BrowserWindow }, { width, height }) => { BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('#/main')).setSize(width, height); }, { width, height });
+    for (const theme of ['light', 'dark']) {
+      await main.evaluate(theme => window.diteng.setConfig({ theme }), theme);
+      await main.waitForFunction(theme => document.body.hasAttribute('data-ds-dark-theme') === (theme === 'dark'), theme);
+      assert.equal(await main.getByTestId('device-info').evaluate(element => element.scrollWidth > element.clientWidth), false);
+      const buttons = await main.getByTestId('sidebar-shortcuts').locator('button').all();
+      const boxes = await Promise.all(buttons.map(button => button.boundingBox()));
+      assert.equal(boxes.length, 2);
+      assert.ok(boxes.every((box, index) => box && (index === 0 || box.x >= boxes[index - 1].x + boxes[index - 1].width)));
+      await main.screenshot({ path: join(output, `08-info-${width}-${theme}.png`) });
+    }
+  }
+  await main.getByTestId('nav-back').click();
+  assert.deepEqual(await guests(), infoGuestSnapshot);
+  await main.evaluate(() => window.diteng.setConfig({ theme: 'light' }));
+  console.log('PASS 本机硬件采集、IPC 权限、信息复制和刷新防重、公网 IP 异常/超时恢复、深浅色与窄窗');
 
   await openMenuItem('open-settings');
   await main.getByTestId('settings-nav-notifications').click();
@@ -233,6 +316,10 @@ try {
   await main.getByTestId('app-menu-button').click();
   assert.equal(await main.getByTestId('menu-open-messages').isVisible(), true);
   assert.equal(await main.getByTestId('menu-open-ai').isVisible(), true);
+  await main.getByTestId('menu-open-device-info').click();
+  await main.getByTestId('device-info').waitFor();
+  await main.getByTestId('nav-back').click();
+  await main.getByTestId('app-menu-button').click();
   assert.equal(await main.getByTestId('open-settings').isVisible(), true);
   await main.screenshot({ path: join(output, '05-compact-menu.png') });
   await main.keyboard.press('Escape');

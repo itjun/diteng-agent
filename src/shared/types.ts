@@ -62,6 +62,27 @@ export interface WindowBounds {
   height: number;
 }
 
+/** 本机只读信息；硬件 UUID 与登录使用的 CLIENTID 分开显示。 */
+export interface DeviceInfo {
+  hostname: string;
+  model: string | null;
+  hardwareId: string | null;
+  hardwareError: string;
+  clientId: string;
+  system: string;
+  architecture: string;
+  cpu: string;
+  cpuCores: number;
+  memoryTotal: number;
+  memoryFree: number;
+  storage: { total: number; available: number } | null;
+  storageError: string;
+  displays: { name: string; width: number; height: number; scaleFactor: number; isPrimary: boolean }[];
+  networks: { name: string; mac: string; addresses: { address: string; family: string; netmask: string }[] }[];
+  dnsServers: string[];
+  appVersion: string;
+}
+
 /**
  * config:set 允许更新的字段。自动登录凭据（savedLoginId/savedPassword）只由主进程账号存储写入，
  * 不在渲染层可写范围内；serverBase 由构建确定，machineCode/windowBounds 仅主进程维护。
@@ -331,6 +352,8 @@ export interface DitengApi {
   /** preload 加载时同步取得的主题快照，供 React 首帧直接使用，避免先闪系统主题 */
   initialThemeState: ThemeState;
   getConfig(): Promise<AppConfig>;
+  getDeviceInfo(): Promise<DeviceInfo>;
+  getPublicIp(): Promise<ApiCallResult<string>>;
   setConfig(patch: AppConfigPatch): Promise<AppConfig>;
   /** 当前应用主题设置与主进程解析后的实际外观 */
   getThemeState(): Promise<ThemeState>;

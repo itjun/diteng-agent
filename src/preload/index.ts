@@ -29,6 +29,8 @@ const diteng: DitengApi = {
     return () => ipcRenderer.removeListener('notify-popup:changed', handler);
   },
   getConfig: () => ipcRenderer.invoke('config:get'),
+  getDeviceInfo: () => ipcRenderer.invoke('device:info'),
+  getPublicIp: () => ipcRenderer.invoke('device:public-ip'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   getThemeState: () => ipcRenderer.invoke('theme:get'),
   onThemeChanged: (listener) => {

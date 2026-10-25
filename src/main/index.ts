@@ -41,6 +41,7 @@ import { openFeedbackChatApp } from './external-apps';
 import { CorpSwitchCoordinator, type CorpSwitchTarget } from './corp-switch';
 import { ErpRequestGate } from './erp-request-gate';
 import { isShellEntryUrl } from './shell-origin';
+import { getDeviceInfo, getPublicIp } from './device-info';
 import type {
   AppConfig,
   AppConfigPatch,
@@ -999,6 +1000,15 @@ async function copyFeedbackImage(source: unknown): Promise<FeedbackCopyResult> {
 
 function registerIpcHandlers(): void {
   ipcMain.handle('config:get', () => publicConfig());
+
+  ipcMain.handle('device:info', (event) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame || !isShellUrl(event.sender.getURL())) throw new Error('无权读取设备信息');
+    return getDeviceInfo(getConfig().machineCode);
+  });
+  ipcMain.handle('device:public-ip', (event) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame || !isShellUrl(event.sender.getURL())) return invalid('无权读取网络信息');
+    return getPublicIp();
+  });
 
   // preload 首帧同步读取；只含非敏感主题状态，数据量极小
   ipcMain.on('theme:get-sync', (event) => {

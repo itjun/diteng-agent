@@ -75,6 +75,14 @@ app.whenReady().then(() => {
   for (const scheme of ['http', 'https']) session.defaultSession.protocol.handle(scheme, () =>
     new Response('<!doctype html><html><head><title>测试首页</title></head><body>本地模拟页面</body></html>', { headers: { 'content-type': 'text/html; charset=utf-8' } }));
 });
+const deviceInfo = require(${JSON.stringify(resolve('dist/main/device-info.js'))});
+deviceInfo.getDeviceInfo = async clientId => ({
+  hostname: '演示电脑', model: '测试设备', hardwareId: null, hardwareError: '模拟环境', clientId,
+  system: 'macOS', architecture: 'arm64', cpu: '测试处理器', cpuCores: 8,
+  memoryTotal: 17179869184, memoryFree: 8589934592, storage: null, storageError: '模拟环境',
+  displays: [], networks: [], dnsServers: [], appVersion: 'test',
+});
+deviceInfo.getPublicIp = async () => ({ ok: true, data: '192.0.2.1' });
 require(${JSON.stringify(resolve('dist/main/index.js'))});
 `);
   electron = await _electron.launch({ args: [bootstrap, `--user-data-dir=${userData}`], env, timeout: 25000 });

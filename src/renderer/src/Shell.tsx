@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { DotsVerticalIcon, PlusIcon } from '@radix-ui/react-icons';
+import { DesktopIcon, DotsVerticalIcon, PlusIcon } from '@radix-ui/react-icons';
 import type {
   FeedbackChatApp,
   SessionSummary,
@@ -40,6 +40,7 @@ import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
 import { shareablePageUrl, tabLabel } from './shell-presentation';
 import { messageConnectionLabel, useMessageState } from './use-message-state';
+import { DeviceInfo } from './DeviceInfo';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
@@ -130,7 +131,7 @@ export function Shell() {
   const [isReloggingIn, setIsReloggingIn] = useState(false);
   const isReloggingInRef = useRef(false);
   const openingPagesRef = useRef(new Set<string>());
-  const [activeModule, setActiveModule] = useState<'workspace'>('workspace');
+  const [activeModule, setActiveModule] = useState<'workspace' | 'info'>('workspace');
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   // 0=未自定义；旧版手动保存的宽度继续尊重，双击恢复紧凑默认宽度。
@@ -295,6 +296,7 @@ export function Shell() {
   const openAccounts = useCallback(() => { void openFixedPage('accounts'); }, [openFixedPage]);
   const openChat = useCallback(() => { void openFixedPage('ai'); }, [openFixedPage]);
   const openMessages = useCallback(() => { void openFixedPage('messages'); }, [openFixedPage]);
+  const openDeviceInfo = useCallback(() => { setActiveModule('info'); setIsSettingsOpen(false); }, []);
 
   const relogin = useCallback(async () => {
     if (isReloggingInRef.current) return;
@@ -655,6 +657,11 @@ export function Shell() {
                     />
                   ))}
                 </div>
+                <div className={styles.railFooter} data-testid="sidebar-footer">
+                  <button type="button" className={styles.sidebarButton} data-testid="open-device-info" title="本机信息" aria-pressed={activeModule === 'info'} onClick={openDeviceInfo}>
+                    <DesktopIcon /><span>关于本机</span>
+                  </button>
+                </div>
               </>
             )}
           </aside>
@@ -675,7 +682,7 @@ export function Shell() {
                 isRailCollapsed={isRailCollapsed}
                 onToggleRail={toggleRail}
                 url={isWorkspaceVisible ? activeTab?.url ?? '' : ''}
-                pageTitle={isWorkspaceVisible ? activeTab?.title ?? '' : ''}
+                pageTitle={isWorkspaceVisible ? activeTab?.title ?? '' : '本机信息'}
                 canGoBack={!isWorkspaceVisible || Boolean(activeTab) && navigationState.canGoBack}
                 canGoForward={isWorkspaceVisible && Boolean(activeTab) && navigationState.canGoForward}
                 isLoading={isWorkspaceVisible && Boolean(activeTab?.isLoading)}
@@ -688,9 +695,11 @@ export function Shell() {
                 onFeedback={() => void captureFeedback()}
                 onMessages={openMessages}
                 onChat={openChat}
+                onDeviceInfo={openDeviceInfo}
                 isModuleDisabled={!session}
                 isMessagesActive={activeShortcut === 'messages'}
                 isChatActive={activeShortcut === 'ai'}
+                isInfoActive={activeModule === 'info'}
                 unreadCount={unreadCount}
                 messageLabel={messageLabel}
                 isMessageWarning={isMessageWarning}
@@ -711,6 +720,7 @@ export function Shell() {
               ))}
 
             </div>
+            {!isSettingsOpen && activeModule === 'info' && <DeviceInfo />}
           </div>
 
           {isSettingsOpen && (
@@ -1023,9 +1033,11 @@ function ContentToolbar({
   onFeedback,
   onMessages,
   onChat,
+  onDeviceInfo,
   isModuleDisabled,
   isMessagesActive,
   isChatActive,
+  isInfoActive,
   unreadCount,
   messageLabel,
   isMessageWarning,
@@ -1046,9 +1058,11 @@ function ContentToolbar({
   onFeedback: () => void;
   onMessages: () => void;
   onChat: () => void;
+  onDeviceInfo: () => void;
   isModuleDisabled: boolean;
   isMessagesActive: boolean;
   isChatActive: boolean;
+  isInfoActive: boolean;
   unreadCount: number;
   messageLabel: string;
   isMessageWarning: boolean;
@@ -1184,6 +1198,9 @@ function ContentToolbar({
           </button>
           <button type="button" role="menuitemcheckbox" aria-checked={isChatActive} data-testid="menu-open-ai" disabled={isModuleDisabled} onClick={() => runMenuAction(onChat)}>
             <ChatIcon /><span>AI 助手</span>{isChatActive && <CheckIcon />}
+          </button>
+          <button type="button" role="menuitemcheckbox" aria-checked={isInfoActive} data-testid="menu-open-device-info" onClick={() => runMenuAction(onDeviceInfo)}>
+            <DesktopIcon /><span>本机信息</span>{isInfoActive && <CheckIcon />}
           </button>
           <div role="separator" />
           <button type="button" role="menuitem" data-testid="open-settings" onClick={() => runMenuAction(onSettings)}>
