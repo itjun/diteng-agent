@@ -1,3 +1,5 @@
+import { ChevronLeftIcon, ChevronRightIcon } from '@radix-ui/react-icons';
+
 /** 外壳消息入口。 */
 export function BellIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>;
@@ -145,40 +147,12 @@ export function SidebarToggleIcon() {
 
 /** 浏览器后退 */
 export function BackIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M19 12H5M11 18l-6-6 6-6" />
-    </svg>
-  );
+  return <ChevronLeftIcon width="16" height="16" aria-hidden="true" />;
 }
 
 /** 浏览器前进 */
 export function ForwardIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12h14M13 6l6 6-6 6" />
-    </svg>
-  );
+  return <ChevronRightIcon width="16" height="16" aria-hidden="true" />;
 }
 
 /** 浏览器刷新 */

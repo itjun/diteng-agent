@@ -85,7 +85,9 @@
 
 /* 右侧工具栏在卡片内部：底色与卡片一致（跟随网页底色），不再铺外围色 */
 .contentToolbar {
-  padding-left: 8px;
+  padding: 3px 10px 3px 8px;
+  height: auto;
+  min-height: 38px;
   background: transparent;
 }
 
@@ -220,7 +222,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Chrome 式导航组：后退/前进/刷新/主页紧邻地址栏。 */
+/* Dia 式导航组：后退/前进/刷新紧邻完整网址。 */
 .toolbarNav {
   display: flex;
   align-items: center;
@@ -229,20 +231,19 @@
   flex: none;
 }
 
-/* Dia 式地址区：融入右侧工具栏，仅 hover 时显出轻底色；只读文本保持单行省略 */
+/* 地址占满导航与操作之间的空间，长网址换行后撑高工具栏，截图不丢功能路径。 */
 .toolbarAddress {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
-  height: 32px;
+  min-height: 32px;
   min-width: 0;
-  margin: 0 8px 0 4px;
-  padding: 0 4px 0 9px;
+  margin: 0 6px;
+  padding: 5px 4px 5px 6px;
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
   -webkit-app-region: no-drag;
 }
 
@@ -253,11 +254,12 @@
 .toolbarAddressText {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  user-select: text;
+  cursor: text;
   font-size: 13px;
-  line-height: 18px;
+  line-height: 19px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -919,16 +921,6 @@
 .railNewTab { color: var(--dsw-alias-label-primary); }
 .railNewTab[aria-pressed='true'] { background: var(--dsw-specific-sidebar-nav-item-active); }
 
-.toolbarSite {
-  flex: 0 1 auto;
-  max-width: 35%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--dsw-alias-label-secondary);
-}
-
 .tabMenu {
   position: fixed;
   z-index: 350;
@@ -960,7 +952,6 @@
 .tabMenu button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 
 @media (max-width: 1050px) {
-  .toolbarSite { display: none; }
   .toolbarAddress { margin-inline: 2px; padding-left: 4px; }
 }
 

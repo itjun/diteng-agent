@@ -55,3 +55,8 @@ test('兼容经典和新版退出页及 exit 动作，包括同站点家族', ()
 test('外域伪装、AI 站及普通业务链接不会被误当作退出', () => {
   for (const url of ['https://evil.test/250008/TFrmLogout', 'https://m.cdcp.site.evil.test/250008/TFrmLogout', `${aiBase}/250008/TFrmLogout`, `${session.serverBase}/250008/FrmDefault?next=TFrmLogout`]) assert.equal(isErpLogoutUrl(url, session, aiBase), false);
 });
+
+test('完整功能地址保留 hash 路由和业务条件，路由内凭据同样脱敏', () => {
+  const safe = shareablePageUrl('https://erp.test/250008/FrmDefault?corpNo=250008&sid=private#/orders/detail?billNo=42&token=private&CLIENTID=private');
+  assert.equal(safe, 'https://erp.test/250008/FrmDefault?corpNo=250008#/orders/detail?billNo=42');
+});

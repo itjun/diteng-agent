@@ -38,7 +38,7 @@ import { applyChromeColor } from './chrome-color';
 import { probePageSurface } from './page-surface';
 import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
-import { pageLabel, shareablePageUrl, tabLabel } from './shell-presentation';
+import { shareablePageUrl, tabLabel } from './shell-presentation';
 import { messageConnectionLabel, useMessageState } from './use-message-state';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
@@ -240,25 +240,6 @@ export function Shell() {
   const reloadActiveTab = useCallback(() => {
     webviewRefs.current.get(activeTabIdRef.current)?.reload();
   }, []);
-
-  /** 主页键在当前标签内导航；没有标签时才新建首页标签（与浏览器主页行为一致） */
-  const navigateHome = useCallback(async () => {
-    setIsSettingsOpen(false);
-    const result = await window.diteng.tabsResolve({ home: true });
-    if (!result.ok || result.action !== 'in-app') return;
-    const activeId = activeTabIdRef.current;
-    const webview = activeId ? webviewRefs.current.get(activeId) : undefined;
-    if (!webview) {
-      openTab(result.url, result.corpNo);
-      return;
-    }
-    updateTab(activeId, { url: result.url, isLoading: true });
-    try {
-      await webview.loadURL(result.url);
-    } catch {
-      updateTab(activeId, { isLoading: false });
-    }
-  }, [openTab, updateTab]);
 
   /** 固定入口复用当前账套已有页面；普通业务链接仍允许多标签。 */
   const openWorkspace = useCallback(async (destination: 'ai' | 'accounts' | 'messages') => {
@@ -692,7 +673,6 @@ export function Shell() {
                 onBack={navigateBack}
                 onForward={navigateForward}
                 onReload={reloadActiveTab}
-                onHome={() => void navigateHome()}
                 chatDisabled={!session}
                 onChat={openChat}
                 onFeedback={() => void captureFeedback()}
@@ -1023,7 +1003,6 @@ function ContentToolbar({
   onBack,
   onForward,
   onReload,
-  onHome,
   chatDisabled,
   onChat,
   onFeedback,
@@ -1037,7 +1016,6 @@ function ContentToolbar({
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
-  onHome: () => void;
   chatDisabled: boolean;
   onChat: () => void;
   onFeedback: () => void;
@@ -1065,8 +1043,7 @@ function ContentToolbar({
 
   const copyLabel =
     copyState === 'ok' ? '已复制' : copyState === 'fail' ? '复制失败' : '复制页面链接（不含登录凭据）';
-  const locationText = pageLabel(url, pageTitle);
-  const siteName = safeUrl ? new URL(safeUrl).host : '';
+  const locationText = safeUrl || pageTitle || '新建标签页';
   return (
     <div
       className={styles.contentToolbar}
@@ -1090,13 +1067,9 @@ function ContentToolbar({
             <ReloadIcon />
           </span>
         </ToolbarButton>
-        <ToolbarButton label="主页" testId="nav-home" onClick={onHome}>
-          <HomeIcon />
-        </ToolbarButton>
       </div>
       <div className={styles.toolbarAddress} data-testid="url-bar" role="group" aria-label="当前页面信息">
-        <span className={styles.toolbarAddressText} title={locationText}>{locationText}</span>
-        {siteName && <span className={styles.toolbarSite} title={safeUrl}>{siteName}</span>}
+        <span className={styles.toolbarAddressText} data-testid="url-bar-text" title={locationText}>{locationText}</span>
         <button
           type="button"
           className={[

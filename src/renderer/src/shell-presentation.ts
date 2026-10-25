@@ -11,8 +11,16 @@ export function shareablePageUrl(rawUrl: string): string {
     for (const key of [...url.searchParams.keys()]) {
       if (isPrivateKey(key)) url.searchParams.delete(key);
     }
-    // hash 可包含路由和另一组登录参数；分享时不携带未知的片段内容。
+    // 仅保留明确的客户端路由，查询参数沿用同一脱敏策略；未知片段不对外分享。
+    const route = url.hash.replace(/^#!?/, '');
     url.hash = '';
+    if (route.startsWith('/') && !route.startsWith('//')) {
+      const routeUrl = new URL(route, url.origin);
+      for (const key of [...routeUrl.searchParams.keys()]) {
+        if (isPrivateKey(key)) routeUrl.searchParams.delete(key);
+      }
+      url.hash = `${routeUrl.pathname}${routeUrl.search}`;
+    }
     return url.toString();
   } catch {
     return '';
