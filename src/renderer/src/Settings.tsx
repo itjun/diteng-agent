@@ -245,11 +245,6 @@ export function SettingsPage({
             {activeCategory === 'appearance' && <AppearanceSettings config={config} onConfigChange={setConfig} />}
             {activeCategory === 'notifications' && <NotificationSettings state={messageState} stateError={messageError} onMessages={onMessages} />}
             <SettingRows rows={rowsByCategory[activeCategory]} />
-            {activeCategory === 'connection' && <div className={styles.rowGroup}>
-              <SettingRow title="更换服务器" desc="先退出当前登录，再在登录页填写新的服务器地址。">
-                <button type="button" className={styles.actionButton} data-testid="settings-change-server" disabled={isReloggingIn} onClick={onRelogin}>更换服务器</button>
-              </SettingRow>
-            </div>}
           </div>
         </div>
       </main>

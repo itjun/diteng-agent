@@ -4,15 +4,10 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import type { AppConfig, AppConfigPatch, ChromeColor, ThemeSetting, WindowBounds } from '../shared/types';
 import { CHROME_COLOR_OPTIONS } from '../shared/appearance';
+import { BUILD_SERVER_BASE } from './build-environment';
 
-/** 线上生产环境地址（登录页默认预填；本地开发可直接手输其它地址） */
-const DEFAULT_SERVER_BASE = 'https://m.cdcp.site';
-
-/** 旧版默认服务地址（本地 diteng-im-server）：仅用于升级迁移，不参与新安装默认值 */
-const LEGACY_DEFAULT_SERVER_BASE = 'http://127.0.0.1:8101';
-
-/** 配置结构版本：2 = 默认服务地址切到线上；旧配置（缺字段视为 1）按旧默认值判定迁移 */
-const CONFIG_VERSION = 2;
+/** 配置结构版本：3 = 服务器由构建决定，跨环境清除自动登录兼容凭据。 */
+const CONFIG_VERSION = 3;
 
 /** 外围颜色合法取值（渲染层色板同序；auto = 自动黑白灰） */
 const CHROME_COLORS: ChromeColor[] = CHROME_COLOR_OPTIONS.map((option) => option.value);
@@ -52,7 +47,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { configVersion: CONFIG_VERSION, serverBase: DEFAULT_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -127,16 +122,11 @@ function normalizeSavedAccounts(
 
 /** 按字段类型逐项归一，坏字段回落默认值，避免脏 JSON 直接进入内存 */
 function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
-  const base = createDefault();
   const storedServerBase =
     typeof input?.serverBase === 'string' && input.serverBase.trim()
       ? input.serverBase.trim().replace(/\/+$/, '')
       : '';
-  // 旧版默认地址迁移：值仍是旧默认（用户从未自定义地址）才切到线上默认，手改过的地址保持不动
-  const serverBase =
-    storedConfigVersion(input) < CONFIG_VERSION && storedServerBase === LEGACY_DEFAULT_SERVER_BASE
-      ? base.serverBase
-      : storedServerBase || base.serverBase;
+  const isSameServer = storedServerBase === BUILD_SERVER_BASE;
   const theme: ThemeSetting =
     input?.theme === 'light' || input?.theme === 'dark' ? input.theme : 'system';
   // 外围颜色：非法/旧配置缺字段一律回落 auto（自动黑白灰），不打断启动
@@ -165,14 +155,14 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
   const savedPassword = typeof input?.savedPassword === 'string' ? input.savedPassword.trim() : '';
   return {
     configVersion: CONFIG_VERSION,
-    serverBase,
+    serverBase: BUILD_SERVER_BASE,
     aiBase:
       typeof input?.aiBase === 'string'
         ? input.aiBase.trim().replace(/\/+$/, '')
         : '',
     machineCode: typeof input?.machineCode === 'string' ? input.machineCode : '',
-    savedLoginId,
-    savedPassword,
+    savedLoginId: isSameServer ? savedLoginId : '',
+    savedPassword: isSameServer ? savedPassword : '',
     theme,
     chromeColor,
     windowBounds,
@@ -181,7 +171,8 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
     autoLogin,
     systemNotifications: typeof input?.systemNotifications === 'boolean' ? input.systemNotifications : true,
     importantPopups: typeof input?.importantPopups === 'boolean' ? input.importantPopups : true,
-    savedAccounts: normalizeSavedAccounts(input?.savedAccounts, { serverBase, savedLoginId, savedPassword }),
+    // 旧凭据只归属于原服务器；保留历史以便装回对应环境时选择，绝不迁移到新地址。
+    savedAccounts: normalizeSavedAccounts(input?.savedAccounts, { serverBase: storedServerBase, savedLoginId, savedPassword }),
   };
 }
 
@@ -198,8 +189,8 @@ function readFromDisk(): StoredAppConfig {
   try {
     const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<StoredAppConfig>;
     const config = normalize(raw);
-    // 旧版配置迁移（默认服务地址切换/补齐版本号）立即回写：避免每次启动重复迁移、登录页仍预填旧地址
-    if (storedConfigVersion(raw) < CONFIG_VERSION) writeToDisk(config);
+    // 版本升级或安装包切换环境后立即回写，避免旧地址和自动登录凭据继续生效。
+    if (storedConfigVersion(raw) < CONFIG_VERSION || raw?.serverBase !== BUILD_SERVER_BASE) writeToDisk(config);
     return config;
   } catch (error) {
     console.warn('[config] config.json 解析失败，改用默认配置：', error);
@@ -226,8 +217,6 @@ export function getConfig(): StoredAppConfig {
 /** 部分字段更新并立即落盘；machineCode 不在可更新范围内，由设备身份唯一决定 */
 export function updateConfig(patch: AppConfigPatch): StoredAppConfig {
   const config = getConfig();
-  if (typeof patch.serverBase === 'string' && patch.serverBase.trim())
-    config.serverBase = patch.serverBase.trim().replace(/\/+$/, '');
   // aiBase 仅接受非空手改值；空串表示按 serverBase 推导，不清除已存的手改地址
   if (typeof patch.aiBase === 'string' && patch.aiBase.trim())
     config.aiBase = patch.aiBase.trim().replace(/\/+$/, '');
@@ -254,7 +243,6 @@ export function updateConfig(patch: AppConfigPatch): StoredAppConfig {
 
 /** 自动登录兼容凭据的一次性更新字段 */
 export interface AutoLoginCredentialPatch {
-  serverBase?: string;
   savedLoginId?: string;
   savedPassword?: string;
 }
@@ -278,14 +266,11 @@ export function persistSavedAccounts(
     }),
   };
   if (credential) {
-    if (typeof credential.serverBase === 'string' && credential.serverBase.trim())
-      next.serverBase = credential.serverBase.trim().replace(/\/+$/, '');
     if (typeof credential.savedLoginId === 'string') next.savedLoginId = credential.savedLoginId.trim();
     if (typeof credential.savedPassword === 'string') next.savedPassword = credential.savedPassword.trim();
   }
   // 先写盘成功再更新内存缓存：写失败时内存与磁盘保持一致，调用方可安全放弃本次变更
   writeToDisk(next);
-  config.serverBase = next.serverBase;
   config.savedLoginId = next.savedLoginId;
   config.savedPassword = next.savedPassword;
   config.savedAccounts = next.savedAccounts;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """本机重新部署（macOS）：停止旧进程 → 编译打包 → 安装 → 启动。
 
-用法：./build.py 或 python3 build.py；--no-launch 安装后不启动。
+用法：./build.py（main）或 ./build.py --env dev；--no-launch 安装后不启动。
 依赖：Python 3、Node.js、pnpm 和 Xcode Command Line Tools。
 """
 
@@ -108,6 +108,7 @@ def install(app_bundle):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--env", choices=("main", "dev"), default="main", help="打包环境（默认 main）")
     parser.add_argument("--no-launch", action="store_true", help="安装后不启动应用")
     args = parser.parse_args()
     if sys.platform != "darwin":
@@ -130,7 +131,7 @@ def main():
     )):
         if directory.exists():
             shutil.rmtree(directory)
-    run("pnpm", "build")
+    run("pnpm", "build:dev" if args.env == "dev" else "build")
     env = os.environ.copy()
     env.pop("ELECTRON_RUN_AS_NODE", None)
     run(

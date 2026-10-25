@@ -22,13 +22,10 @@ export interface ThemeState {
 
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
-  /**
-   * 配置结构版本：2 = 默认服务地址切线上（缺字段的旧配置按 1 处理，仅当 serverBase
-   * 仍是旧默认 127.0.0.1:8101 时迁移到线上地址；用户手改过的地址保持不动）
-   */
+  /** 配置结构版本：3 = 服务器固定为构建环境，旧凭据按原服务器隔离。 */
   configVersion: number;
-  /** 后端 diteng-im-server 地址，默认 https://m.cdcp.site */
-  serverBase: string;
+  /** 打包时确定的后端地址，运行时只读。 */
+  readonly serverBase: string;
   /** AI 对话站地址；空串表示未手动设置，按 serverBase 推导（cdcp.site → https://ai.cdcp.site，否则 http://127.0.0.1:3060） */
   aiBase: string;
   /** 设备机器码，首次启动生成后终身持久化，渲染层不可修改 */
@@ -67,10 +64,10 @@ export interface WindowBounds {
 
 /**
  * config:set 允许更新的字段。自动登录凭据（savedLoginId/savedPassword）只由主进程账号存储写入，
- * 不在渲染层可写范围内；machineCode/windowBounds 同样仅主进程维护。
+ * 不在渲染层可写范围内；serverBase 由构建确定，machineCode/windowBounds 仅主进程维护。
  */
 export type AppConfigPatch = Partial<
-  Pick<AppConfig, 'serverBase' | 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups'>
+  Pick<AppConfig, 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups'>
 >;
 
 /**
@@ -123,11 +120,10 @@ export interface ApiFailure {
 export const DEVICE_UNCHECKED_CODE = -8;
 
 /**
- * auth:login 请求参数；serverBase 为表单当前值，避免 config 旧值把请求打到错误服务器。
+ * auth:login 请求参数；服务器地址由主进程的构建配置决定。
  * verifyCode 为 6 位短信验证码（密码登录返回 -8 设备未验证后携带，同接口完成验证并登录）。
  */
 export interface LoginRequest {
-  serverBase: string;
   loginId: string;
   password: string;
   /** 「记住密码」勾选状态：成功后主进程据此加密保存/清除 config.savedPassword */
@@ -138,7 +134,6 @@ export interface LoginRequest {
 
 /** auth:login-send-code 请求参数：同登录接口 verifyCode="??????" 指令发送短信（服务端 5 分钟冷却） */
 export interface LoginSendCodeRequest {
-  serverBase: string;
   loginId: string;
   /** 发码须先通过密码校验，与服务端 SvrUserLogin.getToken 流程一致 */
   password: string;
@@ -353,7 +348,7 @@ export interface DitengApi {
    * 返回 ApiFailure，渲染层转普通登录表单。
    */
   autoLogin(): Promise<ApiCallResult<LoginResult>>;
-  /** 历史登录账号摘要（最近登录在前；不含密码密文） */
+  /** 当前构建环境的历史登录账号摘要（最近登录在前；不含密码密文） */
   listSavedAccounts(): Promise<SavedAccountSummary[]>;
   /**
    * 取某条历史账号已记住的密码（选择历史账号时按需解密，未保存密码/解密失败返回 ApiFailure）。
@@ -361,7 +356,7 @@ export interface DitengApi {
   getSavedAccountPassword(key: SavedAccountKey): Promise<ApiCallResult<string>>;
   /** 删除一条历史账号（连同已记住的密码），返回删除后的摘要列表 */
   removeSavedAccount(key: SavedAccountKey): Promise<ApiCallResult<SavedAccountSummary[]>>;
-  /** 清空历史账号（连同已记住的密码与自动登录凭据），返回空列表 */
+  /** 清空当前环境的历史账号（连同已记住的密码与自动登录凭据），返回空列表 */
   clearSavedAccounts(): Promise<ApiCallResult<SavedAccountSummary[]>>;
   /**
    * 关闭登录窗（自绘 × 按钮用；登录窗是唯一窗口时应用随之退出）。

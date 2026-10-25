@@ -17,18 +17,6 @@ type LoginMode = 'password' | 'sms';
  */
 type AutoLoginPhase = 'checking' | 'waiting' | 'manual';
 
-/** 服务器地址下拉预设（默认线上生产环境），datalist 允许自由手输任意地址（如本地开发地址） */
-const SERVER_PRESETS = ['https://m.cdcp.site'];
-
-/** 历史账号下拉的服务器标识：优先显示 host，解析失败回退原地址（多服务器时用于区分同名账号） */
-function readServerHost(serverBase: string): string {
-  try {
-    return new URL(serverBase).host;
-  } catch {
-    return serverBase;
-  }
-}
-
 /** 短信验证码重发冷却秒数（服务端 5 分钟冷却，对齐 im-client 登录页） */
 const SMS_RESEND_SECONDS = 300;
 
@@ -47,7 +35,6 @@ export function App() {
 }
 
 function LoginPanel() {
-  const [serverBase, setServerBase] = useState('');
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   // 「记住密码 / 自动登录」双勾选（通用软件惯例）：关记住密码连带关自动登录；开自动登录连带开记住密码
@@ -83,7 +70,7 @@ function LoginPanel() {
   const accountFieldRef = useRef<HTMLDivElement>(null);
   // 密码回填（初始预填/选择历史账号）的请求序号：改账号、改密码或再次选择都会作废在途结果
   const passwordFillSeqRef = useRef(0);
-  // 密码是否由历史账号/兼容凭据自动回填：手动改账号或服务器时据此清空，避免把 A 的密码带给 B
+  // 密码是否由历史账号/兼容凭据自动回填：手动改账号时据此清空，避免把 A 的密码带给 B
   const isPasswordAutoFilledRef = useRef(false);
   // 密码回填进行中（含状态与同步 ref）：解密返回前禁止提交，避免用空密码/旧密码登录
   const isPasswordPendingRef = useRef(false);
@@ -98,7 +85,7 @@ function LoginPanel() {
     setIsPasswordPending(isPending);
   }
 
-  /** 手动改账号/服务器：作废在途回填并清掉自动回填的密码，避免把上一个账号的密码带到新账号 */
+  /** 手动改账号：作废在途回填并清掉自动回填的密码，避免把上一个账号的密码带到新账号 */
   function invalidatePasswordFill() {
     passwordFillSeqRef.current += 1;
     updatePasswordPending(false);
@@ -140,7 +127,6 @@ function LoginPanel() {
         window.diteng.listSavedAccounts(),
       ]);
       setSavedAccounts(accounts);
-      setServerBase(config.serverBase);
       // 账号预填优先取「自动登录凭据对应的账号」，其次取最近登录的历史账号（记住密码未勾选时后者仍可用）
       setLoginId(config.savedLoginId || accounts[0]?.loginId || '');
       setMachineCode(config.machineCode);
@@ -207,7 +193,7 @@ function LoginPanel() {
   }
 
   /**
-   * 选择历史账号：回填账号与服务器地址；记住密码✓ 且该账号存有密码时解密回填。
+   * 选择当前环境的历史账号：回填账号；记住密码✓ 且该账号存有密码时解密回填。
    * 切换账号时同步清空旧密码并禁止提交，解密结果返回前绝不沿用上一个账号的密码；
    * 解密失败时保持密码为空并提示。
    */
@@ -215,7 +201,6 @@ function LoginPanel() {
     const seq = ++passwordFillSeqRef.current;
     setIsHistoryOpen(false);
     setLoginId(account.loginId);
-    setServerBase(account.serverBase);
     setMode('password');
     setSmsCode('');
     setSmsHint('');
@@ -297,10 +282,9 @@ function LoginPanel() {
     event.preventDefault();
     // 历史密码回填未完成时不允许提交：此时密码可能为空或仍是上一个账号的值
     if (isBusyRef.current || isEntering || isPasswordPendingRef.current) return;
-    const server = serverBase.trim();
     const id = loginId.trim();
-    if (!server || !id) {
-      setErrorMsg('请填写服务器地址和账号');
+    if (!id) {
+      setErrorMsg('请填写账号');
       return;
     }
     // 密码留空按默认 123456 登录（与 web 端 im-client 缺省补 123456 的行为一致）
@@ -316,14 +300,13 @@ function LoginPanel() {
     try {
       // 密码登录与设备验证登录共用 auth:login（SvrUserLogin.getToken 同接口，verifyCode 区分）
       const result = await window.diteng.login({
-        serverBase: server,
         loginId: id,
         password: effectivePassword,
         rememberPassword: isRememberPassword,
         verifyCode: mode === 'sms' ? smsCode.trim() : undefined,
       });
       if (result.ok) {
-        // 账号历史、密码密文与 serverBase 均由主进程在登录成功时落盘，渲染层不再补写 config
+        // 账号历史与密码密文由主进程在登录成功时落盘，渲染层不再补写 config
         setIsEntering(true);
         return;
       }
@@ -345,10 +328,9 @@ function LoginPanel() {
   // 发送短信验证码（SvrUserLogin.getToken verifyCode 指令；发码须先通过密码校验，同网页版）
   async function handleSendSms() {
     if (isBusyRef.current || countdown > 0 || isSendingSms) return;
-    const server = serverBase.trim();
     const id = loginId.trim();
-    if (!server || !id) {
-      setErrorMsg('请填写服务器地址和账号');
+    if (!id) {
+      setErrorMsg('请填写账号');
       return;
     }
     isBusyRef.current = true;
@@ -356,7 +338,6 @@ function LoginPanel() {
     setErrorMsg('');
     try {
       const result = await window.diteng.loginSendCode({
-        serverBase: server,
         loginId: id,
         password: password || '123456',
       });
@@ -380,9 +361,6 @@ function LoginPanel() {
     setCountdown(0);
     setErrorMsg('');
   }
-
-  // 同一账号可能登录不同服务器：多服务器时下拉补显示 host，避免同名账号无法区分
-  const isMultiServer = new Set(savedAccounts.map((account) => account.serverBase)).size > 1;
 
   return (
     <div className={styles.page}>
@@ -443,30 +421,6 @@ function LoginPanel() {
               <span className={styles.brandTag}>DESKTOP</span>
             </header>
 
-            <label className={styles.fieldLabel} htmlFor="server-base">
-              服务器地址
-            </label>
-            <div className={styles.inputWrap}>
-              <input
-                id="server-base"
-                className={styles.input}
-                list="server-presets"
-                value={serverBase}
-                onChange={(event) => {
-                  setServerBase(event.target.value);
-                  invalidatePasswordFill();
-                }}
-                placeholder="https://m.cdcp.site"
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </div>
-            <datalist id="server-presets">
-              {SERVER_PRESETS.map((preset) => (
-                <option key={preset} value={preset} />
-              ))}
-            </datalist>
-
             <label className={styles.fieldLabel} htmlFor="login-id">
               账号
             </label>
@@ -525,9 +479,6 @@ function LoginPanel() {
                         onClick={() => void handleSelectSavedAccount(account)}
                       >
                         <span className={styles.historyAccountId}>{account.loginId}</span>
-                        {isMultiServer && (
-                          <span className={styles.historyAccountServer}>{readServerHost(account.serverBase)}</span>
-                        )}
                       </button>
                       <button
                         type="button"

@@ -13,7 +13,8 @@ function normalizeServerBase(serverBase: string): string {
 
 /** 历史账号摘要（不含密码密文，供 renderer 列表展示与管理） */
 export function listSavedAccounts(): SavedAccountSummary[] {
-  return getConfig().savedAccounts.map((account) => ({
+  const config = getConfig();
+  return config.savedAccounts.filter((account) => account.serverBase === config.serverBase).map((account) => ({
     loginId: account.loginId,
     serverBase: account.serverBase,
     hasPassword: Boolean(account.passwordCipher),
@@ -25,7 +26,7 @@ export function listSavedAccounts(): SavedAccountSummary[] {
 export function findSavedAccount(key: SavedAccountKey): SavedAccount | null {
   const loginId = key.loginId.trim();
   const serverBase = normalizeServerBase(key.serverBase);
-  if (!loginId || !serverBase) return null;
+  if (!loginId || serverBase !== getConfig().serverBase) return null;
   return (
     getConfig().savedAccounts.find(
       (account) => account.loginId === loginId && account.serverBase === serverBase,
@@ -100,6 +101,7 @@ export function removeSavedAccount(loginId: string, serverBase: string): boolean
   const trimmedLoginId = loginId.trim();
   const normalizedServerBase = normalizeServerBase(serverBase);
   const config = getConfig();
+  if (normalizedServerBase !== config.serverBase) return false;
   const next = config.savedAccounts.filter(
     (account) => !(account.loginId === trimmedLoginId && account.serverBase === normalizedServerBase),
   );
@@ -110,7 +112,8 @@ export function removeSavedAccount(loginId: string, serverBase: string): boolean
   return true;
 }
 
-/** 清空全部历史账号（含密码密文），并在同一次落盘中清空自动登录凭据 */
+/** 清空当前环境的历史账号与自动登录凭据，保留其他环境的历史。 */
 export function clearSavedAccounts(): void {
-  persistSavedAccounts([], { savedLoginId: '', savedPassword: '' });
+  const config = getConfig();
+  persistSavedAccounts(config.savedAccounts.filter((account) => account.serverBase !== config.serverBase), { savedLoginId: '', savedPassword: '' });
 }

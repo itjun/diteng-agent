@@ -5,11 +5,15 @@
   "description": "帝擎 ERP Electron 桌面壳客户端",
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "concurrently -k -n vite,electron -c cyan,green \"vite\" \"wait-on http-get://127.0.0.1:5173 && tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && electron .\"",
-    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && vite build",
+    "dev": "node scripts/configure-build.mjs dev && concurrently -k -n vite,electron -c cyan,green \"vite\" \"wait-on http-get://127.0.0.1:5173 && tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && electron .\"",
+    "build": "node scripts/configure-build.mjs main && pnpm build:app",
+    "build:dev": "node scripts/configure-build.mjs dev && pnpm build:app",
+    "build:app": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
     "dist:mac": "pnpm build && electron-builder --mac --arm64",
-    "dist:win": "pnpm build && electron-builder --win --x64"
+    "dist:win": "pnpm build && electron-builder --win --x64",
+    "dist:mac:dev": "pnpm build:dev && electron-builder --mac --arm64",
+    "dist:win:dev": "pnpm build:dev && electron-builder --win --x64"
   },
   "dependencies": {
     "@radix-ui/react-icons": "^1.3.2",

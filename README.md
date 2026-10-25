@@ -1,6 +1,6 @@
 # diteng agent
 
-帝擎 ERP 的 Electron 桌面壳客户端：账号密码登录（记住密码/自动登录双勾选，历史登录账号可下拉选择、逐条删除/清空）→ 内嵌 web ERP 多标签（采用 Dia 风格的标签侧栏 + 网页内容双栏布局，侧栏默认 224px，可拖宽、双击复位，收起时网页内容铺满窗口；工作区只承载 Web 页面，⌘/Ctrl+T 新建标签直接打开 ERP 首页，标签支持右键管理与同名序号；顶部工具栏提供消息、反馈和 AI 助手入口，侧栏顶部仅保留窗口控制区域，标签列表直接排在下方，底部仅保留设置图标，侧栏开关固定在右侧顶部通栏的最左端；在账号设置中打开网页版账套选择，切换成功后自动关闭其他标签；账号设置提供重新登录，连接设置提供更换服务器入口，确认后关闭业务标签回到登录页（离线也可本地退出）；用户与账套信息集中在账号设置中）→ MQTT 消息系统通知/置顶弹窗/托盘；一键反馈：顶部工具栏「反馈」截整窗画面（含当前页面）→ 壳内标注编辑器（箭头/矩形/椭圆/画笔/文字/矩形马赛克，撤销重做，Esc 取消、Enter 复制）→ 复制到系统剪贴板并一键打开微信/企业微信，粘贴发送给客服（不模拟按键、不自动发送）。快捷键：`⌘/Ctrl+B` 展开收起侧栏、`⌘/Ctrl+,` 进入设置页、`⌘/Ctrl+T` 新建标签、`⌘/Ctrl+W` 关闭当前标签、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切换标签（webview 内焦点同样生效）。内容区是「地址栏 + 网页」同一张悬浮卡片（16px 圆角、四边 5px 外围色留白，上/下/右等宽），地址栏底色自动跟随网页内容取色（Dia 式），顶部展示页面名称与域名，复制页面链接会去掉会话参数并保留业务条件；全局入口集中在顶部工具栏，设置分类复用标签侧栏，退出设置恢复原来的标签栏收起状态。UI 采用 deepseek-harness 桌面版设计语言（`--dsw-*` 主题 token，macOS 侧栏 vibrancy 毛玻璃）。
+帝擎 ERP 的 Electron 桌面壳客户端：账号密码登录（记住密码/自动登录双勾选，历史登录账号可下拉选择、逐条删除/清空）→ 内嵌 web ERP 多标签（采用 Dia 风格的标签侧栏 + 网页内容双栏布局，侧栏默认 224px，可拖宽、双击复位，收起时网页内容铺满窗口；工作区只承载 Web 页面，⌘/Ctrl+T 新建标签直接打开 ERP 首页，标签支持右键管理与同名序号；顶部工具栏提供消息、反馈和 AI 助手入口，侧栏顶部仅保留窗口控制区域，标签列表直接排在下方，底部仅保留设置图标，侧栏开关固定在右侧顶部通栏的最左端；在账号设置中打开网页版账套选择，切换成功后自动关闭其他标签；账号设置提供重新登录，确认后关闭业务标签回到登录页（离线也可本地退出）；连接设置只读展示服务器地址，服务器仅在构建时选择；用户与账套信息集中在账号设置中）→ MQTT 消息系统通知/置顶弹窗/托盘；一键反馈：顶部工具栏「反馈」截整窗画面（含当前页面）→ 壳内标注编辑器（箭头/矩形/椭圆/画笔/文字/矩形马赛克，撤销重做，Esc 取消、Enter 复制）→ 复制到系统剪贴板并一键打开微信/企业微信，粘贴发送给客服（不模拟按键、不自动发送）。快捷键：`⌘/Ctrl+B` 展开收起侧栏、`⌘/Ctrl+,` 进入设置页、`⌘/Ctrl+T` 新建标签、`⌘/Ctrl+W` 关闭当前标签、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切换标签（webview 内焦点同样生效）。内容区是「地址栏 + 网页」同一张悬浮卡片（16px 圆角、四边 5px 外围色留白，上/下/右等宽），地址栏底色自动跟随网页内容取色（Dia 式），顶部展示页面名称与域名，复制页面链接会去掉会话参数并保留业务条件；全局入口集中在顶部工具栏，设置分类复用标签侧栏，退出设置恢复原来的标签栏收起状态。UI 采用 deepseek-harness 桌面版设计语言（`--dsw-*` 主题 token，macOS 侧栏 vibrancy 毛玻璃）。
 
 ## 技术栈
 
@@ -9,23 +9,40 @@ Electron 44 · TypeScript · React 18 · Vite（renderer）+ tsc（main/preload�
 ## 常用命令
 
 ```bash
-./build.py          # macOS 一键停止旧进程、编译打包、安装到 /Applications 并启动
+./build.py          # macOS 打包 main 环境、安装到 /Applications 并启动
+./build.py --env dev # macOS 打包开发环境、安装并启动
 pnpm install        # 安装（electron 二进制失败时用 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/）
-pnpm dev            # 开发：vite(5173) + electron（改动 main/preload 需重启）
+pnpm dev            # 开发环境：rc.local.lan；vite(5173) + electron（改动 main/preload 需重启）
 pnpm typecheck      # 四个 tsconfig 全量检查
-node --test scripts/test-shell-presentation.mjs scripts/test-desktop-coordination.mjs  # 展示、账套核验与通知队列回归
-pnpm build          # 构建 main/preload/renderer 到 dist/
-pnpm dist:mac       # 打 mac arm64 dmg（release/）；dist:win 为 Windows nsis 配置
+node --test scripts/test-*.mjs  # 构建环境、账号隔离、展示、账套核验与通知队列回归
+pnpm build          # main 环境构建到 dist/
+pnpm build:dev      # 开发环境构建到 dist/
+pnpm dist:mac       # main 环境 mac arm64 dmg；dist:win 为 Windows nsis
+pnpm dist:mac:dev   # 开发环境 mac arm64 dmg；dist:win:dev 为 Windows nsis
 ```
 
 `build.py` 需要 Python 3、Node.js、pnpm 和 Xcode Command Line Tools，可从任意目录通过脚本路径运行（也可用 `python3 build.py`）。自动匹配本机 Apple Silicon / Intel 架构，使用本地 ad-hoc 签名（不公证），保留用户配置；加 `--no-launch` 可在安装后跳过启动。DMG 安装包保留在 `release/`，构建失败时不会替换已安装应用。
 
+## 构建环境
+
+| 环境 | 固定服务器地址 |
+| --- | --- |
+| main（默认） | `https://m.cdcp.site` |
+| dev（开发） | `http://rc.local.lan` |
+
+环境由构建命令显式选择，不随 Git 分支自动变化。构建结果写入 `dist/build-environment.json` 并随安装包分发；运行时环境变量、本地 `config.json`、登录请求与历史账号均不能切换服务器。登录页不提供地址输入，连接设置仅展示当前地址。
+
+安装包切换环境时清除旧环境的自动登录凭据，保留设备标识与按原服务器归属的历史账号；同环境升级保留登录凭据。历史账号列表、密码回填、删除与清空仅作用于当前构建环境。
+
 ## e2e 真机验证（CDP 驱动真实应用）
+
+当前构建环境验收使用 `e2e-build-environment.mjs`。下列其余历史脚本仍含可变服务器地址的旧假设，尚未适配，不作为本次验收入口；适配时须改用测试进程内的网络桩。
 
 ```bash
 cp scripts/e2e-secrets.example.mjs scripts/e2e-secrets.mjs   # 填入测试账号（已 gitignore）
 (pnpm exec vite &) && (pnpm exec electron . --remote-debugging-port=9223 &)
 node scripts/e2e-layout.mjs        # Dia 双栏布局/拖宽/重启/主题/反馈；E2E_MOCK=1 自动启动隔离本地 mock
+node scripts/e2e-build-environment.mjs # 当前构建的登录/短信地址锁定、设置只读与重新登录（全 mock；先 pnpm build 或 pnpm build:dev）
 node scripts/e2e-shell-core.mjs    # 身份/账套入口、消息状态、开关防重、离线重新登录（临时 userData + 本地 mock；先 pnpm build）
 node scripts/e2e-desktop-coordination.mjs # 账套切换事务与跨账套紧急提醒（临时 userData + 私有 Vite + 本地 mock；先 pnpm build）
 node scripts/e2e-autologin.mjs     # 记住密码/自动登录全链路（含杀进程重启）
@@ -39,7 +56,7 @@ node scripts/e2e-notify.mjs        # MQTT 通知 + 置顶弹窗
 node scripts/verify-vibrancy.mjs   # 毛玻璃透光差分（黄/蓝背景板）
 ```
 
-注意：脚本会接管运行中的应用环境（按需自动重启 vite/electron）。`e2e-account-history.mjs` 使用临时 userData 与独立 CDP 端口 9224，不会接管 9223 上的真实 dev 应用、也不改写真实 `config.json`。`e2e-corp-sync-run.mjs` 会临时改写真实 `config.json`（先备份到 /tmp，结束后原样还原并校验 sha256）并重启 9223 应用；期间所有登录/换票请求只发往本地 mock。`e2e-feedback.mjs` 同样用临时 userData + 9224 隔离实例，会临时占用系统剪贴板（结束后尽力还原），用主进程 inspector（9230）读回剪贴板图片做不透明度/像素与 webview 内容校验；「打开微信/企业微信」在主进程内用 `execFile`/`openExternal` 桩验证调用参数，不会真正拉起应用，真实粘贴发送留人工验证。`e2e-page-chrome.mjs` 用临时 userData + 独立 CDP 9228/主进程 inspector 9231，自起本地 mock 并自动 tsc/拉起 electron，不访问生产、不占用 9223。
+历史脚本原有运行方式（适配前勿直接执行）：脚本会接管运行中的应用环境（按需自动重启 vite/electron）。`e2e-account-history.mjs` 使用临时 userData 与独立 CDP 端口 9224，不会接管 9223 上的真实 dev 应用、也不改写真实 `config.json`。`e2e-corp-sync-run.mjs` 会临时改写真实 `config.json`（先备份到 /tmp，结束后原样还原并校验 sha256）并重启 9223 应用；期间所有登录/换票请求只发往本地 mock。`e2e-feedback.mjs` 同样用临时 userData + 9224 隔离实例，会临时占用系统剪贴板（结束后尽力还原），用主进程 inspector（9230）读回剪贴板图片做不透明度/像素与 webview 内容校验；「打开微信/企业微信」在主进程内用 `execFile`/`openExternal` 桩验证调用参数，不会真正拉起应用，真实粘贴发送留人工验证。`e2e-page-chrome.mjs` 用临时 userData + 独立 CDP 9228/主进程 inspector 9231，自起本地 mock 并自动 tsc/拉起 electron，不访问生产、不占用 9223。
 
 ## 结构
 

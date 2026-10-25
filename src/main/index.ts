@@ -904,7 +904,7 @@ function persistLoginAccount(
   password: string,
 ): void {
   if (!isRememberPassword) {
-    recordSavedAccountLogin(loginId, serverBase, '', { serverBase, savedLoginId: '', savedPassword: '' });
+    recordSavedAccountLogin(loginId, serverBase, '', { savedLoginId: '', savedPassword: '' });
     return;
   }
   if (!safeStorage.isEncryptionAvailable()) {
@@ -914,7 +914,6 @@ function persistLoginAccount(
   }
   const passwordCipher = safeStorage.encryptString(password).toString('base64');
   recordSavedAccountLogin(loginId, serverBase, passwordCipher, {
-    serverBase,
     savedLoginId: loginId,
     savedPassword: passwordCipher,
   });
@@ -933,12 +932,6 @@ function readSavedAccountKey(request: unknown): SavedAccountKey {
     loginId: readString((request as { loginId?: unknown } | null)?.loginId).trim(),
     serverBase: readString((request as { serverBase?: unknown } | null)?.serverBase).trim(),
   };
-}
-
-/** 从请求里取表单当前服务器地址，缺省回退 config（登录页必填，正常不会走回退） */
-function readServerBase(request: unknown): string {
-  const fromRequest = readString((request as { serverBase?: unknown } | null)?.serverBase).trim();
-  return fromRequest || getConfig().serverBase;
 }
 
 /**
@@ -1026,7 +1019,7 @@ function registerIpcHandlers(): void {
     // 设备验证登录（-8 后）携带 6 位短信验证码，同接口完成验证并登录
     const verifyCode = readString((request as { verifyCode?: unknown } | null)?.verifyCode).trim();
     if (!loginId || !password) return invalid('账号和密码不能为空');
-    const serverBase = readServerBase(request);
+    const serverBase = getConfig().serverBase;
     const isRememberPassword = (request as { rememberPassword?: unknown } | null)?.rememberPassword === true;
     const result = await serverApi.svrUserLogin(
       serverBase,
@@ -1056,7 +1049,7 @@ function registerIpcHandlers(): void {
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
     const password = readString((request as { password?: unknown } | null)?.password);
     if (!loginId || !password) return invalid('账号和密码不能为空');
-    return serverApi.svrSendLoginVerifyCode(readServerBase(request), getConfig().machineCode, loginId, password);
+    return serverApi.svrSendLoginVerifyCode(getConfig().serverBase, getConfig().machineCode, loginId, password);
   });
 
   // 登录窗自绘 × 关闭按钮（macOS 隐藏原生红绿灯后唯一的关闭入口）
@@ -1165,7 +1158,7 @@ function registerIpcHandlers(): void {
     try {
       const result = await dialog.showMessageBox(owner, {
         type: 'warning', title: '重新登录', message: '返回登录页？',
-        detail: '请先保存需要保留的表单。继续将关闭全部业务标签并退出当前登录，随后可更换账号或服务器。网络不可用时也会完成本地退出。',
+        detail: '请先保存需要保留的表单。继续将关闭全部业务标签并退出当前登录，随后可更换账号。网络不可用时也会完成本地退出。',
         buttons: ['取消，返回保存', '退出并重新登录'], defaultId: 0, cancelId: 0, noLink: true,
       });
       if (result.response !== 1) return { ok: true, data: false };
