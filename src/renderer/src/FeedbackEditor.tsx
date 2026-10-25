@@ -40,7 +40,7 @@ const WIDTHS: { key: WidthKey; label: string; value: number }[] = [
 ];
 const TOOLS: { key: Tool; label: string; icon: ReactNode }[] = [
   { key: 'select', label: '选择', icon: <CursorArrowIcon /> },
-  { key: 'hand', label: '平移', icon: <HandIcon /> },
+  { key: 'hand', label: '拖动画布（空格）', icon: <HandIcon /> },
   { key: 'arrow', label: '箭头', icon: <ArrowToolIcon /> },
   { key: 'rect', label: '矩形', icon: <RectToolIcon /> },
   { key: 'ellipse', label: '椭圆', icon: <EllipseToolIcon /> },
@@ -75,6 +75,7 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
   const [errorText, setErrorText] = useState('');
   const [viewScale, setViewScale] = useState(0);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -237,12 +238,18 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
     const canvas = canvasRef.current;
     const bitmap = bitmapRef.current;
     if (!stage || !canvas || !bitmap) return;
+    stage.style.setProperty('--pan-space-x', `${stage.clientWidth / 2 + 24}px`);
+    stage.style.setProperty('--pan-space-y', `${stage.clientHeight / 2 + 24}px`);
     const scale = viewRef.current.isFit
       ? Math.min(Math.max(1, stage.clientWidth - 48) / bitmap.width, Math.max(1, stage.clientHeight - 48) / bitmap.height, 1 / window.devicePixelRatio)
       : viewRef.current.scale;
     viewRef.current.scale = scale;
     canvas.style.width = `${bitmap.width * scale}px`;
     canvas.style.height = `${bitmap.height * scale}px`;
+    if (viewRef.current.isFit) {
+      stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
+      stage.scrollTop = (stage.scrollHeight - stage.clientHeight) / 2;
+    }
     setViewScale(scale);
     refresh();
   }, [refresh]);
@@ -264,7 +271,6 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
   const fitToWindow = (): void => {
     viewRef.current.isFit = true;
     layoutCanvas();
-    stageRef.current?.scrollTo(0, 0);
   };
   useEffect(() => {
     const stage = stageRef.current;
@@ -364,8 +370,11 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
   const beginPan = (event: ReactPointerEvent<HTMLElement>): void => {
     const stage = stageRef.current;
     if (!stage || isBusyRef.current) return;
+    if (event.button !== 0 && event.button !== 1) return;
     event.preventDefault(); event.stopPropagation();
+    canvasRef.current?.focus();
     panRef.current = { x: event.clientX, y: event.clientY, left: stage.scrollLeft, top: stage.scrollTop };
+    setIsPanning(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const movePan = (event: ReactPointerEvent<HTMLElement>): void => {
@@ -376,6 +385,7 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
   };
   const endPan = (event: ReactPointerEvent<HTMLElement>): void => {
     panRef.current = null;
+    setIsPanning(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
@@ -440,6 +450,7 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
   };
 
   const selectedShape = transformRef.current?.preview ?? history.shapes[selectedIndex];
+  const isPanTool = isSpacePressed || activeTool === 'hand';
   const bounds = selectedShape ? shapeBounds(selectedShape, measureText) : null;
   const displayRatio = ratio();
   const handles: { key: Handle; point: Point; label: string }[] = [];
@@ -466,21 +477,22 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
         <button type="button" className={styles.action} data-testid="feedback-cancel" title="退出编辑（Esc）" disabled={isBusy} onClick={closeEditor}>退出编辑</button>
       </div>
       <div className={styles.stage} ref={stageRef} data-testid="feedback-stage"
-        onPointerDown={(event) => { if (isSpacePressedRef.current || activeTool === 'hand') beginPan(event); }}
+        style={{ cursor: isPanning ? 'grabbing' : isPanTool ? 'grab' : undefined }}
+        onPointerDown={(event) => { if (isSpacePressedRef.current || activeTool === 'hand' || event.button === 1) beginPan(event); }}
         onPointerMove={(event) => { if (panRef.current) movePan(event); }} onPointerUp={endPan} onPointerCancel={endPan}>
         <div className={styles.canvasSurface}>
         <div className={styles.canvasWrap}>
           <canvas ref={canvasRef} className={styles.canvas} data-testid="feedback-editor-canvas" tabIndex={0} aria-label="截图标注画布"
-            style={{ visibility: isReady ? 'visible' : 'hidden', cursor: isSpacePressed || activeTool === 'hand' ? 'grab' : activeTool === 'select' ? 'default' : activeTool === 'text' ? 'text' : 'crosshair' }}
+            style={{ visibility: isReady ? 'visible' : 'hidden', cursor: isPanning ? 'grabbing' : isPanTool ? 'grab' : activeTool === 'select' ? 'default' : activeTool === 'text' ? 'text' : 'crosshair' }}
             onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
             onPointerUp={(event) => finishPointer(event, false)} onPointerCancel={(event) => finishPointer(event, true)}
             onDoubleClick={(event) => {
-              if (isBusyRef.current) return;
+              if (isBusyRef.current || isPanTool) return;
               const point = imagePoint(event);
               const index = findShapeAtPoint(history.shapes, point, 6 * ratio(), measureText);
               if (index >= 0 && history.shapes[index].type === 'text') openText(point, index);
             }} onContextMenu={(event) => event.preventDefault()} />
-          {bounds && !textDraft && <>
+          {bounds && !textDraft && !isPanTool && <>
             <div className={styles.selection} data-testid="feedback-selection" style={{ left: bounds.x / displayRatio, top: bounds.y / displayRatio, width: bounds.w / displayRatio, height: bounds.h / displayRatio }} />
             {handles.map((handle) => <button type="button" key={handle.key} className={styles.handle} aria-label={handle.label} data-testid={`feedback-handle-${handle.key}`}
               disabled={isBusy} style={{ left: handle.point.x / displayRatio, top: handle.point.y / displayRatio }}
@@ -529,7 +541,7 @@ export function FeedbackEditor({ png, initialHistory, onClose }: FeedbackEditorP
           <button type="button" className={styles.action} data-testid="feedback-open-wecom" disabled={isDisabled} onClick={() => void copyImage('wecom')}>复制并打开企业微信</button>
           </div>
         </div>
-        <div className={styles.canvasHint}>选择标注可修改 · 双击文字重新编辑 · ⌘ / Ctrl + 滚轮缩放 · 空格拖动画布</div>
+        <div className={styles.canvasHint}>{activeTool === 'hand' ? '按住鼠标拖动画布 · 点击“适合窗口”恢复居中' : '选择标注可修改 · 双击文字重新编辑 · ⌘ / Ctrl + 滚轮缩放 · 空格拖动画布'}</div>
       </div>
     </div>
   );

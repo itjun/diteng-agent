@@ -62,8 +62,12 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  touch-action: none;
+  scrollbar-width: none;
   background: var(--dsw-alias-bg-base);
 }
+
+.stage::-webkit-scrollbar { display: none; }
 
 .canvasSurface {
   display: flex;
@@ -74,7 +78,8 @@
   height: max-content;
   min-width: 100%;
   min-height: 100%;
-  padding: 24px;
+  /* 图片四周保留平移空间，适合窗口时也能朝任意方向拖动。 */
+  padding: var(--pan-space-y, 24px) var(--pan-space-x, 24px);
 }
 
 .loading {
