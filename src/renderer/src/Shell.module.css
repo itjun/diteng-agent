@@ -90,6 +90,7 @@
   height: auto;
   min-height: 38px;
   background: transparent;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 /* 卡片明暗档：网页底色浅时工具条用深色文字/图标，深色时用浅色档；与应用主题解耦，
@@ -310,13 +311,11 @@
 }
 
 /* 消息和 AI 为独立模块，当前只保留本地占位。 */
-.modulePlaceholder { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
-.modulePlaceholder h1 { margin: 0 0 8px; font-size: 20px; font-weight: 500; color: var(--dsw-alias-label-primary); }
-.modulePlaceholder p { margin: 0; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 
 .shell {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
   height: 100%;
   background: var(--dsw-alias-bg-base);
 }
@@ -410,6 +409,37 @@
   overflow-y: auto;
 }
 
+.shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  flex: none;
+  padding: 5px 8px 4px;
+  -webkit-app-region: no-drag;
+}
+.sidebarButton {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.sidebarButton > svg { width: 16px; height: 16px; flex: none; }
+.sidebarButton:disabled { opacity: 0.45; cursor: default; }
+.shortcuts > button { gap: 6px; padding-inline: 6px; }
+.shortcuts .unreadBadge { position: static; flex: none; }
+
 .railTab,
 .railTabActive {
   display: flex;
@@ -430,13 +460,15 @@
 }
 
 .railTab:hover,
-.railTabActive:hover {
+.railTabActive:hover,
+.sidebarButton:hover:not(:disabled) {
   background: var(--dsw-specific-sidebar-nav-item-hover);
   color: var(--dsw-alias-label-primary);
 }
 
 /* 选中标签使用背景填充区分。 */
-.railTabActive {
+.railTabActive,
+.sidebarButton[aria-pressed='true'] {
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, var(--dsw-specific-sidebar-nav-item-active));
   color: var(--dsw-alias-label-primary);
 }

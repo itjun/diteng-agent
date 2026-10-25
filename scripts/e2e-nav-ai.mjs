@@ -1,6 +1,6 @@
 import { SERVER_BASE, LOGIN_ID, PASSWORD } from './e2e-secrets.mjs';
 /**
- * 真机验证：同域 window.open 自动补 sid/CLIENTID/device；AI 入口仅切换本地占位。
+ * 真机验证：同域 window.open 自动补 sid/CLIENTID/device；AI 快捷入口打开并复用 Web Chat。
  * 账套切换已统一由网页版（页头账套卡片）完成，客户端不再提供切换入口，本脚本不含切账套步骤。
  * 前置：vite(5173) 和 electron(--remote-debugging-port=9223) 已运行。
  * 用法：node scripts/e2e-nav-ai.mjs
@@ -65,15 +65,18 @@ const openedTab = tabsAfterOpen.tabs[tabsAfterOpen.tabs.length - 1];
 const hasSid = /[?&]sid=[^&]+/.test(openedTab.url) && /[?&]CLIENTID=[^&]+/.test(openedTab.url);
 console.log('CHECK 任务A window.open 补 sid:', hasSid ? 'OK' : 'FAIL', maskUrl(openedTab.url));
 
-// 3. AI 独立模块保留入口，工作区标签和当前页面保持不变。
-const beforeAi = await shell.evaluate(() => window.__ditengTabsList());
+// 3. AI 快捷入口直接打开当前账套的 Web Chat，再次点击复用同一标签。
 await shell.click('[data-testid="open-ai"]');
-await shell.waitForSelector('[data-testid="module-ai"]');
+await shell.waitForFunction(() => {
+  const state = window.__ditengTabsList();
+  return /\/chat(?:\?|\/|$)/.test(state.tabs.find(tab => tab.id === state.activeTabId)?.url ?? '');
+});
 const afterAi = await shell.evaluate(() => window.__ditengTabsList());
-if (JSON.stringify(beforeAi) !== JSON.stringify(afterAi)) throw new Error('AI 占位入口改变了工作区标签');
-console.log('CHECK AI 入口本地占位、不创建线上页面: OK');
-await shell.click('[data-testid="nav-back"]');
-await shell.waitForSelector('[data-testid="browser-toolbar"]');
+await shell.click('[data-testid="open-ai"]');
+await shell.waitForTimeout(200);
+const afterAgain = await shell.evaluate(() => window.__ditengTabsList());
+if (afterAi.tabs.length !== afterAgain.tabs.length || afterAi.activeTabId !== afterAgain.activeTabId) throw new Error('AI 快捷入口未复用已有标签');
+console.log('CHECK AI 快捷入口打开并复用 Web Chat: OK');
 
 await shell.screenshot({ path: '/tmp/diteng-nav-ai.png' });
 console.log('截图: /tmp/diteng-nav-ai.png');

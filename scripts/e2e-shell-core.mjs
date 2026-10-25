@@ -28,6 +28,9 @@ const backend = createServer(async (req, res) => {
   if (url.pathname.endsWith('ImServer.getUnreadMessage')) { requests++; await new Promise(resolve => setTimeout(resolve, 120)); return json(isUnreadFailure ? { message: '测试同步失败' } : { state: 1, data: unread }, isUnreadFailure ? 503 : 200); }
   if (url.pathname === '/public/desktop-agent/notifications') return json({ items: [], nextCursor: null });
   if (url.pathname === '/center/UserServer/logout') { logoutRequests++; return json({}); }
+  if (url.pathname === '/100001/FrmMyMessage') {
+    res.writeHead(302, { location: `/client/100001/FrmMyMessage${url.search}` }); res.end(); return;
+  }
   const title = url.pathname.endsWith('TFrmChooseAccount') ? '选择账套' : url.pathname.endsWith('FrmMyMessage') ? '消息中心' : url.pathname.endsWith('/chat') ? 'AI 助手' : 'ERP 首页';
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
   res.end(`<!doctype html><html><head><title>${title}</title></head><body style="font:16px sans-serif;padding:32px;background:#fff;color:#222"><h1>${title}</h1><p>这是本地验收环境，不连接真实业务服务器。</p><input aria-label="未保存的表单" value="需要保留的内容"></body></html>`);
@@ -103,7 +106,7 @@ try {
   await main.getByTestId('app-menu-button').click();
   await main.screenshot({ path: join(output, '00-app-menu.png') });
   await main.keyboard.press('Escape');
-  for (const id of ['url-bar-copy', 'feedback-button', 'open-ai']) {
+  for (const id of ['url-bar-copy', 'feedback-button']) {
     assert.equal(await main.locator(`[data-testid="browser-toolbar"] > [role="group"][aria-label="页面操作"] [data-testid="${id}"]`).isVisible(), true);
   }
   await main.evaluate(() => { navigator.clipboard.writeText = async (value) => { window.__copiedPageUrl = value; }; });
@@ -141,16 +144,33 @@ try {
   await main.waitForTimeout(200);
   assert.equal((await guests()).length, countWithAccounts);
   const webSnapshot = await guests();
-  for (const [entry, module] of [['open-messages', 'messages'], ['open-ai', 'ai']]) {
-    if (entry === 'open-ai') await main.getByTestId(entry).click();
-    else await openMenuItem(entry);
-    await main.getByTestId(`module-${module}`).waitFor();
-    assert.deepEqual(await guests(), webSnapshot);
-    assert.equal(await main.getByTestId('nav-reload').isDisabled(), true);
-    await main.getByTestId('nav-back').click();
-    assert.equal(await main.getByTestId('browser-toolbar').isVisible(), true);
+  for (const [entry, suffix] of [['open-messages', 'FrmMyMessage'], ['open-ai', '/chat']]) {
+    const count = (await guests()).length;
+    await main.evaluate(id => { const button = document.querySelector(`[data-testid="${id}"]`); button.click(); button.click(); }, entry);
+    await waitFor(async () => (await guests()).some(item => new URL(item.url).pathname.endsWith(suffix)));
+    assert.equal((await guests()).length, count + 1);
+    const opened = (await guests()).find(item => new URL(item.url).pathname.endsWith(suffix));
+    const url = new URL(opened.url);
+    assert.equal(url.searchParams.get('sid'), 'local-test-token');
+    assert.equal(url.searchParams.get('CLIENTID'), 'local-test-device');
+    assert.equal(url.searchParams.get('device'), 'pc');
+    await electron.evaluate(async ({ webContents }, id) => {
+      await webContents.fromId(id).executeJavaScript('document.querySelector("input").value = "保留聊天草稿"');
+    }, opened.id);
+    await main.getByTestId(entry).click();
+    await waitFor(async () => await main.getByTestId(entry).getAttribute('aria-pressed') === 'true');
+    assert.equal((await guests()).length, count + 1);
+    assert.equal(await electron.evaluate(({ webContents }, id) => webContents.fromId(id).executeJavaScript('document.querySelector("input").value'), opened.id), '保留聊天草稿');
+    assert.equal(await main.getByTestId('nav-reload').isEnabled(), true);
   }
-  console.log('PASS 账套入口复用 Web 标签；消息和 AI 独立占位，切换保留原有网页');
+  assert.deepEqual((await guests()).filter(item => webSnapshot.some(original => original.id === item.id)), webSnapshot);
+  await openMenuItem('open-settings');
+  await main.getByTestId('settings-nav-notifications').click();
+  const countBeforeMessages = (await guests()).length;
+  await main.getByRole('button', { name: '查看消息', exact: true }).click();
+  await waitFor(async () => await main.getByTestId('open-messages').getAttribute('aria-pressed') === 'true');
+  assert.equal((await guests()).length, countBeforeMessages);
+  console.log('PASS 消息重定向与 AI Chat 携带当前会话、连点和设置入口复用标签、保留网页草稿');
 
   await openMenuItem('open-settings');
   await main.getByTestId('settings-nav-notifications').click();
@@ -203,7 +223,7 @@ try {
   await main.screenshot({ path: join(output, '04-narrow.png') });
   assert.equal(await main.getByTestId('settings-content').evaluate(element => element.scrollWidth > element.clientWidth), false);
   await main.getByTestId('settings-back').click();
-  for (const id of ['url-bar-copy', 'feedback-button', 'open-ai']) {
+  for (const id of ['url-bar-copy', 'feedback-button']) {
     const box = await main.getByTestId(id).boundingBox();
     const toolbar = await main.getByTestId('browser-toolbar').boundingBox();
     assert.ok(box.x >= toolbar.x && box.x + box.width <= toolbar.x + toolbar.width && box.y >= toolbar.y && box.y + box.height <= toolbar.y + toolbar.height);
@@ -211,7 +231,8 @@ try {
   await main.screenshot({ path: join(output, '04-narrow-toolbar.png') });
   await main.getByRole('button', { name: '收起侧栏', exact: true }).click();
   await main.getByTestId('app-menu-button').click();
-  assert.equal(await main.getByTestId('open-messages').isVisible(), true);
+  assert.equal(await main.getByTestId('menu-open-messages').isVisible(), true);
+  assert.equal(await main.getByTestId('menu-open-ai').isVisible(), true);
   assert.equal(await main.getByTestId('open-settings').isVisible(), true);
   await main.screenshot({ path: join(output, '05-compact-menu.png') });
   await main.keyboard.press('Escape');
