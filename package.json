@@ -10,11 +10,14 @@
     "build:dev": "node scripts/configure-build.mjs dev && pnpm build:app",
     "build:app": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.node.json",
-    "dist:mac": "pnpm build && electron-builder --mac --arm64",
-    "dist:win": "pnpm build && electron-builder --win --x64",
-    "dist:mac:dev": "pnpm build:dev && electron-builder --mac --arm64",
-    "dist:win:dev": "pnpm build:dev && electron-builder --win --x64",
-    "test": "node scripts/run-tests.mjs"
+    "dist:mac": "pnpm build && electron-builder --mac --arm64 --publish never",
+    "dist:win": "pnpm build && electron-builder --win --x64 --publish never",
+    "dist:mac:dev": "pnpm build:dev && electron-builder --mac --arm64 --publish never",
+    "dist:win:dev": "pnpm build:dev && electron-builder --win --x64 --publish never",
+    "test": "node scripts/run-tests.mjs",
+    "dist:linux": "pnpm build && electron-builder --linux deb --publish never",
+    "dist:linux:dev": "pnpm build:dev && electron-builder --linux deb --publish never",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@radix-ui/react-icons": "^1.3.2",
@@ -38,5 +41,9 @@
     "vite": "^7.3.7",
     "wait-on": "^9.5.1",
     "yaml": "^2.9.1"
+  },
+  "author": {
+    "name": "itjun",
+    "email": "l1091462907@gmail.com"
   }
 }

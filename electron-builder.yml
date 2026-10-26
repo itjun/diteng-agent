@@ -21,6 +21,9 @@ mac:
     - target: dmg
       arch:
         - arm64
+    - target: zip
+      arch:
+        - arm64
   category: public.app-category.business
   # 原生分层图标：系统负责深浅色、透明与染色外观，并自动生成旧版 ICNS 回退。
   icon: build/appicon.icon
@@ -35,8 +38,18 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-# electron-updater 预留（依赖已装、不实装）：接入自动更新时——
-# 1) 打开下方 publish feed（或按渠道配置）；2) 主进程引入 autoUpdater 并处理 update-downloaded 提示
-# publish:
-#   provider: generic
-#   url: https://dl.diteng.vip/diteng-agent/
+linux:
+  target:
+    - target: deb
+      arch:
+        - x64
+        - arm64
+  executableName: diteng-agent
+  category: Office
+  icon: build/icon.png
+  maintainer: itjun <l1091462907@gmail.com>
+publish:
+  provider: github
+  owner: itjun
+  repo: diteng-agent
+  releaseType: draft

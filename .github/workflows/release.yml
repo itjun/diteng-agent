@@ -1,0 +1,126 @@
+name: Build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin
+            target: mac
+          - os: windows-latest
+            platform: win32
+            target: win
+          - os: ubuntu-24.04
+            platform: linux
+            target: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.3.4'
+      - run: pnpm install --frozen-lockfile
+      - name: Validate tag and policy
+        shell: bash
+        run: node scripts/validate-release.mjs
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: python3 scripts/test-macos-build.py
+        if: runner.os != 'Windows'
+      - run: pnpm build
+      - name: Build platform installers
+        shell: bash
+        env:
+          RELEASE_PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          CSC_LINK: ${{ matrix.platform == 'darwin' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'darwin' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          CSC_NAME: ${{ matrix.platform == 'darwin' && secrets.MAC_CSC_NAME || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm exec electron-builder --config electron-builder.release.cjs --${{ matrix.target }} --publish never
+      - name: Stamp policy and verify every download
+        run: node scripts/release-artifacts.mjs ${{ matrix.platform }}
+      - name: Test updater through local HTTP and Electron
+        if: runner.os != 'Linux'
+        run: node scripts/e2e-updates.mjs
+      - name: Test updater on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/e2e-updates.mjs
+      - name: Inspect and install Debian package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for package in release/*.deb; do dpkg-deb --info "$package"; done
+          sudo apt-get update
+          sudo apt-get install -y ./release/*-linux-x64.deb
+      - name: Smoke test packaged app
+        if: runner.os != 'Linux'
+        run: node scripts/e2e-packaged-app.mjs
+      - name: Smoke test installed Debian app
+        if: runner.os == 'Linux'
+        env:
+          PACKAGED_APP_EXECUTABLE: /opt/diteng agent/diteng-agent
+        run: xvfb-run -a node scripts/e2e-packaged-app.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: release
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.3.4'
+      - run: pnpm install --frozen-lockfile
+      - name: Verify complete release
+        run: |
+          node scripts/release-artifacts.mjs darwin
+          node scripts/release-artifacts.mjs win32
+          node scripts/release-artifacts.mjs linux
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --draft --title "$GITHUB_REF_NAME" --generate-notes
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

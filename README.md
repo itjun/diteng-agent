@@ -66,6 +66,25 @@ node scripts/verify-vibrancy.mjs   # 毛玻璃透光差分（黄/蓝背景板）
 
 历史脚本原有运行方式（适配前勿直接执行）：脚本会接管运行中的应用环境（按需自动重启 vite/electron）。`e2e-account-history.mjs` 使用临时 userData 与独立 CDP 端口 9224，不会接管 9223 上的真实 dev 应用、也不改写真实 `config.json`。`e2e-corp-sync-run.mjs` 会临时改写真实 `config.json`（先备份到 /tmp，结束后原样还原并校验 sha256）并重启 9223 应用；期间所有登录/换票请求只发往本地 mock。`e2e-feedback.mjs` 同样用临时 userData + 9224 隔离实例，会临时占用系统剪贴板（结束后尽力还原），用主进程 inspector（9230）读回剪贴板图片做不透明度/像素与 webview 内容校验；「打开微信/企业微信」在主进程内用 `execFile`/`openExternal` 桩验证调用参数，不会真正拉起应用，真实粘贴发送留人工验证。`e2e-page-chrome.mjs` 用临时 userData + 独立 CDP 9228/主进程 inspector 9231，自起本地 mock 并自动 tsc/拉起 electron，不访问生产、不占用 9223。
 
+## 版本与发布
+
+设置 → 关于和托盘「检查更新」使用同一更新状态。默认启动时及每 6 小时检查 GitHub Releases，自动下载可关闭；下载后必须确认保存工作，再重启安装，不会在普通退出时静默安装。开发运行与 dev 环境安装包不接收正式更新。
+
+`release-policy.json` 的 `minimumVersion` 是最低支持的**客户端版本**（不是操作系统版本），初始为 `0.2.4`。发布时会写入所有平台更新清单。低于该版本时登录、已有网页的业务请求和打开页面均被阻断，更新要求缓存在本机，断网重启仍有效。该限制不能替代服务端兼容性校验；首次离线且从未取得策略时允许继续使用。
+
+```bash
+pnpm test                          # 包含版本状态机与发布文件校验
+pnpm build && node scripts/e2e-updates.mjs # 本地 HTTP + Electron 真实检查/下载/哈希校验；安装调用用桩隔离
+pnpm dist:linux                    # Linux deb x64/arm64；dev 环境用 dist:linux:dev
+pnpm release patch --dry-run       # 预演下一版本，不改文件、不推送
+pnpm release patch                 # 检查 → 提升版本 → 原子提交与标签推送 → 三平台自动构建发布
+pnpm release 0.3.0                 # 也可指定稳定版本
+```
+
+正式发布前在 GitHub 仓库配置 `MAC_CSC_LINK`（Developer ID Application 证书）、`MAC_CSC_KEY_PASSWORD`、`MAC_CSC_NAME`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`。凭据只放 Secrets，不写入客户端。macOS 正式包必须签名、公证后才能自动安装；本机 `build.py` 继续使用免签配置。已有免签 macOS 安装首次迁移应手动安装正式签名版。Linux deb 安装更新可能请求系统管理员授权。
+
+`.github/workflows/release.yml` 在 main/PR/手动运行时构建测试包，在 `v版本号` 标签时正式发布。macOS 生成 arm64/x64 DMG 与更新必需的 ZIP，Windows 生成 x64 NSIS，Linux 生成 x64/arm64 deb。每个平台在原生 runner 上测试更新链路和当前架构安装包启动；Linux 还用 apt 安装 x64 deb。各平台更新清单、架构完整性与文件 SHA-512 全部校验成功后，才创建并公开完整 GitHub Release。测试运行不公开版本；签名缺失会在创建版本提交前报错。若 CI 失败，修复后重跑失败任务；不要移动已公开的版本标签。跨架构包有构建和清单验证，实际升级替换仍需目标系统验收。
+
 ## 结构
 
 - `src/main/` 主进程：窗口/标签 URL 策略/会话（safeStorage 存密文）/MQTT/托盘/打包配置/启动微信与企业微信
