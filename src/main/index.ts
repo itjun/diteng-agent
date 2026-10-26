@@ -58,6 +58,9 @@ import type {
   ThemeState,
 } from '../shared/types';
 
+// 在初始化服务、读取配置和创建窗口前占锁；重复启动仅唤醒已有实例。
+if (!app.requestSingleInstanceLock()) app.exit(0);
+
 const DEV_SERVER_URL = process.env.DITENG_AGENT_DEV_URL || 'http://127.0.0.1:5173';
 // 对应 --dsw-static-neutral-bluish-950 / 00，避免深色主题下窗口底色闪白
 const THEME_DARK_BACKGROUND = '#151517';
@@ -97,6 +100,18 @@ function focusMainWindow(): void {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+}
+
+/** 重复启动或点击 Dock 时复用当前窗口，兼容尚未登录的状态。 */
+function focusExistingWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed() && getSession()) {
+    focusMainWindow();
+    return;
+  }
+  if (!loginWindow || loginWindow.isDestroyed()) return;
+  if (loginWindow.isMinimized()) loginWindow.restore();
+  loginWindow.show();
+  loginWindow.focus();
 }
 
 /** 当前 AI 站基址（config 推导），URL 分类白名单用 */
@@ -447,6 +462,10 @@ function applyMacMainWindowBackdrop(): void {
 }
 
 function createLoginWindow(): void {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    focusExistingWindow();
+    return;
+  }
   const config = getConfig();
   const workArea = screen.getPrimaryDisplay().workArea;
   const width = Math.min(960, workArea.width);
@@ -494,6 +513,10 @@ function isShellUrl(url: string): boolean {
  * 主窗 ready-to-show 后才关登录窗，避免出现零窗口瞬间。
  */
 function createMainWindow(session: SessionInfo, entryUrl: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return;
+  }
   const isDark = resolveIsDarkTheme(getConfig());
   // 首个标签在窗口加载前登记（壳挂载时经 tabs:pop-entry 拉取，避免 ready-to-show 竞态）
   pendingEntry = { url: entryUrl, corpNo: session.corpNo };
@@ -677,6 +700,8 @@ async function keepSession(serverBase: string, result: LoginResult, loginId: str
     serverApi.getTokenInfo(serverBase, session.machineCode, result.token),
     serverApi.listMyLivingUsers(serverBase, result.token, session.machineCode),
   ]);
+  // 补齐信息期间其他登录可能已经完成；会话和主窗只提交一次。
+  if (getSession()) return;
   saveCorpList(corps.ok ? corps.data : []);
   if (!corps.ok) {
     console.warn(`[auth] 登录后拉取账套列表失败（账套名称暂缺）：${corps.message}`);
@@ -1408,7 +1433,7 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-// macOS 点 Dock 图标：有主窗则还原显示（无窗时保持登录前不自动开窗的原行为）
-app.on('activate', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) focusMainWindow();
-});
+app.on('second-instance', focusExistingWindow);
+
+// macOS 点 Dock 图标：还原已有的主窗或登录窗。
+app.on('activate', focusExistingWindow);

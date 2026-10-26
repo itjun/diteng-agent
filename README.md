@@ -23,6 +23,8 @@ pnpm dist:mac:dev   # 开发环境 mac arm64 dmg；dist:win:dev 为 Windows nsis
 
 `build.py` 需要 Python 3、Node.js、pnpm 和 Xcode Command Line Tools，可从任意目录通过脚本路径运行（也可用 `python3 build.py`）。自动匹配本机 Apple Silicon / Intel 架构，使用本地 ad-hoc 签名（不公证），保留用户配置；加 `--no-launch` 可在安装后跳过启动。DMG 安装包保留在 `release/`，构建失败时不会替换已安装应用。
 
+应用采用单实例运行：重复启动时新进程立即退出，并显示、还原和聚焦已有的登录窗或主窗；主窗隐藏到托盘后再次启动也会回到原窗口。
+
 ## 构建环境
 
 | 环境 | 固定服务器地址 |
@@ -43,6 +45,7 @@ cp scripts/e2e-secrets.example.mjs scripts/e2e-secrets.mjs   # 填入测试账�
 (pnpm exec vite &) && (pnpm exec electron . --remote-debugging-port=9223 &)
 node scripts/e2e-layout.mjs        # Dia 双栏布局/拖宽/重启/主题/反馈；E2E_MOCK=1 自动启动隔离本地 mock
 node scripts/e2e-build-environment.mjs # 当前构建的登录/短信地址锁定、设置只读与重新登录（全 mock；先 pnpm build 或 pnpm build:dev）
+node scripts/e2e-single-instance.mjs # 重复启动退出、登录窗复用、并发登录防多窗、最小化/托盘恢复与退出后重启（临时 userData + 全 mock；先 pnpm build）
 node scripts/e2e-shell-core.mjs    # 高频入口、硬件信息、公网 IP 失败恢复、消息状态、开关防重、离线重新登录（临时 userData + 本地 mock；先 pnpm build）
 node scripts/e2e-desktop-coordination.mjs # 账套切换事务与跨账套紧急提醒（临时 userData + 私有 Vite + 本地 mock；先 pnpm build）
 node scripts/e2e-autologin.mjs     # 记住密码/自动登录全链路（含杀进程重启）
