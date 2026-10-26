@@ -93,8 +93,10 @@ require(${JSON.stringify(resolve('dist/main/index.js'))});
 }
 
 async function shot(page, name) {
-  assert.equal(await page.getByRole('heading', { name: 'diteng agent', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('heading', { name: 'diteng agent', exact: true }).count(), 0);
   assert.equal(await page.getByText('DESKTOP', { exact: true }).count(), 0);
+  assert.equal(await page.getByTestId('login-close').count(), 0);
+  assert.equal(await page.getByText(/设备码/).count(), 0);
   await page.screenshot({ path: join(output, `${name}.png`), scale: 'css' });
 }
 
@@ -109,12 +111,14 @@ async function checkLayout(page, isIllustrationVisible) {
     const form = document.querySelector('form');
     const imageBox = image.getBoundingClientRect();
     const input = document.querySelector('#login-id').getBoundingClientRect();
+    const card = document.querySelector('main').getBoundingClientRect();
     return {
       isOverflowing: page.scrollWidth > page.clientWidth,
       isIllustrationVisible: imageBox.width > 0,
       isLocalImage: image.src.startsWith('file:') && image.naturalWidth === 703 && image.naturalHeight === 611,
       isUndistorted: !imageBox.width || Math.abs(imageBox.width / imageBox.height - 703 / 611) < 0.01,
-      isBrandVisible: document.querySelector('h1').getBoundingClientRect().width > 0,
+      isVerticallyScrollable: page.scrollHeight > page.clientHeight,
+      margins: [card.x, card.y, innerWidth - card.right, innerHeight - card.bottom],
       isDesktopVisible: document.body.textContent.includes('DESKTOP'),
       isFormInteractive: getComputedStyle(form.parentElement.parentElement).webkitAppRegion === 'no-drag',
       isFieldInBounds: input.x >= 0 && input.right <= innerWidth,
@@ -124,7 +128,9 @@ async function checkLayout(page, isIllustrationVisible) {
   assert.equal(layout.isIllustrationVisible, isIllustrationVisible);
   assert.equal(layout.isLocalImage, true);
   assert.equal(layout.isUndistorted, true);
-  assert.equal(layout.isBrandVisible, true);
+  if (!layout.isVerticallyScrollable) {
+    assert.ok(layout.margins.every(value => Math.abs(value - layout.margins[0]) < 1), '卡片四边留白应等宽');
+  }
   assert.equal(layout.isDesktopVisible, false);
   assert.equal(layout.isFormInteractive, true);
   assert.equal(layout.isFieldInBounds, true);
@@ -159,8 +165,8 @@ try {
   await checkLayout(login, false);
   await login.locator('button[type=submit]').click();
   await login.getByRole('alert').waitFor();
-  await login.locator('footer').scrollIntoViewIfNeeded();
-  assert.equal(await login.locator('footer').evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true);
+  await login.getByTestId('auto-login-checkbox').scrollIntoViewIfNeeded();
+  assert.equal(await login.getByTestId('auto-login-checkbox').evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true);
   await shot(login, 'small-scrolled');
   await setSize(960, 640);
 
@@ -207,6 +213,12 @@ try {
   await shot(login, 'success');
   await main.getByTestId('shell-rail').waitFor();
   await electron.evaluate(() => { globalThis.__holdLoginClose = false; globalThis.__releaseLogin(); });
+  await main.getByTestId('open-device-info').click();
+  await main.getByTestId('device-client-id').waitFor();
+  assert.equal(await main.getByTestId('device-client-id').textContent(), 'layout-device');
+  assert.equal(await main.getByText('设备码（CLIENTID）', { exact: true }).count(), 1);
+  assert.equal(await main.getByRole('button', { name: '复制设备码（CLIENTID）', exact: true }).isEnabled(), true);
+  await main.screenshot({ path: join(output, 'device-info.png'), scale: 'css' });
   await electron.close();
   electron = null;
 
@@ -219,11 +231,6 @@ try {
   await login.waitForTimeout(1600);
   assert.equal(await login.getByRole('alert').count(), 0, '取消后迟到失败不覆盖手动表单');
   assert.equal(await electron.evaluate(() => globalThis.__loginRequests.length), 1);
-  if (process.platform === 'darwin') {
-    const closed = login.waitForEvent('close');
-    await login.getByTestId('login-close').click();
-    await closed;
-  }
   await electron.close();
   electron = null;
 
@@ -246,7 +253,7 @@ try {
   await checkLayout(login, false);
   await shot(login, 'small-display');
   assert.deepEqual(errors, []);
-  console.log('PASS 登录窗口尺寸与居中、离线插画、深浅色、800px断点、小屏滚动、历史账号与密码回填、复选框联动、键盘、防重、失败重试、短信验证、自动登录/取消/失败/成功、关闭');
+  console.log('PASS 登录窗口尺寸与居中、四边等距、无品牌/关闭按钮/设备码、离线插画、深浅色、小屏滚动、历史账号、键盘、防重、短信验证、自动登录、关于本机设备码');
   console.log(`截图：${output}`);
   // 可选原生交互检查：保留一个独立模拟窗口，关闭后自动清理测试进程和数据。
   if (process.env.DITENG_QA_PREVIEW === '1') {
@@ -255,7 +262,7 @@ try {
     login = await launch('preview');
     await login.locator('#login-id').waitFor();
     await login.locator('#login-id').fill('');
-    console.log('PREVIEW_READY：可检查原生拖拽和关闭');
+    console.log('PREVIEW_READY：可检查原生拖拽，通过系统退出应用结束预览');
     await electron.waitForEvent('close', { timeout: 0 });
     electron = null;
   }
