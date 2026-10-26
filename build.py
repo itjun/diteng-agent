@@ -33,6 +33,33 @@ def run(*args, env=None):
     )
 
 
+def macos_build_environment():
+    env = os.environ.copy()
+    env.pop("ELECTRON_RUN_AS_NODE", None)
+    developer_dirs = [None]
+    for directory in (Path("/Applications"), Path.home() / "Applications"):
+        apps = sorted(directory.glob("Xcode*.app"), key=lambda app: (app.name != "Xcode.app", app.name))
+        developer_dirs.extend(app / "Contents" / "Developer" for app in apps)
+    # 优先使用当前工具链；仅选中 CLT 时，为本次构建寻找完整 Xcode。
+    for developer_dir in developer_dirs:
+        if developer_dir is not None:
+            env["DEVELOPER_DIR"] = str(developer_dir)
+        result = subprocess.run(
+            ["xcrun", "--find", "actool"], cwd=PROJECT_ROOT, env=env,
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            actool = Path(result.stdout.strip())
+            env["DEVELOPER_DIR"] = str(actool.parents[2])
+            print(f"==> 本次构建使用 Xcode：{env['DEVELOPER_DIR']}", flush=True)
+            return env
+    raise RuntimeError(
+        "未找到完整 Xcode 的 actool。请安装 Xcode 26+（仅 Command Line Tools 不够），"
+        "或通过 DEVELOPER_DIR 指定其 Contents/Developer 目录。\n"
+        + result.stderr.strip()
+    )
+
+
 def running_pids():
     """只匹配安装副本、本仓库 release 副本及本仓库开发用 Electron。"""
     result = subprocess.run(
@@ -118,26 +145,20 @@ def main():
     for tool in ("node", "pnpm", "ps", "ditto", "open", "xcrun"):
         if shutil.which(tool) is None:
             parser.error(f"未找到 {tool}，请先安装依赖并加入 PATH")
-    run("xcrun", "--find", "clang")
-    actool = Path(subprocess.check_output(
-        ["xcrun", "--find", "actool"], cwd=PROJECT_ROOT, text=True,
-    ).strip())
+    env = macos_build_environment()
+    run("xcrun", "--find", "clang", env=env)
 
     started = time.monotonic()
     stop_running()
-    run("pnpm", "install", "--frozen-lockfile")
-    run("pnpm", "typecheck")
+    run("pnpm", "install", "--frozen-lockfile", env=env)
+    run("pnpm", "typecheck", env=env)
     # 只清编译输出，保留 release 中其他版本的安装包。
     for directory in (PROJECT_ROOT / "dist", PROJECT_ROOT / "release" / (
         "mac-arm64" if architecture == "arm64" else "mac"
     )):
         if directory.exists():
             shutil.rmtree(directory)
-    run("pnpm", "build:dev" if args.env == "dev" else "build")
-    env = os.environ.copy()
-    env.pop("ELECTRON_RUN_AS_NODE", None)
-    # electron-builder 直接调用 actool；本机仅选中 CLT 时，限定本次构建使用找到的完整 Xcode。
-    env["DEVELOPER_DIR"] = str(actool.parents[2])
+    run("pnpm", "build:dev" if args.env == "dev" else "build", env=env)
     run(
         "pnpm", "exec", "electron-builder", "--mac", f"--{architecture}",
         "--publish", "never", env=env,

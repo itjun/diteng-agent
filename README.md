@@ -15,6 +15,7 @@ pnpm install        # 安装（electron 二进制失败时用 ELECTRON_MIRROR=ht
 pnpm dev            # 开发环境：rc.local.lan；vite(5173) + electron（改动 main/preload 需重启）
 pnpm typecheck      # 四个 tsconfig 全量检查
 node --test scripts/test-*.mjs  # 构建环境、账号隔离、展示、账套核验与通知队列回归
+python3 scripts/test-macos-build.py # macOS 构建工具链预检回归
 pnpm build          # main 环境构建到 dist/
 pnpm build:dev      # 开发环境构建到 dist/
 pnpm dist:mac       # main 环境 mac arm64 dmg；dist:win 为 Windows nsis
@@ -22,6 +23,8 @@ pnpm dist:mac:dev   # 开发环境 mac arm64 dmg；dist:win:dev 为 Windows nsis
 ```
 
 `build.py` 需要 Python 3、Node.js、pnpm 和 Xcode 26+（原生分层图标通过 `actool` 编译），可从任意目录通过脚本路径运行（也可用 `python3 build.py`）。自动匹配本机 Apple Silicon / Intel 架构，本机打包默认跳过应用签名、公证和安装时的签名校验，保留用户配置；加 `--no-launch` 可在安装后跳过启动。`pnpm dist:mac` 和 `pnpm dist:mac:dev` 同样使用这套不签名配置。DMG 安装包保留在 `release/`，构建失败时不会替换已安装应用。
+
+若系统当前选中 Command Line Tools，`build.py` 会自动从 `/Applications` 和 `~/Applications` 中寻找 `Xcode*.app`，仅通过本次构建的 `DEVELOPER_DIR` 使用完整 Xcode；自定义安装位置可显式设置该变量，不需要修改系统的 `xcode-select` 设置。
 
 应用图标采用白底绿色品牌标志，源文件为 `build/appicon.icon/`：macOS 26+ 使用系统原生的浅色、深色、透明与染色外观，旧版 macOS 使用生成的 ICNS；Windows 使用 `build/icon.png`。菜单栏使用无底板的黑色透明模板图，并提供 Retina `@2x`，随系统菜单栏自动着色。在 macOS 上执行 `node scripts/make-icons.mjs` 可从源文件重建 ICNS、PNG 和托盘资源；Windows 构建直接使用已入库资源。
 
