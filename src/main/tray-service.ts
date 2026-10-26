@@ -31,7 +31,7 @@ export class TrayService {
   /** 创建托盘（登录成功后调用）；已存在时幂等 */
   create(): void {
     if (this.tray) return;
-    // macOS 菜单栏用 16px 模板图（随深浅色自适应），其余平台用 32px 彩色图
+    // macOS 用透明模板图（16px + 自动加载的 @2x），由系统适配深浅色/透明菜单栏；其余平台用彩色图
     const iconPath =
       process.platform === 'darwin'
         ? join(__dirname, '../../assets/trayTemplate.png')

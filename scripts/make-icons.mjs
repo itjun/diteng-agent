@@ -1,133 +1,114 @@
 /**
- * 占位图标生成（一次性工具，产物已入仓库，平时无需运行）：
- *   assets/trayTemplate.png —— macOS 托盘模板图（16x16 黑色形状，透明底）
- *   assets/tray.png         —— 托盘图标（32x32 彩色，Windows/兜底用）
- *   build/icon.png          —— electron-builder 应用图标（512x512）
- * 仅用 node:zlib 手写 PNG（无第三方绘图依赖），图形为"圆+竖笔"的占位 d 标。
- * 正式品牌图标到位后直接覆盖这三个文件即可。
- * 用法：node scripts/make-icons.mjs
+ * 从正式品牌源重建图标：node scripts/make-icons.mjs（macOS + Xcode 26+）。
+ * appicon.icon 保留独立标志图层，由系统渲染深浅色、透明和染色外观；
+ * ICNS/PNG 供旧版 macOS、DMG 和 Windows 使用，模板图供 macOS 菜单栏使用。
  */
-import { deflateSync } from 'node:zlib';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const scriptPath = fileURLToPath(import.meta.url);
+const projectRoot = dirname(dirname(scriptPath));
+const iconSource = join(projectRoot, 'build/appicon.icon');
+const assetsPath = join(projectRoot, 'assets');
 
-// ---- PNG 编码（8-bit RGBA）----
-const CRC_TABLE = (() => {
-  const table = new Int32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c;
-  }
-  return table;
-})();
-
-function crc32(bytes) {
-  let crc = -1;
-  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  return (crc ^ -1) >>> 0;
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, { stdio: 'inherit', ...options });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${command} 执行失败（${result.status}）`);
 }
 
-function chunk(type, data) {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length);
-  const typeAndData = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(typeAndData));
-  return Buffer.concat([length, typeAndData, crc]);
-}
-
-function encodePng(width, height, rgba) {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // RGBA
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (width * 4 + 1)] = 0; // filter: none
-    rgba.copy(raw, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4);
-  }
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-// ---- 形状绘制：圆角方块底 + "d" 形（圆环 + 竖笔），所有坐标按比例 ----
-function roundedRectSdf(px, py, cx, cy, halfW, halfH, radius) {
-  const dx = Math.abs(px - cx) - (halfW - radius);
-  const dy = Math.abs(py - cy) - (halfH - radius);
-  const outside = Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
-  return Math.max(outside, Math.min(Math.max(dx, dy), 0)) - radius;
-}
-
-/** alpha 抗锯齿覆盖度：sdf <= -1 全内、>= 1 全外 */
-function coverage(sdf) {
-  return Math.max(0, Math.min(1, 0.5 - sdf));
-}
-
-function subpixelCoverage(sdfAt) {
-  // 2x2 子采样，缓解小尺寸边缘锯齿
-  let sum = 0;
-  for (const [ox, oy] of [
-    [0.25, 0.25],
-    [0.75, 0.25],
-    [0.25, 0.75],
-    [0.75, 0.75],
-  ]) {
-    sum += coverage(sdfAt(ox, oy));
-  }
-  return sum / 4;
-}
-
-function drawIcon(size, { withBackground }) {
-  const rgba = Buffer.alloc(size * size * 4);
-  const bg = [65, 118, 230]; // dsw 品牌蓝 rgb(65,118,230)
-  const fg = withBackground ? [255, 255, 255] : [0, 0, 0]; // 模板图要求纯黑形状
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const px = x + 0.5;
-      const py = y + 0.5;
-      const sdf = (ox, oy) => roundedRectSdf(px + ox - 0.5, py + oy - 0.5, size / 2, size / 2, size * 0.48, size * 0.48, size * 0.22);
-      let alpha = withBackground ? subpixelCoverage(sdf) : 0;
-      // "d" 形：圆环 + 右侧竖笔
-      const ringCx = size * 0.42;
-      const ringCy = size * 0.52;
-      const ringOuter = size * 0.2;
-      const ringInner = size * 0.1;
-      const ringSdf = (ox, oy) => {
-        const d = Math.hypot(px + ox - 0.5 - ringCx, py + oy - 0.5 - ringCy);
-        return Math.max(d - ringOuter, ringInner - d);
-      };
-      const stemSdf = (ox, oy) =>
-        roundedRectSdf(px + ox - 0.5, py + oy - 0.5, size * 0.62, size * 0.52, size * 0.045, size * 0.24, size * 0.045);
-      const glyphAlpha = Math.max(subpixelCoverage(ringSdf), subpixelCoverage(stemSdf));
-      const index = (y * size + x) * 4;
-      if (glyphAlpha > 0) {
-        rgba[index] = fg[0];
-        rgba[index + 1] = fg[1];
-        rgba[index + 2] = fg[2];
-        rgba[index + 3] = Math.round(Math.max(alpha, glyphAlpha) * 255);
-      } else if (withBackground) {
-        rgba[index] = bg[0];
-        rgba[index + 1] = bg[1];
-        rgba[index + 2] = bg[2];
-        rgba[index + 3] = Math.round(alpha * 255);
+if (process.versions.electron) {
+  const { app, nativeImage } = await import('electron');
+  app.whenReady().then(() => {
+    try {
+      const output = process.argv[2];
+      const tile = nativeImage.createFromPath(join(output, 'default.png')).resize({ width: 824, height: 824, quality: 'best' });
+      if (tile.isEmpty()) throw new Error('原生图标渲染为空');
+      const tilePixels = tile.toBitmap();
+      const iconPixels = Buffer.alloc(1024 * 1024 * 4);
+      for (let y = 0; y < 824; y++) {
+        tilePixels.copy(iconPixels, ((y + 100) * 1024 + 100) * 4, y * 824 * 4, (y + 1) * 824 * 4);
       }
+      const color = nativeImage.createFromBitmap(iconPixels, { width: 1024, height: 1024 });
+      writeFileSync(join(projectRoot, 'build/icon.png'), color.toPNG());
+      const iconset = join(output, 'appicon.iconset');
+      mkdirSync(iconset);
+      for (const size of [16, 32, 128, 256, 512]) {
+        for (const scale of [1, 2]) {
+          const suffix = scale === 1 ? '' : '@2x';
+          writeFileSync(join(iconset, `icon_${size}x${size}${suffix}.png`), color.resize({ width: size * scale, height: size * scale, quality: 'best' }).toPNG());
+        }
+      }
+      const source = nativeImage.createFromPath(join(iconSource, 'Assets/brand-mark.png'));
+      if (source.isEmpty()) throw new Error('品牌标志图层为空');
+      const { width, height } = source.getSize();
+      const bitmap = source.toBitmap();
+      let left = width;
+      let top = height;
+      let right = -1;
+      let bottom = -1;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (bitmap[(y * width + x) * 4 + 3] < 128) continue;
+          left = Math.min(left, x);
+          top = Math.min(top, y);
+          right = Math.max(right, x);
+          bottom = Math.max(bottom, y);
+        }
+      }
+      if (right < left) throw new Error('品牌标志图层没有可见像素');
+      const mark = source.crop({ x: left, y: top, width: right - left + 1, height: bottom - top + 1 });
+      for (const scale of [1, 2]) {
+        const size = 16 * scale;
+        const inset = scale;
+        const ratio = (size - inset * 2) / Math.max(mark.getSize().width, mark.getSize().height);
+        const scaledWidth = Math.round(mark.getSize().width * ratio);
+        const scaledHeight = Math.round(mark.getSize().height * ratio);
+        const scaled = mark.resize({ width: scaledWidth, height: scaledHeight, quality: 'best' }).toBitmap();
+        const pixels = Buffer.alloc(size * size * 4);
+        const offsetX = Math.floor((size - scaledWidth) / 2);
+        const offsetY = Math.floor((size - scaledHeight) / 2);
+        for (let y = 0; y < scaledHeight; y++) {
+          for (let x = 0; x < scaledWidth; x++) {
+            // 只保留 alpha：纯黑模板由 macOS 着色，不能带白色底板或预先反色。
+            pixels[((y + offsetY) * size + x + offsetX) * 4 + 3] = scaled[(y * scaledWidth + x) * 4 + 3];
+          }
+        }
+        const suffix = scale === 1 ? '' : '@2x';
+        const template = nativeImage.createFromBitmap(pixels, { width: size, height: size });
+        writeFileSync(join(assetsPath, `trayTemplate${suffix}.png`), template.toPNG());
+        writeFileSync(join(assetsPath, `tray${suffix}.png`), color.resize({ width: 32 * scale, height: 32 * scale, quality: 'best' }).toPNG());
+      }
+      app.quit();
+    } catch (error) {
+      console.error(error);
+      app.exit(1);
     }
+  });
+} else {
+  if (process.platform !== 'darwin') throw new Error('重建图标需要 macOS 与 Xcode 26+；其他平台直接使用已入库的图标');
+  mkdirSync(assetsPath, { recursive: true });
+  const output = mkdtempSync(join(tmpdir(), 'diteng-icons-'));
+  try {
+    const locatedTool = spawnSync('xcrun', ['--find', 'actool'], { encoding: 'utf8' });
+    if (locatedTool.status !== 0) throw new Error('找不到 Xcode actool');
+    const composer = resolve(dirname(locatedTool.stdout.trim()), '../../../Applications/Icon Composer.app/Contents/Executables/ictool');
+    run(composer, [iconSource, '--export-image', '--output-file', join(output, 'default.png'),
+      '--platform', 'macOS', '--rendition', 'Default', '--width', '1024', '--height', '1024', '--scale', '1']);
+    const require = createRequire(import.meta.url);
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    run(require('electron'), [scriptPath, output], { env });
+    run('iconutil', ['--convert', 'icns', join(output, 'appicon.iconset'), '--output', join(projectRoot, 'build/icon.icns')]);
+    for (const name of ['trayTemplate@2x.png', 'tray@2x.png']) {
+      run('sips', ['--setProperty', 'dpiWidth', '144', '--setProperty', 'dpiHeight', '144', join(assetsPath, name)]);
+    }
+    console.log('已重建 build/icon.icns、build/icon.png 与 assets/ 下的彩色/模板托盘图标（含 @2x）');
+  } finally {
+    rmSync(output, { recursive: true, force: true });
   }
-  return encodePng(size, size, rgba);
 }
-
-mkdirSync(join(projectRoot, 'assets'), { recursive: true });
-mkdirSync(join(projectRoot, 'build'), { recursive: true });
-writeFileSync(join(projectRoot, 'assets/trayTemplate.png'), drawIcon(16, { withBackground: false }));
-writeFileSync(join(projectRoot, 'assets/tray.png'), drawIcon(32, { withBackground: true }));
-writeFileSync(join(projectRoot, 'build/icon.png'), drawIcon(512, { withBackground: true }));
-console.log('已生成 assets/trayTemplate.png assets/tray.png build/icon.png');

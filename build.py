@@ -2,7 +2,7 @@
 """本机重新部署（macOS）：停止旧进程 → 编译打包 → 安装 → 启动。
 
 用法：./build.py（main）或 ./build.py --env dev；--no-launch 安装后不启动。
-依赖：Python 3、Node.js、pnpm 和 Xcode Command Line Tools。
+依赖：Python 3、Node.js、pnpm 和 Xcode 26+（编译原生分层图标）。
 """
 
 import argparse
@@ -120,6 +120,9 @@ def main():
         if shutil.which(tool) is None:
             parser.error(f"未找到 {tool}，请先安装依赖并加入 PATH")
     run("xcrun", "--find", "clang")
+    actool = Path(subprocess.check_output(
+        ["xcrun", "--find", "actool"], cwd=PROJECT_ROOT, text=True,
+    ).strip())
 
     started = time.monotonic()
     stop_running()
@@ -134,6 +137,8 @@ def main():
     run("pnpm", "build:dev" if args.env == "dev" else "build")
     env = os.environ.copy()
     env.pop("ELECTRON_RUN_AS_NODE", None)
+    # electron-builder 直接调用 actool；本机仅选中 CLT 时，限定本次构建使用找到的完整 Xcode。
+    env["DEVELOPER_DIR"] = str(actool.parents[2])
     run(
         "pnpm", "exec", "electron-builder", "--mac", f"--{architecture}",
         "--config.mac.identity=-", "--publish", "never", env=env,

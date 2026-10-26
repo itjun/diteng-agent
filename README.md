@@ -21,7 +21,9 @@ pnpm dist:mac       # main 环境 mac arm64 dmg；dist:win 为 Windows nsis
 pnpm dist:mac:dev   # 开发环境 mac arm64 dmg；dist:win:dev 为 Windows nsis
 ```
 
-`build.py` 需要 Python 3、Node.js、pnpm 和 Xcode Command Line Tools，可从任意目录通过脚本路径运行（也可用 `python3 build.py`）。自动匹配本机 Apple Silicon / Intel 架构，使用本地 ad-hoc 签名（不公证），保留用户配置；加 `--no-launch` 可在安装后跳过启动。DMG 安装包保留在 `release/`，构建失败时不会替换已安装应用。
+`build.py` 需要 Python 3、Node.js、pnpm 和 Xcode 26+（原生分层图标通过 `actool` 编译），可从任意目录通过脚本路径运行（也可用 `python3 build.py`）。自动匹配本机 Apple Silicon / Intel 架构，使用本地 ad-hoc 签名（不公证），保留用户配置；加 `--no-launch` 可在安装后跳过启动。DMG 安装包保留在 `release/`，构建失败时不会替换已安装应用。
+
+应用图标采用白底绿色品牌标志，源文件为 `build/appicon.icon/`：macOS 26+ 使用系统原生的浅色、深色、透明与染色外观，旧版 macOS 使用生成的 ICNS；Windows 使用 `build/icon.png`。菜单栏使用无底板的黑色透明模板图，并提供 Retina `@2x`，随系统菜单栏自动着色。在 macOS 上执行 `node scripts/make-icons.mjs` 可从源文件重建 ICNS、PNG 和托盘资源；Windows 构建直接使用已入库资源。
 
 应用采用单实例运行：重复启动时新进程立即退出，并显示、还原和聚焦已有的登录窗或主窗；主窗隐藏到托盘后再次启动也会回到原窗口。
 
