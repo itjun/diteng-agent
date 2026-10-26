@@ -457,15 +457,13 @@ function createLoginWindow(): void {
     x: Math.round(workArea.x + (workArea.width - width) / 2),
     y: Math.round(workArea.y + (workArea.height - height) / 2),
     resizable: false,
-    // 登录窗只保留关闭按钮：macOS 隐藏整套原生红绿灯、页面自绘 ×（minimizable:false 只会禁用成灰点，不是消失）；
-    // Windows 去掉最小化/最大化后原生标题栏天然只剩 ×
+    // 登录窗不显示窗口按钮，使用页面四周留白与插画区拖拽。
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     show: false,
     title: 'diteng agent',
-    // 顶部留出页面拖拽区高度，与 App.module.css page padding-top 对应
-    ...(process.platform === 'darwin' && { titleBarStyle: 'hidden' as const }),
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const } : { frame: false }),
     backgroundColor: resolveIsDarkTheme(config) ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
     webPreferences: {
       // 安全基线：渲染层无 Node 能力，仅经 preload 暴露白名单 API
@@ -475,7 +473,7 @@ function createLoginWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
     },
   });
-  // macOS 隐藏原生红绿灯后由页面自绘 × 关闭按钮（app:close-login）
+  // macOS 隐藏原生红绿灯；其他平台使用无边框窗口。
   if (process.platform === 'darwin') loginWindow.setWindowButtonVisibility(false);
   const createdLoginWindow = loginWindow;
   createdLoginWindow.once('ready-to-show', () => { if (!createdLoginWindow.isDestroyed()) createdLoginWindow.show(); });
