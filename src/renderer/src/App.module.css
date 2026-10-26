@@ -41,6 +41,7 @@
   z-index: 15;
   height: var(--login-gutter);
   background: linear-gradient(125deg, var(--login-background-start), var(--login-background-end));
+  background-size: 100vw 100vh;
   -webkit-app-region: drag;
 }
 
