@@ -5,7 +5,7 @@ import { AppearanceSettings } from './AppearanceSettings';
 import styles from './Settings.module.css';
 import { NotificationSettings } from './NotificationSettings';
 import { SettingRow } from './SettingRow';
-import { version as APP_VERSION } from '../../../package.json';
+import { UpdateSettings } from './UpdateSettings';
 
 /** 设置分类：key 同时用于 data-testid=settings-nav-{key} */
 export type SettingsCategoryKey = 'account' | 'appearance' | 'connection' | 'notifications' | 'about';
@@ -191,19 +191,7 @@ export function SettingsPage({
       },
     ],
     notifications: [],
-    about: [
-      {
-        key: 'version',
-        title: '版本',
-        control: { kind: 'value', text: APP_VERSION },
-      },
-      {
-        key: 'update',
-        title: '软件更新',
-        desc: '当前安装包未签名，更新通道建设中',
-        control: { kind: 'disabledButton', label: '检查更新' },
-      },
-    ],
+    about: [],
   };
 
   return (
@@ -244,6 +232,7 @@ export function SettingsPage({
             </>}
             {activeCategory === 'appearance' && <AppearanceSettings config={config} onConfigChange={setConfig} />}
             {activeCategory === 'notifications' && <NotificationSettings state={messageState} stateError={messageError} onMessages={onMessages} />}
+            {activeCategory === 'about' && <UpdateSettings config={config} onConfigChange={setConfig} />}
             <SettingRows rows={rowsByCategory[activeCategory]} />
           </div>
         </div>

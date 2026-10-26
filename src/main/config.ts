@@ -47,7 +47,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, autoCheckUpdates: true, autoDownloadUpdates: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -171,6 +171,8 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
     autoLogin,
     systemNotifications: typeof input?.systemNotifications === 'boolean' ? input.systemNotifications : true,
     importantPopups: typeof input?.importantPopups === 'boolean' ? input.importantPopups : true,
+    autoCheckUpdates: typeof input?.autoCheckUpdates === 'boolean' ? input.autoCheckUpdates : true,
+    autoDownloadUpdates: typeof input?.autoDownloadUpdates === 'boolean' ? input.autoDownloadUpdates : true,
     // 旧凭据只归属于原服务器；保留历史以便装回对应环境时选择，绝不迁移到新地址。
     savedAccounts: normalizeSavedAccounts(input?.savedAccounts, { serverBase: storedServerBase, savedLoginId, savedPassword }),
   };
@@ -237,6 +239,8 @@ export function updateConfig(patch: AppConfigPatch): StoredAppConfig {
   if (typeof patch.autoLogin === 'boolean') config.autoLogin = patch.autoLogin;
   if (typeof patch.systemNotifications === 'boolean') config.systemNotifications = patch.systemNotifications;
   if (typeof patch.importantPopups === 'boolean') config.importantPopups = patch.importantPopups;
+  if (typeof patch.autoCheckUpdates === 'boolean') config.autoCheckUpdates = patch.autoCheckUpdates;
+  if (typeof patch.autoDownloadUpdates === 'boolean') config.autoDownloadUpdates = patch.autoDownloadUpdates;
   writeToDisk(config);
   return config;
 }

@@ -9,10 +9,12 @@ import '../theme/brand-font.css';
 import './global.css';
 import { App } from './App';
 import { ContextMenu } from './ContextMenu';
+import { UpdateNotice } from './UpdateSettings';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
     <ContextMenu />
+    {!window.location.hash.startsWith('#/notify-popup') && <UpdateNotice />}
   </React.StrictMode>,
 );

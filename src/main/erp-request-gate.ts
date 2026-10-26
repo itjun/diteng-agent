@@ -12,6 +12,7 @@ export interface ErpRequestGateHooks {
   getOwner(): WebContents | null;
   switchTo(target: CorpSwitchTarget): Promise<boolean>;
   verifyNavigation(target: CorpSwitchTarget, token: string): Promise<boolean>;
+  isUpdateRequired?(): boolean;
 }
 
 /** 最终安全边界在请求前；兼容补丁仅禁止旧网页广播抢先关闭其它标签。 */
@@ -82,6 +83,7 @@ export class ErpRequestGate {
     request.onBeforeRequest((details, callback) => {
       const contents = details.webContentsId ? webContents.fromId(details.webContentsId) : null;
       if (!contents || !this.isTrusted(contents)) { callback({ cancel: false }); return; }
+      if (this.hooks.isUpdateRequired?.()) { callback({ cancel: true }); return; }
       let isAnswered = false;
       const timer = setTimeout(() => answer({ cancel: true }), 46_000);
       const answer = (response: Electron.CallbackResponse) => {

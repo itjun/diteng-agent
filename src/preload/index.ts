@@ -7,6 +7,7 @@ import type {
   ShortcutAction,
   TabsOpenRequestPayload,
   ThemeState,
+  UpdateState,
 } from '../shared/types';
 import type { DitengApi } from '../shared/types';
 
@@ -16,6 +17,15 @@ import type { DitengApi } from '../shared/types';
 const initialThemeState = ipcRenderer.sendSync('theme:get-sync') as ThemeState;
 
 const diteng: DitengApi = {
+  getUpdateState: () => ipcRenderer.invoke('update:state'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateChanged: listener => {
+    const handler = (_event: Electron.IpcRendererEvent, state: UpdateState) => listener(state);
+    ipcRenderer.on('update:changed', handler);
+    return () => ipcRenderer.removeListener('update:changed', handler);
+  },
   onContextMenuChanged: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, request: ContextMenuRequest | null) => listener(request);
     ipcRenderer.on('context-menu:changed', handler);

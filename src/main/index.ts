@@ -15,6 +15,10 @@ import {
   systemPreferences,
 } from 'electron';
 import { join } from 'node:path';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { autoUpdater } from 'electron-updater';
+import { UpdateService } from './update-service';
+import { BUILD_SERVER_BASE } from './build-environment';
 import {
   clearAutoLoginCredential,
   getConfig,
@@ -83,8 +87,8 @@ let mainWindow: BrowserWindow | null = null;
 let pendingEntry: { url: string; corpNo: string } | null = null;
 // 托盘退出（托盘菜单/Dock 退出）时置位，主窗 close 拦截据此放行真正关闭
 let isQuitting = false;
+let isUpdateQuitRequested = false;
 let isRestartRequested = false;
-let isCheckingForUpdates = false;
 // 反馈标注编辑器打开状态：由主窗壳经 feedback:editor-active 同步，打开期间主窗接管 Esc/⌘Z/⇧⌘Z/⌘W
 let isFeedbackEditorActive = false;
 let isLoggingOut = false;
@@ -308,6 +312,7 @@ const corpSwitch = new CorpSwitchCoordinator({
 });
 
 const requestGate = new ErpRequestGate({ coordinator: corpSwitch, getSession, getCorps: getCorpList,
+  isUpdateRequired: () => updateService.getState().isRequired,
   aiBase: currentAiBase, getOwner: () => mainWindow?.webContents || null, switchTo: switchCorp,
   verifyNavigation: async (target, token) => {
     const ticket = await corpSwitch.begin(target);
@@ -354,6 +359,42 @@ const importantNotifier = new ImportantNotifier({
   onDismiss: (uid) => mqttService.dismiss(uid),
 });
 
+const updateService = new UpdateService({
+  currentVersion: app.getVersion(),
+  disabledReason: !app.isPackaged ? '开发运行不检查在线更新' : BUILD_SERVER_BASE !== 'https://m.cdcp.site' ? '开发环境安装包不接收正式版更新' : '',
+  updater: autoUpdater,
+  readPreferences: getConfig,
+  readPolicy: () => {
+    const file = join(app.getPath('userData'), 'update-policy-cache.json');
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  },
+  savePolicy: policy => {
+    const file = join(app.getPath('userData'), 'update-policy-cache.json');
+    writeFileSync(file + '.tmp', JSON.stringify(policy), { mode: 0o600 });
+    renameSync(file + '.tmp', file);
+  },
+  onChanged: state => {
+    if (isUpdateQuitRequested && state.status === 'error') {
+      isUpdateQuitRequested = false;
+      isQuitting = false;
+    }
+    for (const window of [loginWindow, mainWindow]) {
+      if (window && !window.isDestroyed()) window.webContents.send('update:changed', state);
+    }
+  },
+  prepareInstall: async () => {
+    if (corpSwitch.getActive()) return false;
+    const result = await dialog.showMessageBox({ type: 'question', title: '安装更新',
+      message: '保存工作后重启并安装更新？', detail: '应用将关闭所有页面，安装完成后重新启动。',
+      buttons: ['重启并安装', '取消'], defaultId: 1, cancelId: 1, noLink: true });
+    if (result.response !== 0 || corpSwitch.getActive()) return false;
+    // quitAndInstall 先关窗口后触发 before-quit，提前放行托盘关闭拦截。
+    isQuitting = true;
+    isUpdateQuitRequested = true;
+    return true;
+  },
+});
+
 const trayService = new TrayService({
   showMainWindow: focusMainWindow,
   restartApp: () => {
@@ -361,20 +402,8 @@ const trayService = new TrayService({
     app.quit();
   },
   checkForUpdates: () => {
-    if (isCheckingForUpdates) return;
-    isCheckingForUpdates = true;
-    void dialog.showMessageBox({
-      type: 'info',
-      title: '检查更新',
-      message: `当前版本：${app.getVersion()}`,
-      detail: '更新通道建设中，暂时无法在线检查更新。请使用新版安装包更新应用。',
-      buttons: ['知道了'],
-      noLink: true,
-    }).catch((error: unknown) => {
-      console.error('[update] 无法显示更新提示', error);
-    }).finally(() => {
-      isCheckingForUpdates = false;
-    });
+    focusExistingWindow();
+    void updateService.check(true);
   },
   quitApp: () => app.quit(),
 });
@@ -1010,6 +1039,20 @@ async function copyFeedbackImage(source: unknown): Promise<FeedbackCopyResult> {
 }
 
 function registerIpcHandlers(): void {
+  const trustedUpdateSender = (event: Electron.IpcMainInvokeEvent) =>
+    (event.sender === loginWindow?.webContents || event.sender === mainWindow?.webContents)
+    && event.senderFrame === event.sender.mainFrame && isShellUrl(event.sender.getURL());
+  for (const [channel, action] of [
+    ['update:state', () => updateService.getState()],
+    ['update:check', () => updateService.check(true)],
+    ['update:download', () => updateService.download()],
+    ['update:install', () => updateService.install()],
+  ] as const) {
+    ipcMain.handle(channel, event => {
+      if (!trustedUpdateSender(event)) throw new Error('仅应用窗口可操作更新');
+      return action();
+    });
+  }
   registerContextMenuIpc(isShellUrl);
   ipcMain.handle('config:get', () => publicConfig());
 
@@ -1035,12 +1078,14 @@ function registerIpcHandlers(): void {
     applyWindowTheme();
     broadcastThemeState();
     importantNotifier.setEnabled(getConfig().importantPopups);
+    if ((patch as AppConfigPatch | null)?.autoCheckUpdates === true) void updateService.check();
     return publicConfig();
   });
 
   ipcMain.handle('auth:login', async (event, request: unknown) => {
     if (event.sender !== loginWindow?.webContents || !isShellUrl(event.sender.getURL())) return invalid('仅登录窗口可执行认证');
     if (getSession()) return invalid('当前已经登录');
+    if (!(await updateService.isCompatible())) return invalid('当前版本过低，请先更新客户端');
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
     const password = readString((request as { password?: unknown } | null)?.password);
     // 设备验证登录（-8 后）携带 6 位短信验证码，同接口完成验证并登录
@@ -1055,6 +1100,7 @@ function registerIpcHandlers(): void {
       password,
       verifyCode || undefined,
     );
+    if (updateService.getState().isRequired) return invalid('当前版本过低，请先更新客户端');
     if (result.ok) {
       // 「记住密码」按本次登录勾选记录历史账号并保存/清除密文；历史账号始终记录（供下拉选择与管理）。
       // 无条件执行：竞态下自动登录可能先成功并关掉登录窗，迟到的手动登录结果送不回渲染层，
@@ -1073,6 +1119,7 @@ function registerIpcHandlers(): void {
   // 发送登录短信验证码（SvrUserLogin.getToken verifyCode 指令；服务端 5 分钟冷却）
   ipcMain.handle('auth:login-send-code', async (event, request: unknown) => {
     if (event.sender !== loginWindow?.webContents || !isShellUrl(event.sender.getURL())) return invalid('仅登录窗口可发送验证码');
+    if (!(await updateService.isCompatible())) return invalid('当前版本过低，请先更新客户端');
     const loginId = readString((request as { loginId?: unknown } | null)?.loginId).trim();
     const password = readString((request as { password?: unknown } | null)?.password);
     if (!loginId || !password) return invalid('账号和密码不能为空');
@@ -1088,6 +1135,7 @@ function registerIpcHandlers(): void {
   // 自动登录：config 保存的账号 + safeStorage 密文密码走 SvrUserLogin.getToken，成功复用 keepSession 开窗
   ipcMain.handle('auth:auto-login', async (event) => {
     if (event.sender !== loginWindow?.webContents) return invalid('仅登录窗口可执行认证');
+    if (!(await updateService.isCompatible())) return invalid('当前版本过低，请先更新客户端');
     if (getSession()) return invalid('当前已经登录');
     const config = getConfig();
     if (!config.autoLogin) {
@@ -1110,6 +1158,7 @@ function registerIpcHandlers(): void {
       config.savedLoginId,
       savedPlain,
     );
+    if (updateService.getState().isRequired) return invalid('当前版本过低，请先更新客户端');
     // 竞态守卫：等待期间用户可能已手动登录成功（会话已建立），迟到的成功忽略，避免开出第二扇主窗
     if (result.ok) {
       // 自动登录成功即刷最近登录时间，保证下次启动/下拉顺序仍以最近使用的账号优先；失败不影响登录
@@ -1280,6 +1329,7 @@ function registerTabsIpcHandlers(): void {
    */
   ipcMain.handle('tabs:resolve', async (event, request: unknown) => {
     if (event.sender !== mainWindow?.webContents) return invalid('无权打开页面');
+    if (updateService.getState().isRequired) return invalid('当前版本过低，请先更新客户端');
     if (corpSwitch.isBlocked()) return invalid('正在切换或核验账套，请稍后重试');
     const typed = (request ?? {}) as TabsResolveRequest;
     const session = getSession();
@@ -1337,6 +1387,7 @@ app.whenReady().then(() => {
   applyNativeTheme(getConfig());
   requestGate.install();
   registerIpcHandlers();
+  updateService.start();
   nativeTheme.on('updated', () => {
     applyWindowTheme();
     broadcastThemeState();
@@ -1413,6 +1464,7 @@ app.on('before-quit', (event) => {
     app.relaunch();
   }
   isQuitting = true;
+  updateService.stop();
   corpSwitch.reset();
   requestGate.reset();
   mqttService.stop('quit');

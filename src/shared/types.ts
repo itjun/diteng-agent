@@ -54,6 +54,8 @@ export interface AppConfig {
   /** 新客户端独立的系统通知与紧急置顶开关，不修改旧终端设置。 */
   systemNotifications: boolean;
   importantPopups: boolean;
+  autoCheckUpdates: boolean;
+  autoDownloadUpdates: boolean;
 }
 
 /** 主窗尺寸记录（只记宽高，不记位置） */
@@ -88,7 +90,7 @@ export interface DeviceInfo {
  * 不在渲染层可写范围内；serverBase 由构建确定，machineCode/windowBounds 仅主进程维护。
  */
 export type AppConfigPatch = Partial<
-  Pick<AppConfig, 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups'>
+  Pick<AppConfig, 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups' | 'autoCheckUpdates' | 'autoDownloadUpdates'>
 >;
 
 /**
@@ -356,7 +358,24 @@ export interface ContextMenuRequest {
   items: ContextMenuItem[];
 }
 
+export interface UpdateState {
+  status: 'disabled' | 'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error';
+  currentVersion: string;
+  latestVersion: string;
+  minimumVersion: string;
+  isRequired: boolean;
+  progress: number;
+  checkedAt: number | null;
+  error: string;
+  isManual: boolean;
+}
+
 export interface DitengApi {
+  getUpdateState(): Promise<UpdateState>;
+  checkForUpdates(): Promise<UpdateState>;
+  downloadUpdate(): Promise<UpdateState>;
+  installUpdate(): Promise<UpdateState>;
+  onUpdateChanged(listener: (state: UpdateState) => void): () => void;
   onContextMenuChanged(listener: (request: ContextMenuRequest | null) => void): () => void;
   closeContextMenu(requestId: number, isRestoreFocus?: boolean): void;
   runContextMenuAction(requestId: number, action: ContextMenuAction): void;

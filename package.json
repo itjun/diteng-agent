@@ -13,26 +13,30 @@
     "dist:mac": "pnpm build && electron-builder --mac --arm64",
     "dist:win": "pnpm build && electron-builder --win --x64",
     "dist:mac:dev": "pnpm build:dev && electron-builder --mac --arm64",
-    "dist:win:dev": "pnpm build:dev && electron-builder --win --x64"
+    "dist:win:dev": "pnpm build:dev && electron-builder --win --x64",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@radix-ui/react-icons": "^1.3.2",
+    "electron-updater": "^6.8.9",
     "mqtt": "^5.16.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "semver": "^7.8.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.1",
+    "@types/semver": "^7.8.0",
     "@vitejs/plugin-react": "^5.2.0",
     "concurrently": "^10.0.6",
     "electron": "^44.9.3",
     "electron-builder": "^26.15.3",
-    "electron-updater": "^6.8.9",
     "playwright-core": "^1.64.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
-    "wait-on": "^9.5.1"
+    "wait-on": "^9.5.1",
+    "yaml": "^2.9.1"
   }
 }
