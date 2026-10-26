@@ -5,7 +5,9 @@ import { join } from 'node:path';
 export interface TrayServiceHooks {
   /** 托盘"显示主窗"/点击托盘图标：还原并聚焦主窗 */
   showMainWindow: () => void;
-  /** 托盘"退出"：真正退出应用 */
+  restartApp: () => void;
+  checkForUpdates: () => void;
+  /** 托盘"关闭应用"：真正退出应用 */
   quitApp: () => void;
 }
 
@@ -77,7 +79,10 @@ export class TrayService {
     const menu = Menu.buildFromTemplate([
       { label: '显示主窗', click: () => this.hooks.showMainWindow() },
       { type: 'separator' },
-      { label: '退出', click: () => this.hooks.quitApp() },
+      { label: '重新启动', click: () => this.hooks.restartApp() },
+      { label: '检查更新', click: () => this.hooks.checkForUpdates() },
+      { type: 'separator' },
+      { label: '关闭应用', click: () => this.hooks.quitApp() },
     ]);
     this.tray.setContextMenu(menu);
   }

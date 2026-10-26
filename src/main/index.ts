@@ -82,6 +82,8 @@ let mainWindow: BrowserWindow | null = null;
 let pendingEntry: { url: string; corpNo: string } | null = null;
 // 托盘退出（托盘菜单/Dock 退出）时置位，主窗 close 拦截据此放行真正关闭
 let isQuitting = false;
+let isRestartRequested = false;
+let isCheckingForUpdates = false;
 // 反馈标注编辑器打开状态：由主窗壳经 feedback:editor-active 同步，打开期间主窗接管 Esc/⌘Z/⇧⌘Z/⌘W
 let isFeedbackEditorActive = false;
 let isLoggingOut = false;
@@ -388,6 +390,26 @@ const importantNotifier = new ImportantNotifier({
 
 const trayService = new TrayService({
   showMainWindow: focusMainWindow,
+  restartApp: () => {
+    isRestartRequested = true;
+    app.quit();
+  },
+  checkForUpdates: () => {
+    if (isCheckingForUpdates) return;
+    isCheckingForUpdates = true;
+    void dialog.showMessageBox({
+      type: 'info',
+      title: '检查更新',
+      message: `当前版本：${app.getVersion()}`,
+      detail: '更新通道建设中，暂时无法在线检查更新。请使用新版安装包更新应用。',
+      buttons: ['知道了'],
+      noLink: true,
+    }).catch((error: unknown) => {
+      console.error('[update] 无法显示更新提示', error);
+    }).finally(() => {
+      isCheckingForUpdates = false;
+    });
+  },
   quitApp: () => app.quit(),
 });
 
@@ -631,7 +653,7 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   });
   mainWindow.on('hide', persistBounds);
   mainWindow.on('close', persistBounds);
-  // macOS/Windows 惯例：托盘常驻期间关窗仅隐藏，托盘"退出"才真正退出；
+  // macOS/Windows 惯例：托盘常驻期间关窗仅隐藏，托盘"关闭应用"才真正退出；
   // 未登录（无托盘）时保持原行为：关窗即退出
   mainWindow.on('close', (event) => {
     if (!isQuitting && trayService.isActive()) {
@@ -1417,7 +1439,12 @@ app.on('web-contents-created', (_event, contents) => {
 
 // 真正退出前统一收尾：断开 MQTT、关置顶弹窗、销毁托盘
 app.on('before-quit', (event) => {
-  if (corpSwitch.getActive()) { event.preventDefault(); reportSwitchError('正在核验账套切换，请稍候再退出'); return; }
+  if (corpSwitch.getActive()) { isRestartRequested = false; event.preventDefault(); reportSwitchError('正在核验账套切换，请稍候再退出'); return; }
+  // 退出获准后才安排重启，避免被账套切换拦下时留下延迟重启请求。
+  if (isRestartRequested) {
+    isRestartRequested = false;
+    app.relaunch();
+  }
   isQuitting = true;
   corpSwitch.reset();
   requestGate.reset();
