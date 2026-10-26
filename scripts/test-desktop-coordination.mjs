@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { EventEmitter } from 'node:events';
 import ts from 'typescript';
 
@@ -24,10 +25,12 @@ const base = () => ({ serverBase: 'https://erp.example.test', token: 'test-sid',
 const target = { corpNo: '100002', userCode: 'a2', sourceWebContentsId: 42 };
 
 test('打包壳允许准确入口hash路由，拒绝其他本地文件或远程伪造', () => {
-  assert.equal(isShellEntryUrl('file:///tmp/app/index.html#/main', '/tmp/app/index.html'), true);
-  assert.equal(isShellEntryUrl('file:///tmp/app/index.html#/notify-popup', '/tmp/app/index.html'), true);
-  assert.equal(isShellEntryUrl('file:///tmp/other/index.html#/main', '/tmp/app/index.html'), false);
-  assert.equal(isShellEntryUrl('https://evil.test/index.html#/main', '/tmp/app/index.html'), false);
+  const entry = join(tmpdir(), 'app', 'index.html');
+  const url = pathToFileURL(entry).href;
+  assert.equal(isShellEntryUrl(`${url}#/main`, entry), true);
+  assert.equal(isShellEntryUrl(`${url}#/notify-popup`, entry), true);
+  assert.equal(isShellEntryUrl(`${pathToFileURL(join(tmpdir(), 'other', 'index.html')).href}#/main`, entry), false);
+  assert.equal(isShellEntryUrl('https://evil.test/index.html#/main', entry), false);
 });
 
 const deferred = () => { let resolve; const promise = new Promise((value) => { resolve = value; }); return { promise, resolve }; };

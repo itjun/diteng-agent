@@ -11,7 +11,7 @@ import { validatePolicy, verifyArtifacts } from './release-artifacts.mjs';
 function fixture(t, platform) {
   const directory = mkdtempSync(join(tmpdir(), 'diteng-release-test-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const suffixes = { darwin: ['mac-arm64.dmg', 'mac-x64.dmg', 'mac-arm64.zip', 'mac-x64.zip'], win32: ['win-x64.exe'], linux: ['linux-x64.deb', 'linux-arm64.deb'] }[platform];
+  const suffixes = { darwin: ['mac-arm64.dmg', 'mac-x64.dmg', 'mac-arm64.zip', 'mac-x64.zip'], win32: ['win-x64.exe'], linux: ['linux-amd64.deb', 'linux-arm64.deb'] }[platform];
   const files = suffixes.map(suffix => {
     const name = `diteng-agent-0.3.0-${suffix}`, data = Buffer.from(`installer ${suffix}`);
     writeFileSync(join(directory, name), data);

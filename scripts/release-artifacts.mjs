@@ -30,7 +30,7 @@ export function verifyArtifacts(directory, version, minimumVersion, platform, is
       files.add(filename);
     }
   }
-  const suffixes = { darwin: ['mac-arm64.dmg', 'mac-x64.dmg', 'mac-arm64.zip', 'mac-x64.zip'], win32: ['win-x64.exe'], linux: ['linux-x64.deb', 'linux-arm64.deb'] }[platform];
+  const suffixes = { darwin: ['mac-arm64.dmg', 'mac-x64.dmg', 'mac-arm64.zip', 'mac-x64.zip'], win32: ['win-x64.exe'], linux: ['linux-amd64.deb', 'linux-arm64.deb'] }[platform];
   for (const suffix of suffixes) {
     const filename = readdirSync(directory).find(name => name.endsWith(suffix));
     if (!filename || !files.has(filename)) throw new Error(`缺少已校验的 ${suffix}`);
