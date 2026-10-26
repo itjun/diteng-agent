@@ -78,13 +78,12 @@ def stop_running():
 
 
 def install(app_bundle):
-    # 在同一卷暂存并校验，完成后再替换；不修改用户的登录信息和配置。
+    # 在同一卷暂存，完成后再替换；不修改用户的登录信息和配置。
     staging = Path(tempfile.mkdtemp(prefix=".diteng-agent-install-", dir=INSTALL_APP.parent))
     staged_app = staging / INSTALL_APP.name
     previous_app = staging / "previous.app"
     try:
         run("ditto", app_bundle, staged_app)
-        run("codesign", "--verify", "--deep", "--strict", staged_app)
         # 构建期间用户可能重新打开应用，替换前再检查一次。
         stop_running()
         if INSTALL_APP.exists():
@@ -116,7 +115,7 @@ def main():
     architecture = {"arm64": "arm64", "x86_64": "x64"}.get(platform.machine())
     if not architecture:
         parser.error(f"不支持的处理器架构：{platform.machine()}")
-    for tool in ("node", "pnpm", "ps", "ditto", "codesign", "open", "xcrun"):
+    for tool in ("node", "pnpm", "ps", "ditto", "open", "xcrun"):
         if shutil.which(tool) is None:
             parser.error(f"未找到 {tool}，请先安装依赖并加入 PATH")
     run("xcrun", "--find", "clang")
@@ -141,7 +140,7 @@ def main():
     env["DEVELOPER_DIR"] = str(actool.parents[2])
     run(
         "pnpm", "exec", "electron-builder", "--mac", f"--{architecture}",
-        "--config.mac.identity=-", "--publish", "never", env=env,
+        "--publish", "never", env=env,
     )
     output_directory = "mac-arm64" if architecture == "arm64" else "mac"
     app_bundle = PROJECT_ROOT / "release" / output_directory / INSTALL_APP.name

@@ -13,6 +13,10 @@ files:
   - package.json
 asar: true
 mac:
+  # 本机使用：不执行应用签名、公证，也不启用依赖签名的 Hardened Runtime。
+  identity: null
+  hardenedRuntime: false
+  notarize: false
   target:
     - target: dmg
       arch:
