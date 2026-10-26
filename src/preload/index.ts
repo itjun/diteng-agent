@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  ContextMenuRequest,
   MqttState,
   CorpSwitchCommitted,
   SessionSummary,
@@ -15,6 +16,13 @@ import type { DitengApi } from '../shared/types';
 const initialThemeState = ipcRenderer.sendSync('theme:get-sync') as ThemeState;
 
 const diteng: DitengApi = {
+  onContextMenuChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: ContextMenuRequest | null) => listener(request);
+    ipcRenderer.on('context-menu:changed', handler);
+    return () => ipcRenderer.removeListener('context-menu:changed', handler);
+  },
+  closeContextMenu: (requestId, isRestoreFocus) => ipcRenderer.send('context-menu:close', requestId, isRestoreFocus),
+  runContextMenuAction: (requestId, action) => ipcRenderer.send('context-menu:action', requestId, action),
   initialThemeState,
   tabsSetActiveGuest: (id) => ipcRenderer.send('tabs:active-guest', id),
   retryCorpVerification: () => ipcRenderer.invoke('corp-switch:retry'),

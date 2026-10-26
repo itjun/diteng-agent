@@ -345,7 +345,21 @@ export interface CorpSwitchCommitted {
 
 export interface NotificationPopupContent { title: string; body: string; corpName: string; pendingCount: number; }
 
+export type ContextMenuAction = 'copy-link' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reload';
+export type ContextMenuItem = { action: 'separator' } | { action: ContextMenuAction; label: string; isEnabled: boolean };
+export interface ContextMenuRequest {
+  id: number;
+  sourceId: number;
+  isGuest: boolean;
+  x: number;
+  y: number;
+  items: ContextMenuItem[];
+}
+
 export interface DitengApi {
+  onContextMenuChanged(listener: (request: ContextMenuRequest | null) => void): () => void;
+  closeContextMenu(requestId: number, isRestoreFocus?: boolean): void;
+  runContextMenuAction(requestId: number, action: ContextMenuAction): void;
   tabsSetActiveGuest(id: number | null): void;
   onCorpSwitchCommitted(listener: (payload: CorpSwitchCommitted) => void): () => void;
   retryCorpVerification(): Promise<{ ok: boolean; message?: string }>;

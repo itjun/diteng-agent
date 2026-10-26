@@ -1076,6 +1076,10 @@ function ContentToolbar({
   const safeUrl = shareablePageUrl(url);
   const hasUrl = Boolean(safeUrl);
 
+  useEffect(() => window.diteng.onContextMenuChanged(request => {
+    if (request) setIsMenuOpen(false);
+  }), []);
+
   const dismissMenu = useCallback(() => {
     setIsMenuOpen(false);
     menuButtonRef.current?.focus();

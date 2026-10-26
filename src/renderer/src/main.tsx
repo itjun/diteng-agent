@@ -8,9 +8,11 @@ import '../theme/scrollbar.css';
 import '../theme/brand-font.css';
 import './global.css';
 import { App } from './App';
+import { ContextMenu } from './ContextMenu';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
+    <ContextMenu />
   </React.StrictMode>,
 );

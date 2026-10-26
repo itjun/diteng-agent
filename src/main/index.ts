@@ -42,6 +42,7 @@ import { CorpSwitchCoordinator, type CorpSwitchTarget } from './corp-switch';
 import { ErpRequestGate } from './erp-request-gate';
 import { isShellEntryUrl } from './shell-origin';
 import { getDeviceInfo, getPublicIp } from './device-info';
+import { installContextMenu, isContextMenuOpen, registerContextMenuIpc } from './context-menu';
 import type {
   AppConfig,
   AppConfigPatch,
@@ -136,6 +137,8 @@ function sendToShell(channel: string, payload: unknown): void {
  */
 function handleAppShortcut(event: Electron.Event, input: Electron.Input, contents: Electron.WebContents): void {
   if (input.type !== 'keyDown' || input.isAutoRepeat || input.isComposing) return;
+  // 自定义菜单先处理 Esc，避免关闭右键菜单时连带退出截图编辑器。
+  if (input.key === 'Escape' && isContextMenuOpen(contents)) return;
   const isMac = process.platform === 'darwin';
   const isModifierPressed = isMac ? input.meta : input.control;
   const key = input.key.toLowerCase();
@@ -233,43 +236,6 @@ app.on('browser-window-created', (_event, window) => {
     handleAppShortcut(event, input, window.webContents),
   );
 });
-
-/**
- * 右键菜单：应用已去掉默认菜单，把常用的文本操作与页面刷新放到右键菜单里。
- * 主窗壳、登录窗、webview guest 都会挂载；「刷新」只对页面（webview）提供，避免误刷外壳。
- */
-function installContextMenu(contents: Electron.WebContents): void {
-  contents.on('context-menu', (_event, params) => {
-    const items: Electron.MenuItemConstructorOptions[] = [];
-    const isEditable = params.isEditable;
-    const hasSelection = params.selectionText.trim().length > 0;
-
-    if (params.linkURL) {
-      items.push({
-        label: '复制链接地址',
-        click: () => {
-          void clipboard.writeText(params.linkURL);
-        },
-      });
-      items.push({ type: 'separator' });
-    }
-    if (isEditable) {
-      items.push({ label: '剪切', enabled: hasSelection, click: () => contents.cut() });
-      items.push({ label: '复制', enabled: hasSelection, click: () => contents.copy() });
-      items.push({ label: '粘贴', click: () => contents.paste() });
-      items.push({ label: '全选', click: () => contents.selectAll() });
-    } else {
-      items.push({ label: '复制', enabled: hasSelection, click: () => contents.copy() });
-      items.push({ label: '全选', click: () => contents.selectAll() });
-    }
-    if (contents.getType() === 'webview') {
-      items.push({ type: 'separator' });
-      items.push({ label: '刷新', click: () => contents.reload() });
-    }
-    if (items.length === 0) return;
-    Menu.buildFromTemplate(items).popup();
-  });
-}
 
 /**
  * 打开消息中心标签：FrmMyMessage（消息管理，execute 重定向到 IM 前端并自动带会话凭证）。
@@ -1044,6 +1010,7 @@ async function copyFeedbackImage(source: unknown): Promise<FeedbackCopyResult> {
 }
 
 function registerIpcHandlers(): void {
+  registerContextMenuIpc(isShellUrl);
   ipcMain.handle('config:get', () => publicConfig());
 
   ipcMain.handle('device:info', (event) => {
@@ -1388,7 +1355,7 @@ app.whenReady().then(() => {
  */
 app.on('web-contents-created', (_event, contents) => {
   // 右键菜单对所有 webContents 生效（外壳/登录窗提供文本操作，webview 额外提供刷新）
-  installContextMenu(contents);
+  installContextMenu(contents, isShellUrl);
   if (contents.getType() !== 'webview') return;
   // 应用快捷键：焦点在 ERP 页面内时同样接管（⌘/Ctrl+B、⌘/Ctrl+, 与 macOS 编辑快捷键）
   contents.on('before-input-event', (event, input) => handleAppShortcut(event, input, contents));
