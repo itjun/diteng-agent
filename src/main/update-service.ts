@@ -84,7 +84,7 @@ export class UpdateService {
     if (this.hooks.disabledReason) return Promise.resolve(this.getState());
     if (this.operation) return this.operation;
     if (['downloading', 'downloaded', 'installing'].includes(this.state.status)) return Promise.resolve(this.getState());
-    this.change({ status: 'checking', error: '' });
+    this.change({ status: 'checking', error: '', isManual });
     this.operation = this.performCheck().finally(() => { this.operation = null; });
     return this.operation;
   }
@@ -108,6 +108,10 @@ export class UpdateService {
       }
       if (this.state.minimumVersion && lt(policy.version, this.state.minimumVersion)) throw new Error('更新源的版本低于已知最低版本');
       const isNewer = gt(policy.version, this.hooks.currentVersion);
+      if (isNewer && !result.isUpdateAvailable) {
+        this.change({ status: 'error', error: '新版本不适用于当前系统，请检查操作系统版本要求', checkedAt: Date.now() });
+        return this.getState();
+      }
       this.change({ status: isNewer ? 'available' : 'latest', checkedAt: Date.now(), progress: 0 });
       isDownload = isNewer && this.hooks.readPreferences().autoDownloadUpdates;
     } catch (error) {

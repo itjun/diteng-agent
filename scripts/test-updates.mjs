@@ -18,7 +18,7 @@ function fixture(options = {}) {
   let checks = 0, downloads = 0, installs = 0, confirmations = 0;
   let cached = options.cached;
   const preferences = { autoCheckUpdates: true, autoDownloadUpdates: false, ...options.preferences };
-  updater.checkForUpdates = async () => { checks++; return { updateInfo: options.info || policy() }; };
+  updater.checkForUpdates = async () => { checks++; return { updateInfo: options.info || policy(), isUpdateAvailable: true }; };
   updater.downloadUpdate = async () => { downloads++; return ['installer']; };
   updater.quitAndInstall = () => { installs++; };
   const states = [];
@@ -29,8 +29,7 @@ function fixture(options = {}) {
 }
 
 test('严格比较稳定版、预发布版本，拒绝非法与矛盾策略', () => {
-  for (const input of [null, {}, policy('0.3.0'), policy('bad', '0.2.4'), policy('0.3.0', '0.4.0')]) {
-    if (input?.version === '0.3.0' && input.minimumVersion === '0.2.4') continue;
+  for (const input of [null, {}, { version: '0.3.0' }, policy('bad', '0.2.4'), policy('0.3.0', '0.4.0')]) {
     assert.throws(() => parseUpdatePolicy(input));
   }
   assert.deepEqual(parseUpdatePolicy(policy('0.3.0-beta.1', '0.2.4')), policy('0.3.0-beta.1', '0.2.4'));
@@ -98,7 +97,7 @@ test('检查失败、无效策略与超时均可恢复重试，不清除已知�
   assert.equal(f.service.getState().status, 'error');
   f.updater.checkForUpdates = async () => ({ updateInfo: policy('0.3.0', 'invalid') });
   await f.service.check(); assert.equal(f.service.getState().status, 'error');
-  f.updater.checkForUpdates = async () => ({ updateInfo: policy() });
+  f.updater.checkForUpdates = async () => ({ updateInfo: policy(), isUpdateAvailable: true });
   await f.service.check(); assert.equal(f.service.getState().status, 'available');
 });
 
@@ -140,4 +139,18 @@ test('自动检查开关控制启动和周期，stop 释放定时器；开发构
   dev.service.start(); await dev.service.check();
   assert.equal(dev.counts().checks, 0);
   assert.equal(dev.service.getState().isRequired, false);
+});
+
+test('自动检查不会沿用上次手动提示；系统不兼容或灰度未放行时不提供下载', async () => {
+  const f = fixture({ preferences: { autoDownloadUpdates: true } });
+  await f.service.check(true);
+  f.preferences.autoDownloadUpdates = false;
+  await f.service.check();
+  assert.equal(f.service.getState().isManual, false);
+  f.updater.checkForUpdates = async () => ({ updateInfo: policy(), isUpdateAvailable: false });
+  await f.service.check();
+  assert.equal(f.service.getState().status, 'error');
+  assert.match(f.service.getState().error, /系统/);
+  await f.service.download();
+  assert.equal(f.counts().downloads, 0);
 });
