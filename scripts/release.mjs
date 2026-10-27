@@ -27,10 +27,6 @@ if (!isDryRun) {
   if (run('git', ['rev-parse', 'HEAD'], true) !== run('git', ['rev-parse', 'origin/main'], true)) throw new Error('main 必须先与远程同步');
   const tags = run('git', ['tag', '--list', `v${version}`], true);
   if (tags) throw new Error('版本标签已存在');
-  const secrets = JSON.parse(run('gh', ['secret', 'list', '--json', 'name'], true)).map(secret => secret.name);
-  const required = ['MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD', 'MAC_CSC_NAME', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'];
-  const missing = required.filter(name => !secrets.includes(name));
-  if (missing.length) throw new Error(`正式发布前请配置仓库 Secrets：${missing.join(', ')}`);
   run('pnpm', ['typecheck']);
   run('pnpm', ['test']);
   pkg.version = version;

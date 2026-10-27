@@ -83,9 +83,9 @@ pnpm release patch                 # 检查 → 提升版本 → 原子提交与
 pnpm release 0.3.0                 # 也可指定稳定版本
 ```
 
-正式发布前在 GitHub 仓库配置 `MAC_CSC_LINK`（Developer ID Application 证书）、`MAC_CSC_KEY_PASSWORD`、`MAC_CSC_NAME`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`。凭据只放 Secrets，不写入客户端。macOS 正式包必须签名、公证后才能自动安装；本机 `build.py` 继续使用免签配置。已有免签 macOS 安装首次迁移应手动安装正式签名版。Linux deb 安装更新可能请求系统管理员授权。
+当前 macOS 安装包未使用 Apple 开发者证书签名，也未公证；首次打开可能受到 macOS 安全设置拦截。macOS 自动更新的安装步骤依赖系统签名校验，当前免签版本应下载 DMG 手动安装，不保证自动安装可用。Linux deb 安装更新可能请求系统管理员授权。
 
-`.github/workflows/release.yml` 在 main/PR/手动运行时构建测试包，在 `v版本号` 标签时正式发布。macOS 生成 arm64/x64 DMG 与更新必需的 ZIP，Windows 生成 x64 NSIS，Linux 生成 x64/arm64 deb。每个平台在原生 runner 上测试更新链路和当前架构安装包启动；Linux 还用 apt 安装 x64 deb。各平台更新清单、架构完整性与文件 SHA-512 全部校验成功后，才创建并公开完整 GitHub Release。测试运行不公开版本；签名缺失会在创建版本提交前报错。若 CI 失败，修复后重跑失败任务；不要移动已公开的版本标签。跨架构包有构建和清单验证，实际升级替换仍需目标系统验收。
+`.github/workflows/release.yml` 在 main/PR/手动运行时构建测试包，在 `v版本号` 标签时正式发布。macOS 生成 arm64/x64 DMG 与 ZIP，Windows 生成 x64 NSIS，Linux 生成 x64/arm64 deb。每个平台在原生 runner 上测试更新检查、下载和当前架构安装包启动，更新安装调用使用桩；Linux 还用 apt 安装 x64 deb。各平台更新清单、架构完整性与文件 SHA-512 全部校验成功后，才创建并公开完整 GitHub Release。测试运行不公开版本。若 CI 失败，修复后重跑失败任务；不要移动已公开的版本标签。跨架构包有构建和清单验证，实际升级替换仍需目标系统验收。
 
 ## 结构
 

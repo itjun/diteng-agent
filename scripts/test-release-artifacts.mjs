@@ -49,3 +49,10 @@ test('版本提升预演不修改 package.json，不创建提交或标签', () =
   assert.match(result.stdout, /macOS arm64\/x64.*Windows x64.*Linux deb/);
   assert.equal(readFileSync('package.json', 'utf8'), before);
 });
+test('正式发布使用免签名 macOS 配置，无需苹果证书', () => {
+  const env = { ...process.env, RELEASE_PUBLISH: 'true' };
+  for (const key of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'CSC_NAME', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) delete env[key];
+  const result = spawnSync(process.execPath, ['-e', "const c = require('./electron-builder.release.cjs').mac; process.stdout.write(JSON.stringify({ identity: c.identity, hardenedRuntime: c.hardenedRuntime, notarize: c.notarize }))"], { encoding: 'utf8', env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { identity: null, hardenedRuntime: false, notarize: false });
+});
