@@ -76,6 +76,12 @@
 
 /* 顶部与内容卡片中的工具栏对齐，按钮以外的空白可拖动窗口。 */
 .sidebarToolbar {
+  display: none;
+}
+
+/* 只有 macOS 需要在侧栏中为原生红绿灯预留空间。 */
+:global(html[data-platform='darwin']) .sidebarToolbar {
+  display: flex;
   height: 43px;
   padding: 5px 8px 0;
   background: transparent;
@@ -337,7 +343,19 @@
 /* Windows：titleBarOverlay 压整窗顶部一行（高 40，与主进程 WINDOWS_OVERLAY_FALLBACK_HEIGHT 一致），
    rail 与内容区统一下移；macOS 红绿灯由左栏工具栏的左侧 padding 让位 */
 .shellRailWin {
+  position: relative;
   padding-top: 40px;
+}
+
+/* 空出的系统标题栏可拖动窗口，右侧按钮由系统 overlay 接管。 */
+.shellRailWin::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  -webkit-app-region: drag;
 }
 
 .rail {
