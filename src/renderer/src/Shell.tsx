@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { DesktopIcon, DotsVerticalIcon, PlusIcon } from '@radix-ui/react-icons';
+import { DesktopIcon, DotsVerticalIcon, LayersIcon, PlusIcon } from '@radix-ui/react-icons';
 import type {
   FeedbackChatApp,
   SessionSummary,
@@ -636,8 +636,8 @@ export function Shell() {
                     {unreadCount > 0 && <span className={styles.unreadBadge} data-testid="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
                     {isMessageWarning && <i className={styles.messageWarning} data-testid="message-warning" />}
                   </button>
-                  <button type="button" className={styles.sidebarButton} data-testid="open-ai" title="AI 助手" aria-label="Chat · AI 助手" aria-pressed={activeShortcut === 'ai'} disabled={!session} onClick={openChat}>
-                    <ChatIcon /><span>Chat</span>
+                  <button type="button" className={styles.sidebarButton} data-testid="open-ai" title="AI 助手" aria-label="AI 助手" aria-pressed={activeShortcut === 'ai'} disabled={!session} onClick={openChat}>
+                    <ChatIcon /><span>AI 助手</span>
                   </button>
                 </div>
                 <div className={styles.railTabs} data-testid="rail-tabs" role="tablist" aria-label="标签页">
@@ -681,6 +681,9 @@ export function Shell() {
               <ContentToolbar
                 isRailCollapsed={isRailCollapsed}
                 onToggleRail={toggleRail}
+                tabs={tabs}
+                activeTabId={isWorkspaceVisible ? activeTabId : ''}
+                onActivateTab={activateTab}
                 url={isWorkspaceVisible ? activeTab?.url ?? '' : ''}
                 pageTitle={isWorkspaceVisible ? activeTab?.title ?? '' : '本机信息'}
                 canGoBack={!isWorkspaceVisible || Boolean(activeTab) && navigationState.canGoBack}
@@ -1012,6 +1015,76 @@ function ToolbarButton({
   );
 }
 
+/** 收起侧栏后仍能直接选择任一标签，列表与侧栏共用标题和顺序。 */
+function CollapsedTabMenu({ tabs, activeTabId, onActivateTab }: {
+  tabs: TabInfo[];
+  activeTabId: string;
+  onActivateTab: (id: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const dismiss = useCallback(() => {
+    setIsOpen(false);
+    buttonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    (menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ??
+      menuRef.current?.querySelector<HTMLButtonElement>('button'))?.focus();
+    const close = () => setIsOpen(false);
+    window.addEventListener('resize', close);
+    window.addEventListener('blur', close);
+    const unsubscribe = window.diteng.onContextMenuChanged(request => { if (request) close(); });
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('blur', close);
+      unsubscribe();
+    };
+  }, [isOpen]);
+
+  function toggle() {
+    if (isOpen) { dismiss(); return; }
+    const bounds = buttonRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setPosition({ top: bounds.bottom + 6, left: Math.max(8, Math.min(bounds.left, window.innerWidth - 296)) });
+    setIsOpen(true);
+  }
+
+  return <>
+    <button ref={buttonRef} type="button" className={`${styles.toolbarButton} ${styles.appMenuButton}`} data-testid="compact-tabs"
+      title="切换标签（Ctrl+Tab）" aria-label={`切换标签，${tabs.length} 个标签`} aria-haspopup="menu" aria-expanded={isOpen}
+      aria-controls={isOpen ? 'compact-tab-menu' : undefined} disabled={tabs.length === 0} onClick={toggle}
+      onKeyDown={(event) => {
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !isOpen) { event.preventDefault(); toggle(); }
+      }}>
+      <LayersIcon width={17} height={17} />
+    </button>
+    {isOpen && createPortal(<>
+      <div className={styles.appMenuBackdrop} data-testid="compact-tab-backdrop" onPointerDown={dismiss} onContextMenu={(event) => { event.preventDefault(); dismiss(); }} />
+      <div ref={menuRef} id="compact-tab-menu" role="menu" aria-label="切换标签" className={`${styles.appMenu} ${styles.compactTabMenu}`}
+        data-testid="compact-tab-menu" style={{ ...position, maxHeight: `calc(100vh - ${position.top + 8}px)` }} onKeyDown={(event) => {
+          if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); dismiss(); }
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault();
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[next]?.focus();
+          }
+        }}>
+        {tabs.map(tab => <button type="button" role="menuitemradio" aria-checked={tab.id === activeTabId} key={tab.id}
+          data-testid={`compact-tab-${tab.id}`} onClick={() => { dismiss(); onActivateTab(tab.id); }}>
+          <span title={tabLabel(tab, tabs)}>{tabLabel(tab, tabs)}</span>{tab.id === activeTabId && <CheckIcon />}
+        </button>)}
+      </div>
+    </>, document.body)}
+  </>;
+}
+
 /**
  * 右侧内容区工具栏：导航组紧贴地址栏左侧（Chrome 式）。
  * 展示页面名与域名；复制链接剥离会话参数，不修改真实导航地址。仅浏览页使用，设置页不渲染。
@@ -1019,6 +1092,9 @@ function ToolbarButton({
 function ContentToolbar({
   isRailCollapsed,
   onToggleRail,
+  tabs,
+  activeTabId,
+  onActivateTab,
   url,
   pageTitle,
   canGoBack,
@@ -1044,6 +1120,9 @@ function ContentToolbar({
 }: {
   isRailCollapsed: boolean;
   onToggleRail: () => void;
+  tabs: TabInfo[];
+  activeTabId: string;
+  onActivateTab: (id: string) => void;
   url: string;
   pageTitle: string;
   canGoBack: boolean;
@@ -1140,6 +1219,16 @@ function ContentToolbar({
       <ToolbarButton label={isRailCollapsed ? '展开侧栏' : '收起侧栏'} testId="sidebar-toggle" pressed={!isRailCollapsed} onClick={onToggleRail}>
         <SidebarToggleIcon />
       </ToolbarButton>
+      {isRailCollapsed && <>
+        <CollapsedTabMenu tabs={tabs} activeTabId={activeTabId} onActivateTab={onActivateTab} />
+        <button type="button" className={`${styles.toolbarButton} ${styles.compactMessages}`} data-testid="compact-messages"
+          title={`消息，${messageLabel}`} aria-label={`消息，${unreadCount >= 0 ? `${unreadCount} 条未读` : '未读数待同步'}，${messageLabel}`}
+          aria-pressed={isMessagesActive} disabled={isModuleDisabled} onClick={onMessages}>
+          <BellIcon />
+          {unreadCount > 0 && <span className={styles.unreadBadge} data-testid="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+          {isMessageWarning && <i className={styles.messageWarning} data-testid="message-warning" />}
+        </button>
+      </>}
       <div className={styles.toolbarNav}>
         <ToolbarButton label="后退" testId="nav-back" disabled={!canGoBack} onClick={onBack}>
           <BackIcon />
@@ -1174,8 +1263,6 @@ function ContentToolbar({
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (!isMenuOpen) toggleMenu(); }
         }}>
         <DotsVerticalIcon width={18} height={18} />
-        {isRailCollapsed && unreadCount > 0 ? <span className={styles.unreadBadge} data-testid="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
-        {isRailCollapsed && isMessageWarning ? <i className={styles.messageWarning} data-testid="message-warning" /> : null}
       </button>
       {isMenuOpen && createPortal(<>
         {/* 菜单挂到应用主题层，避免继承网页卡片按页面底色覆盖的文字和交互配色。 */}

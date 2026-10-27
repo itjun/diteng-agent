@@ -163,6 +163,9 @@
   opacity: 0.42;
 }
 
+.compactMessages { position: relative; }
+.compactMessages[aria-pressed='true'] { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); }
+
 /* Dia 式导航组：后退/前进/刷新紧邻完整网址。 */
 .toolbarNav {
   display: flex;
@@ -222,10 +225,10 @@
 /* 统一应用菜单：右上角三点入口，沿用网页卡片的明暗 token。 */
 .appMenuButton {
   position: relative;
-  z-index: 351;
 }
 
 .appMenuButton[aria-expanded='true'] {
+  z-index: 351;
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-primary);
 }
@@ -278,6 +281,7 @@
 .appMenu [role='separator'] { height: 1px; margin: 6px -6px; background: var(--dsw-alias-border-l2); }
 .appMenuShortcut { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .appMenuBadge { padding: 0 6px; border-radius: 8px; background: var(--dsw-alias-state-error-primary); color: #fff; font-size: 11px; line-height: 18px; }
+.compactTabMenu button > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 刷新图标固定 16px 网格，避免 span 按文字行高计算后视觉上移 */
 .toolbarIcon {
