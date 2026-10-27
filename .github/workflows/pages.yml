@@ -1,0 +1,57 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - build/icon.png
+      - .github/workflows/pages.yml
+  release:
+    types: [published]
+  # GITHUB_TOKEN 发布的 Release 不触发 release 事件。
+  workflow_run:
+    workflows: [Build and release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/configure-pages@v6
+      - name: Prepare public website
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p public/assets
+          cp website/index.html website/site.css website/site.js public/
+          cp build/icon.png public/assets/icon.png
+          touch public/.nojekyll
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --slurp \
+            | jq '[.[][] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | if . == null then null else {version: .tag_name, assets: [.assets[] | {name, url: .browser_download_url}]} end' > public/release.json
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v5
