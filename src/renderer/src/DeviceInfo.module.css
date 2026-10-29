@@ -5,6 +5,7 @@
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-app-page-fill);
 }
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .page { background: transparent; }
 .content { max-width: 880px; margin: 0 auto; padding: 32px clamp(20px, 4vw, 56px) 48px; }
 .header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 32px; }
 .heading { display: flex; align-items: center; gap: 12px; }

@@ -203,6 +203,45 @@ try {
   await main.getByTestId('app-menu-button').click();
   await main.getByTestId('open-settings').click();
   await main.getByTestId('settings-nav-appearance').click();
+  if (process.platform === 'darwin') {
+    await electron.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('#/main'));
+      const setVibrancy = window.setVibrancy.bind(window);
+      globalThis.__vibrancyCalls = [];
+      window.setVibrancy = (value, ...args) => { globalThis.__vibrancyCalls.push(value); return setVibrancy(value, ...args); };
+    });
+  }
+  await assertEventually(() => main.getByTestId('settings-window-style-auto').locator('input').isChecked());
+  await main.getByTestId('settings-window-style-classic').click();
+  await assertEventually(async () => (await main.evaluate(() => window.diteng.getConfig())).windowStyle === 'classic');
+  await assertEventually(async () => await main.evaluate(() => document.documentElement.dataset.windowStyle) === 'classic');
+  await assertEventually(() => main.getByTestId('settings-window-style-classic').locator('input').isChecked());
+  assert.equal(await main.evaluate(() => document.documentElement.hasAttribute('data-window-material')), false);
+  if (process.platform === 'darwin') {
+    assert.notEqual(await main.getByTestId('settings-page').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await electron.evaluate(() => globalThis.__vibrancyCalls.at(-1)), null);
+  }
+  await main.screenshot({ path: join(output, 'window-style-classic.png') });
+  await main.getByTestId('settings-page-title').click({ button: 'right' });
+  await main.getByTestId('context-menu').waitFor();
+  const classicStyle = await menuStyle('context-menu');
+  assert.equal(classicStyle.blur, 'none');
+  assert.doesNotMatch(classicStyle.background, /\/\s*0\./);
+  await main.keyboard.press('Escape');
+  await main.getByTestId('settings-nav-account').click();
+  await main.getByTestId('settings-nav-appearance').click();
+  assert.equal(await main.getByTestId('settings-window-style-classic').locator('input').isChecked(), true);
+  await main.getByTestId('settings-window-style-translucent').click();
+  await assertEventually(() => main.getByTestId('settings-window-style-translucent').locator('input').isChecked());
+  if (process.platform === 'darwin') {
+    assert.equal(await main.evaluate(() => document.documentElement.dataset.windowMaterial), 'vibrancy');
+    assert.equal(await main.getByTestId('settings-page').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await electron.evaluate(() => globalThis.__vibrancyCalls.at(-1)), 'sidebar');
+  }
+  await main.screenshot({ path: join(output, 'window-style-translucent.png') });
+  await main.getByTestId('settings-window-style-auto').click();
+  await assertEventually(() => main.getByTestId('settings-window-style-auto').locator('input').isChecked());
+  console.log('PASS 窗口材质自动、经典和半透明即时切换与设置恢复');
   await main.getByTestId('settings-theme-dark').click();
   await main.waitForFunction(() => document.body.hasAttribute('data-ds-dark-theme'));
   await assertEventually(async () => (await main.evaluate(() => window.diteng.getConfig())).theme === 'dark');
@@ -243,6 +282,26 @@ try {
   assert.equal(await main.getByTestId('feedback-editor').isVisible(), true);
   await main.getByTestId('feedback-cancel').click();
   assert.equal(await electron.evaluate(() => globalThis.__nativeMenuCount), 0);
+  await main.evaluate(() => window.diteng.setConfig({ windowStyle: 'classic' }));
+  await main.reload();
+  await main.getByTestId('shell-rail').waitFor();
+  await assertEventually(async () => await main.evaluate(() => document.documentElement.dataset.windowStyle) === 'classic');
+  assert.equal(await main.evaluate(() => document.documentElement.hasAttribute('data-window-material')), false);
+  assert.equal((await main.evaluate(() => window.diteng.getConfig())).windowStyle, 'classic');
+  await main.getByTestId('app-menu-button').click();
+  const darkClassicStyle = await menuStyle('app-menu');
+  assert.equal(darkClassicStyle.blur, 'none');
+  assert.doesNotMatch(darkClassicStyle.background, /\/\s*0\./);
+  await main.keyboard.press('Escape');
+  if (process.platform === 'darwin') {
+    await electron.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('#/main'));
+      window.minimize();
+      window.restore();
+    });
+    assert.equal(await electron.evaluate(() => globalThis.__vibrancyCalls.at(-1)), null);
+  }
+  console.log('PASS 重新加载恢复经典材质，窗口还原不重新启用磨砂');
   console.log('PASS 深浅主题一致，保留标签专用菜单，全程未调用系统右键菜单');
   console.log('PASS 拒绝错误请求编号、禁用项、未知动作、网页或子框架冒用外壳、重复执行已关闭的菜单');
   console.log('PASS 导航时自动关闭菜单；截图编辑器内 Esc 只关闭右键菜单');

@@ -16,6 +16,8 @@
   border-radius: 16px;
 }
 
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .page { background: transparent; }
+
 /* ============ rail 内设置导航 ============ */
 
 .settingsRail {

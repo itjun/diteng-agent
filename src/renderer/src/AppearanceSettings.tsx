@@ -1,5 +1,5 @@
 import { useRef, useState, type CSSProperties } from 'react';
-import { CheckIcon, DesktopIcon, MoonIcon, SunIcon } from '@radix-ui/react-icons';
+import { CheckIcon, DesktopIcon, LayersIcon, MoonIcon, OpacityIcon, SunIcon } from '@radix-ui/react-icons';
 import type { AppConfig, AppConfigPatch } from '../../shared/types';
 import { CHROME_COLOR_OPTIONS, applyChromeColor } from './chrome-color';
 import { useThemeSetting } from './use-theme';
@@ -9,6 +9,12 @@ const THEME_OPTIONS = [
   { value: 'system', label: '跟随系统', desc: '随系统自动切换', Icon: DesktopIcon },
   { value: 'light', label: '浅色', desc: '明亮清晰', Icon: SunIcon },
   { value: 'dark', label: '深色', desc: '柔和专注', Icon: MoonIcon },
+] as const;
+
+const WINDOW_STYLE_OPTIONS = [
+  { value: 'auto', label: '自动', desc: '跟随系统效果', Icon: DesktopIcon },
+  { value: 'classic', label: '经典', desc: '不透明背景', Icon: LayersIcon },
+  { value: 'translucent', label: '半透明', desc: '使用系统材质', Icon: OpacityIcon },
 ] as const;
 
 /** 配色缩略预览使用真实文本布局，颜色与实际侧栏、内容卡片一致。 */
@@ -38,12 +44,13 @@ export function AppearanceSettings({ config, onConfigChange }: {
   const [saveError, setSaveError] = useState('');
   const isSavingRef = useRef(false);
   const color = config?.chromeColor ?? 'auto';
+  const windowStyle = config?.windowStyle ?? 'auto';
   const selectedPalette = CHROME_COLOR_OPTIONS.find((option) => option.value === color) ?? CHROME_COLOR_OPTIONS[0];
   const selectedTheme = THEME_OPTIONS.find((option) => option.value === themeSetting)!;
 
-  async function selectAppearance(patch: Pick<AppConfigPatch, 'theme' | 'chromeColor'>) {
+  async function selectAppearance(patch: Pick<AppConfigPatch, 'theme' | 'windowStyle' | 'chromeColor'>) {
     if (!config || isSavingRef.current) return;
-    if ((!patch.theme || patch.theme === themeSetting) && (!patch.chromeColor || patch.chromeColor === color)) return;
+    if ((!patch.theme || patch.theme === themeSetting) && (!patch.windowStyle || patch.windowStyle === windowStyle) && (!patch.chromeColor || patch.chromeColor === color)) return;
     isSavingRef.current = true;
     setIsSaving(true);
     setSaveError('');
@@ -84,6 +91,23 @@ export function AppearanceSettings({ config, onConfigChange }: {
         </div>
       </section>
 
+      <section className={styles.section} aria-labelledby="appearance-window-style-title">
+        <div className={styles.sectionHead}>
+          <h3 id="appearance-window-style-title">窗口材质</h3>
+          <span>不支持时使用实色，遵循系统透明度设置</span>
+        </div>
+        <div className={styles.themeGrid} role="radiogroup" aria-label="窗口材质">
+          {WINDOW_STYLE_OPTIONS.map(({ value, label, desc, Icon }) => (
+            <label key={value} className={styles.themeOption} data-selected={windowStyle === value} data-testid={`settings-window-style-${value}`}>
+              <input type="radio" name="appearance-window-style" value={value} aria-label={label} checked={windowStyle === value} disabled={!config || isSaving} onChange={() => void selectAppearance({ windowStyle: value })} />
+              <span className={styles.modeSurface} data-mode="system"><Icon aria-hidden="true" /></span>
+              <span className={styles.modeMeta}><strong>{label}</strong><span>{desc}</span></span>
+              <span className={styles.selectionMark} aria-hidden="true">{windowStyle === value && <CheckIcon aria-hidden="true" />}</span>
+            </label>
+          ))}
+        </div>
+      </section>
+
       <section className={styles.section} aria-labelledby="appearance-color-title">
         <div className={styles.sectionHead}>
           <h3 id="appearance-color-title">外观配色 <span className={styles.count}>{CHROME_COLOR_OPTIONS.length}</span></h3>
@@ -103,7 +127,7 @@ export function AppearanceSettings({ config, onConfigChange }: {
         </div>
       </section>
       <div className={styles.footer} role="status">
-        <span>{config ? `${selectedTheme.label} · ${selectedPalette.label}` : '正在读取外观…'}</span>
+        <span>{config ? `${selectedTheme.label} / ${WINDOW_STYLE_OPTIONS.find((option) => option.value === windowStyle)?.label} / ${selectedPalette.label}` : '正在读取外观…'}</span>
         <span>{isSaving ? '正在保存…' : '选择后立即生效'}</span>
       </div>
       {saveError && <p className={styles.error} role="alert">{saveError}</p>}

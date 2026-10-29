@@ -13,9 +13,8 @@ body {
   --dsw-app-menu-fill: var(--dsw-chrome-fill, var(--dsw-alias-bg-layer-1));
 }
 
-/* macOS 主窗：Shell 挂载后标记 html[data-platform='darwin']（见 Shell.tsx），
-   body 转透明让窗口 vibrancy 材质透出；登录/通知窗不挂 Shell，永不标记，保持实心底色 */
-html[data-platform='darwin'] body {
+/* macOS 主窗启用系统材质时，body 转透明让 vibrancy 透出。 */
+html[data-platform='darwin'][data-window-material='vibrancy'] body {
   background-color: transparent;
 }
 

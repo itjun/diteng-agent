@@ -9,6 +9,7 @@ import type {
   TabInfo,
   TabsResolveRequest,
   TabsResolveResult,
+  WindowStyleState,
 } from '../../shared/types';
 import type { WebviewDomEvent, WebviewElement } from './env';
 import {
@@ -466,20 +467,23 @@ export function Shell() {
     });
   }, [activeTabId, pageSurfaces, handlePageSurface]);
 
-  // 平台/材质标记（renderer 只判平台，云母 build 门槛由主进程判定经 preload 同步带出）：
-  // macOS 主窗标 data-platform，Windows 11 主窗标 data-window-material，
-  // CSS 据此分别走 vibrancy / 云母半透明分支（design-platform.css、Shell.module.css 已有配套规则）；
-  // 登录/通知窗不挂 Shell，永不标记，保持实心底色
+  // 平台标记控制布局；窗口材质由主进程判断并在切换设置时同步。
   useEffect(() => {
-    if (isMacPlatform) {
-      document.documentElement.setAttribute('data-platform', 'darwin');
-      return () => document.documentElement.removeAttribute('data-platform');
-    }
-    if (window.diteng.initialWindowMaterial === 'mica') {
-      document.documentElement.setAttribute('data-window-material', 'mica');
-      return () => document.documentElement.removeAttribute('data-window-material');
-    }
-    return undefined;
+    const root = document.documentElement;
+    if (isMacPlatform) root.setAttribute('data-platform', 'darwin');
+    const applyStyle = (state: WindowStyleState) => {
+      root.setAttribute('data-window-style', state.setting);
+      if (state.material === 'none') root.removeAttribute('data-window-material');
+      else root.setAttribute('data-window-material', state.material);
+    };
+    applyStyle(window.diteng.initialWindowStyle);
+    const unsubscribe = window.diteng.onWindowStyleChanged(applyStyle);
+    return () => {
+      unsubscribe();
+      root.removeAttribute('data-platform');
+      root.removeAttribute('data-window-material');
+      root.removeAttribute('data-window-style');
+    };
   }, []);
 
   // e2e 调试快照：标签状态归渲染层后的 tabsList 等价物（断言用，非业务入口）
@@ -687,6 +691,7 @@ export function Shell() {
           <div
             className={styles.contentCard}
             data-testid="content-card"
+            data-workspace={isWorkspaceVisible}
             data-tone={isWorkspaceVisible ? cardTone : undefined}
             style={{ display: isSettingsOpen ? 'none' : undefined, ...(isWorkspaceVisible ? cardStyle : undefined) }}
           >

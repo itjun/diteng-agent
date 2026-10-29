@@ -62,6 +62,7 @@ import type {
   ShortcutAction,
   TabsResolveRequest,
   ThemeState,
+  WindowStyleState,
 } from '../shared/types';
 
 // 在初始化服务、读取配置和创建窗口前占锁；重复启动仅唤醒已有实例。
@@ -461,6 +462,13 @@ function macVibrancyFallbackFill(): string {
   return resolveIsDarkTheme(getConfig()) ? '#1b1b1c' : '#f9fafb';
 }
 
+function currentWindowStyle(): WindowStyleState {
+  const setting = getConfig().windowStyle;
+  if (setting === 'classic') return { setting, material: 'none' };
+  if (process.platform === 'darwin') return { setting, material: 'vibrancy' };
+  return { setting, material: WINDOWS_MICA ? 'mica' : 'none' };
+}
+
 /**
  * macOS 主窗背景态：可见时透明底 + sidebar vibrancy（材质深浅由 nativeTheme.themeSource 跟随应用主题）；
  * 最小化/隐藏期间摘除 vibrancy 并铺不透明兜底底——deminiaturize 会晚挂 NSVisualEffectView
@@ -469,7 +477,7 @@ function macVibrancyFallbackFill(): string {
  */
 function applyMacMainWindowBackdrop(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized() || !mainWindow.isVisible()) {
+  if (currentWindowStyle().material === 'none' || mainWindow.isMinimized() || !mainWindow.isVisible()) {
     mainWindow.setVibrancy(null);
     mainWindow.setBackgroundColor(macVibrancyFallbackFill());
   } else {
@@ -560,20 +568,20 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     title: 'diteng agent',
     // macOS 整窗 vibrancy / Windows 11 云母需要透明底色让材质透出；其余平台维持实心底色
     backgroundColor:
-      process.platform === 'darwin' || WINDOWS_MICA
+      currentWindowStyle().material !== 'none'
         ? TRANSPARENT_BACKGROUND
         : isDark
           ? THEME_DARK_BACKGROUND
           : THEME_LIGHT_BACKGROUND,
     // Windows 11：整窗云母（对齐 macOS 整窗 vibrancy 的做法），替代 transparent 窗口且无性能损耗
-    ...(WINDOWS_MICA && { backgroundMaterial: 'mica' as const }),
+    ...(WINDOWS_MICA && { backgroundMaterial: currentWindowStyle().material === 'mica' ? 'mica' as const : 'none' as const }),
     // macOS：hiddenInset + 红绿灯落在 tab 条左侧，整窗 sidebar 毛玻璃（rail 由 CSS 半透明透出）；
     // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
     ...(process.platform === 'darwin' && {
       titleBarStyle: 'hiddenInset' as const,
       // 红绿灯位于标签侧栏顶部；收起侧栏时，内容工具栏预留同一位置。
       trafficLightPosition: { x: 16, y: 18 },
-      vibrancy: 'sidebar' as const,
+      ...(currentWindowStyle().material === 'vibrancy' && { vibrancy: 'sidebar' as const }),
       // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）
       visualEffectState: 'active' as const,
     }),
@@ -686,7 +694,11 @@ function applyWindowTheme(): void {
   if (process.platform === 'darwin') {
     // 主窗可见时保持透明（vibrancy 材质深浅跟随应用主题）；不可见期间的兜底底色随主题刷新
     applyMacMainWindowBackdrop();
-  } else if (!WINDOWS_MICA) {
+  } else if (WINDOWS_MICA && mainWindow && !mainWindow.isDestroyed()) {
+    const isMica = currentWindowStyle().material === 'mica';
+    mainWindow.setBackgroundMaterial(isMica ? 'mica' : 'none');
+    mainWindow.setBackgroundColor(isMica ? TRANSPARENT_BACKGROUND : color);
+  } else {
     mainWindow?.setBackgroundColor(color);
   }
 }
@@ -1097,10 +1109,12 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('theme:get', () => currentThemeState());
 
-  // 主窗原生材质（Windows 11 云母 / 其余平台实底）：平台 build 判定只在主进程，
-  // 渲染层首帧同步取用，据此决定是否走透明分支；会话期内不会变化，无需广播
+  // 登录窗保留现有云母效果；主窗按保存的窗口材质设置启动并即时更新。
   ipcMain.on('material:get-sync', (event) => {
-    event.returnValue = WINDOWS_MICA ? 'mica' : 'none';
+    event.returnValue = event.sender === mainWindow?.webContents ? currentWindowStyle().material : WINDOWS_MICA ? 'mica' : 'none';
+  });
+  ipcMain.on('window-style:get-sync', (event) => {
+    event.returnValue = currentWindowStyle();
   });
 
   ipcMain.handle('config:set', (event, patch: unknown) => {
@@ -1109,6 +1123,9 @@ function registerIpcHandlers(): void {
     applyNativeTheme(getConfig());
     applyWindowTheme();
     broadcastThemeState();
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('window-style:changed', currentWindowStyle());
+    }
     importantNotifier.setEnabled(getConfig().importantPopups);
     if ((patch as AppConfigPatch | null)?.autoCheckUpdates === true) void updateService.check();
     return publicConfig();

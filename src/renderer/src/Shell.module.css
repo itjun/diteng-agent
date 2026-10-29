@@ -150,8 +150,7 @@
   color: #fff;
 }
 
-/* 卡片明暗档：网页底色浅时工具条用深色文字/图标，深色时用浅色档；与应用主题解耦，
-   只覆盖卡片内部继承的 --dsw-alias-* token，webview 页面内容不受影响。 */
+/* 卡片工具栏随网页底色选择明暗，保证文字和图标清晰。 */
 .contentCard[data-tone='light'] {
   --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-1000);
   --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-700);
@@ -445,9 +444,40 @@
 
 /* ============ macOS vibrancy（html[data-platform='darwin'] 由 Shell 挂载时标记） ============ */
 
-/* 壳根透明让整窗 vibrancy 材质透出，内容区自己铺实底保持不透明（对齐 dsh AppFrame centerCol 做法） */
-:global(html[data-platform='darwin']) .shell {
+/* 壳根透明，让原生 vibrancy 材质透出。 */
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .shell {
   background: transparent;
+}
+
+/* 整个外壳共用一层轻色，让系统材质透出；网页区域仍由网页绘制。 */
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .workspace {
+  background:
+    linear-gradient(to bottom, rgb(122 155 240 / 0.1), rgb(122 155 240 / 0) 35%, rgb(143 137 184 / 0) 68%, rgb(143 137 184 / 0.09)),
+    color-mix(in srgb, color-mix(in srgb, var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill)) 97%, rgb(122 155 240)) 40%, transparent);
+}
+
+:global(html[data-platform='darwin'][data-window-material='vibrancy'] body[data-ds-dark-theme]) .workspace {
+  background:
+    linear-gradient(to bottom, rgb(122 155 240 / 0.08), rgb(122 155 240 / 0) 35%, rgb(143 137 184 / 0) 68%, rgb(143 137 184 / 0.07)),
+    color-mix(in srgb, var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill)) 50%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :global(html[data-platform='darwin'][data-window-material='vibrancy']) .workspace,
+  :global(html[data-platform='darwin'][data-window-material='vibrancy'] body[data-ds-dark-theme]) .workspace {
+    background: color-mix(in srgb, var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill)) 90%, transparent);
+  }
+}
+
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .rail,
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .body,
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .contentCard {
+  background: transparent;
+}
+
+/* 网页与工具栏同在实底卡片内，顶部只留与右侧、底部相同的 5px 外围。 */
+:global(html[data-platform='darwin'][data-window-material='vibrancy']) .contentCard[data-workspace='true'] {
+  background: var(--card-surface, var(--dsw-app-page-fill));
 }
 
 /* ============ Windows 11 云母（html[data-window-material='mica'] 由 Shell 挂载时标记） ============ */
@@ -470,8 +500,7 @@
   background: color-mix(in srgb, var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill)) 84%, transparent);
 }
 
-/* 侧栏与卡片外框统一使用 sidebar-fill 实底色（与 Windows 版侧栏灰一致），macOS 不再叠加半透明 tint；
-   内容卡片（网页/设置页）四角 16px 圆角、四周 5px 留白悬浮在这层外围色上。 */
+/* 内容卡片（网页/设置页）四角 16px 圆角、四周 5px 留白悬浮在外围色上。 */
 .railTabs {
   display: flex;
   flex-direction: column;
@@ -670,6 +699,38 @@
   background: var(--dsw-app-menu-fill);
   box-shadow: 0 6px 24px #0003;
 }
+
+/* 菜单共用半透明底色，保留当前外观配色并柔化后面的内容。 */
+.appMenu,
+.tabMenu {
+  background: color-mix(in srgb, var(--dsw-app-menu-fill) 65%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+:global(body[data-ds-dark-theme]) .appMenu,
+:global(body[data-ds-dark-theme]) .tabMenu {
+  background: color-mix(in srgb, var(--dsw-app-menu-fill) 75%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .appMenu,
+  .tabMenu,
+  :global(body[data-ds-dark-theme]) .appMenu,
+  :global(body[data-ds-dark-theme]) .tabMenu {
+    background: var(--dsw-app-menu-fill);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+:global(html[data-window-style='classic']) .appMenu,
+:global(html[data-window-style='classic']) .tabMenu {
+  background: var(--dsw-app-menu-fill);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .tabMenu button {
   display: block;
   width: 100%;

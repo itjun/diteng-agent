@@ -9,6 +9,7 @@ import type {
   ThemeState,
   UpdateState,
   WindowMaterial,
+  WindowStyleState,
 } from '../shared/types';
 import type { DitengApi } from '../shared/types';
 
@@ -18,6 +19,7 @@ import type { DitengApi } from '../shared/types';
 const initialThemeState = ipcRenderer.sendSync('theme:get-sync') as ThemeState;
 // 主窗原生材质同样首帧同步取：透明/实底分支不能先画实底再跳变（Win11 云母 build 门槛只在主进程判定）
 const initialWindowMaterial = ipcRenderer.sendSync('material:get-sync') as WindowMaterial;
+const initialWindowStyle = ipcRenderer.sendSync('window-style:get-sync') as WindowStyleState;
 
 const diteng: DitengApi = {
   getUpdateState: () => ipcRenderer.invoke('update:state'),
@@ -38,6 +40,12 @@ const diteng: DitengApi = {
   runContextMenuAction: (requestId, action) => ipcRenderer.send('context-menu:action', requestId, action),
   initialThemeState,
   initialWindowMaterial,
+  initialWindowStyle,
+  onWindowStyleChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: WindowStyleState) => listener(state);
+    ipcRenderer.on('window-style:changed', handler);
+    return () => ipcRenderer.removeListener('window-style:changed', handler);
+  },
   tabsSetActiveGuest: (id) => ipcRenderer.send('tabs:active-guest', id),
   retryCorpVerification: () => ipcRenderer.invoke('corp-switch:retry'),
   onCorpSwitchCommitted: (listener) => {

@@ -47,7 +47,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, autoCheckUpdates: true, autoDownloadUpdates: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', windowStyle: 'auto', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, autoCheckUpdates: true, autoDownloadUpdates: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -164,6 +164,7 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
     savedLoginId: isSameServer ? savedLoginId : '',
     savedPassword: isSameServer ? savedPassword : '',
     theme,
+    windowStyle: input?.windowStyle === 'classic' || input?.windowStyle === 'translucent' ? input.windowStyle : 'auto',
     chromeColor,
     windowBounds,
     railWidth,
@@ -224,6 +225,8 @@ export function updateConfig(patch: AppConfigPatch): StoredAppConfig {
     config.aiBase = patch.aiBase.trim().replace(/\/+$/, '');
   if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
     config.theme = patch.theme;
+  if (patch.windowStyle === 'auto' || patch.windowStyle === 'classic' || patch.windowStyle === 'translucent')
+    config.windowStyle = patch.windowStyle;
   // 外围颜色：只接受预设值（auto = 自动黑白灰）
   if (patch.chromeColor && CHROME_COLORS.includes(patch.chromeColor)) config.chromeColor = patch.chromeColor;
   // railWidth：0（恢复默认）或 200~480 整数

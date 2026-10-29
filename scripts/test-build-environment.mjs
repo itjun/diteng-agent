@@ -94,3 +94,16 @@ test('构建环境缺失或非法时启动失败，不静默连接默认服务�
     assert.throws(() => fixture(t, environment).config());
   }
 });
+
+test('窗口材质兼容旧配置，保存后可恢复并忽略非法值', (t) => {
+  const { config, disk } = fixture(t, 'main', { serverBase: servers.main, machineCode: 'existing-device' });
+  assert.equal(config().getConfig().windowStyle, 'auto');
+  for (const windowStyle of ['classic', 'translucent', 'auto']) {
+    config().updateConfig({ windowStyle });
+    assert.equal(disk().windowStyle, windowStyle);
+    assert.equal(fixture(t, 'main', disk()).config().getConfig().windowStyle, windowStyle);
+  }
+  config().updateConfig({ windowStyle: 'invalid' });
+  assert.equal(config().getConfig().windowStyle, 'auto');
+  assert.equal(fixture(t, 'main', { serverBase: servers.main, windowStyle: 'invalid' }).config().getConfig().windowStyle, 'auto');
+});

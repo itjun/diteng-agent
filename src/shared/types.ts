@@ -21,10 +21,14 @@ export interface ThemeState {
 }
 
 /**
- * 主窗原生窗口材质：Windows 11 22H2+ 默认开启系统云母（Mica），其余平台实底窗口。
- * 登录/置顶弹窗始终实底；主窗壳据此标记 html[data-window-material] 走透明分支。
+ * 主窗实际材质：macOS 磨砂、Windows 11 22H2+ 云母，或不透明底色。
  */
-export type WindowMaterial = 'mica' | 'none';
+export type WindowMaterial = 'vibrancy' | 'mica' | 'none';
+export type WindowStyle = 'auto' | 'classic' | 'translucent';
+export interface WindowStyleState {
+  setting: WindowStyle;
+  material: WindowMaterial;
+}
 
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
@@ -47,6 +51,8 @@ export interface AppConfig {
    */
   savedPassword: string;
   theme: ThemeSetting;
+  /** 窗口材质：自动、实色或半透明。 */
+  windowStyle: WindowStyle;
   /** 外围颜色：rail 侧栏与内容卡片四周留白的底色；默认 auto（黑白灰实底，跟随深浅色主题） */
   chromeColor: ChromeColor;
   /** 上次关闭时的主窗大小；null = 从未记录（首启用主屏工作区 80% 作默认）。仅主进程读写 */
@@ -96,7 +102,7 @@ export interface DeviceInfo {
  * 不在渲染层可写范围内；serverBase 由构建确定，machineCode/windowBounds 仅主进程维护。
  */
 export type AppConfigPatch = Partial<
-  Pick<AppConfig, 'aiBase' | 'theme' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups' | 'autoCheckUpdates' | 'autoDownloadUpdates'>
+  Pick<AppConfig, 'aiBase' | 'theme' | 'windowStyle' | 'chromeColor' | 'railWidth' | 'rememberPassword' | 'autoLogin' | 'systemNotifications' | 'importantPopups' | 'autoCheckUpdates' | 'autoDownloadUpdates'>
 >;
 
 /**
@@ -390,8 +396,10 @@ export interface DitengApi {
   retryCorpVerification(): Promise<{ ok: boolean; message?: string }>;
   /** preload 加载时同步取得的主题快照，供 React 首帧直接使用，避免先闪系统主题 */
   initialThemeState: ThemeState;
-  /** preload 加载时同步取得的主窗原生材质快照（Win11 云母），壳据此走透明/实底分支 */
+  /** preload 加载时取得的窗口材质快照，登录窗用它判断是否显示云母。 */
   initialWindowMaterial: WindowMaterial;
+  initialWindowStyle: WindowStyleState;
+  onWindowStyleChanged(listener: (state: WindowStyleState) => void): () => void;
   getConfig(): Promise<AppConfig>;
   getDeviceInfo(): Promise<DeviceInfo>;
   getPublicIp(): Promise<ApiCallResult<string>>;
