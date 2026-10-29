@@ -15,6 +15,7 @@ Electron 44 · TypeScript · React 18 · Vite（renderer）+ tsc（main/preload�
 ./build.py --env dev # macOS 打包开发环境、安装并启动
 pnpm install        # 安装（electron 二进制失败时用 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/）
 pnpm dev            # 开发环境：rc.local.lan；vite(5173) + electron（改动 main/preload 需重启）
+pnpm dev:main       # 开发流程连 main 环境（m.cdcp.site）：不在 192.168.0.x 内网时的开发入口
 pnpm typecheck      # 四个 tsconfig 全量检查
 node --test scripts/test-*.mjs  # 构建环境、账号隔离、展示、账套核验与通知队列回归
 python3 scripts/test-macos-build.py # macOS 构建工具链预检回归

@@ -500,3 +500,42 @@ export function RedoIcon() {
     </svg>
   );
 }
+
+/* ============ 自绘窗口控制（Windows/Linux 无系统标题栏，10×10 细线对齐系统字形） ============ */
+
+/** 最小化（—） */
+export function WindowMinimizeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+      <path d="M0.5 5h9" />
+    </svg>
+  );
+}
+
+/** 最大化（□） */
+export function WindowMaximizeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+      <rect x="0.75" y="0.75" width="8.5" height="8.5" rx="0.5" />
+    </svg>
+  );
+}
+
+/** 向下还原（双层窗口） */
+export function WindowRestoreIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+      <path d="M2.75 3.25V1.25h6v6h-2" />
+      <rect x="1.25" y="2.75" width="6" height="6" rx="0.5" />
+    </svg>
+  );
+}
+
+/** 关闭（×） */
+export function WindowCloseIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+      <path d="M0.7 0.7l8.6 8.6M9.3 0.7L0.7 9.3" />
+    </svg>
+  );
+}

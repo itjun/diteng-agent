@@ -24,6 +24,10 @@ import {
   ReloadIcon,
   SettingsIcon,
   SidebarToggleIcon,
+  WindowCloseIcon,
+  WindowMaximizeIcon,
+  WindowMinimizeIcon,
+  WindowRestoreIcon,
 } from './theme-icons';
 import {
   DEFAULT_SETTINGS_CATEGORY,
@@ -42,9 +46,8 @@ import { shareablePageUrl, tabLabel } from './shell-presentation';
 import { messageConnectionLabel, useMessageState } from './use-message-state';
 import { DeviceInfo } from './DeviceInfo';
 
-/** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows 由根 padding 让出 overlay 高 */
+/** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows/Linux 无系统标题栏，窗口控制由通栏自绘 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
-const isWindowsPlatform = /Windows/.test(navigator.userAgent);
 /** 剪贴板粘贴快捷键文案：反馈成功提示里引导用户到聊天窗口粘贴 */
 const PASTE_SHORTCUT = isMacPlatform ? '⌘V' : 'Ctrl+V';
 const DEFAULT_RAIL_WIDTH = 224;
@@ -594,7 +597,7 @@ export function Shell() {
     ? ({ '--card-surface': activeSurface.color } as CSSProperties)
     : undefined;
 
-  const shellClass = `${styles.shell} ${styles.shellRail}${isWindowsPlatform ? ` ${styles.shellRailWin}` : ''}`;
+  const shellClass = `${styles.shell} ${styles.shellRail}`;
 
   return (
     <div className={shellClass} data-testid="shell-rail">
@@ -726,6 +729,8 @@ export function Shell() {
             {!isSettingsOpen && activeModule === 'info' && <DeviceInfo />}
           </div>
 
+          {/* 设置页不渲染内容工具栏：窗口控制改浮层形态贴窗口右上角，避免设置页无法最小化/关闭 */}
+          {isSettingsOpen && !isMacPlatform && <WindowControls isFloating />}
           {isSettingsOpen && (
             <>
               <SettingsPage session={session} activeCategory={settingsCategory} messageState={messageState} messageError={messageError}
@@ -1264,6 +1269,8 @@ function ContentToolbar({
         }}>
         <DotsVerticalIcon width={18} height={18} />
       </button>
+      {/* 窗口控制贴本通栏右缘（仅 Windows/Linux；macOS 红绿灯在左栏） */}
+      {!isMacPlatform && <WindowControls />}
       {isMenuOpen && createPortal(<>
         {/* 菜单挂到应用主题层，避免继承网页卡片按页面底色覆盖的文字和交互配色。 */}
         {/* 遮罩接住网页 guest 区域的外部点击，避免菜单打开时误操作网页。 */}
@@ -1299,6 +1306,38 @@ function ContentToolbar({
           </button>
         </div>
       </>, document.body)}
+    </div>
+  );
+}
+
+/**
+ * 自绘窗口控制（Windows/Linux 无系统标题栏）：—/□/× 三键，动作经 IPC 落主进程；
+ * 默认内嵌通栏工具栏（贴卡片右缘、顶满 38px 高），isFloating 时贴窗口右上角（设置页用）。
+ */
+function WindowControls({ isFloating = false }: { isFloating?: boolean }) {
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  // 初始态同步一次 + 订阅主进程最大化/还原推送（□/❐ 图标切换）
+  useEffect(() => {
+    void window.diteng.windowIsMaximized().then(setIsMaximized);
+    return window.diteng.onWindowMaximizedChanged(setIsMaximized);
+  }, []);
+
+  const maximizeLabel = isMaximized ? '向下还原' : '最大化';
+  return (
+    <div
+      className={isFloating ? styles.windowControlsFloat : styles.windowControls}
+      data-testid="window-controls"
+    >
+      <button type="button" className={styles.windowButton} data-testid="window-minimize" title="最小化" aria-label="最小化" onClick={() => window.diteng.windowMinimize()}>
+        <WindowMinimizeIcon />
+      </button>
+      <button type="button" className={styles.windowButton} data-testid="window-toggle-maximize" title={maximizeLabel} aria-label={maximizeLabel} onClick={() => window.diteng.windowToggleMaximize()}>
+        {isMaximized ? <WindowRestoreIcon /> : <WindowMaximizeIcon />}
+      </button>
+      <button type="button" className={`${styles.windowButton} ${styles.windowButtonClose}`} data-testid="window-close" title="关闭" aria-label="关闭" onClick={() => window.diteng.windowClose()}>
+        <WindowCloseIcon />
+      </button>
     </div>
   );
 }

@@ -101,6 +101,18 @@ const diteng: DitengApi = {
       ipcRenderer.removeListener('session:changed', handler);
     };
   },
+  // 主窗自绘窗口控制（Windows/Linux 无系统标题栏）；close 不绕过主进程的托盘拦截
+  windowMinimize: () => ipcRenderer.send('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
+  windowClose: () => ipcRenderer.send('window:close-main'),
+  windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  onWindowMaximizedChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => listener(maximized);
+    ipcRenderer.on('window:maximized-changed', handler);
+    return () => {
+      ipcRenderer.removeListener('window:maximized-changed', handler);
+    };
+  },
   onShortcut: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, action: ShortcutAction) => listener(action);
     ipcRenderer.on('shortcut:action', handler);

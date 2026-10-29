@@ -70,16 +70,10 @@ const DEV_SERVER_URL = process.env.DITENG_AGENT_DEV_URL || 'http://127.0.0.1:517
 // 对应 --dsw-static-neutral-bluish-950 / 00，避免深色主题下窗口底色闪白
 const THEME_DARK_BACKGROUND = '#151517';
 const THEME_LIGHT_BACKGROUND = '#ffffff';
-// Windows 系统标题条（titleBarOverlay）颜色：与 rail/外围边框的 sidebar-fill 实底保持一致，
-// 避免顶部出现一条和侧栏不同色的系统色带（--dsw-static-neutral-bluish-50 / -900）
-const WINDOWS_OVERLAY_LIGHT = '#f9fafb';
-const WINDOWS_OVERLAY_DARK = '#1b1b1c';
 // macOS 主窗整窗 vibrancy（dsh desktop 同款）：底色全透明（#RRGGBBAA），让 NSVisualEffectView 材质透出
 const MAC_TRANSPARENT_BACKGROUND = '#00000000';
 // 主窗壳路由 hash：与登录窗共用同一入口页，仅 hash 区分（App.tsx 判定 #/main，需带斜杠）
 const MAIN_WINDOW_HASH = '/main';
-// Windows 标题栏高度与壳 rail 顶部让位（40px，shellRailWin padding-top）对齐，参考 dsh apps/desktop windows-layout.ts
-const WINDOWS_TITLEBAR_HEIGHT = 40;
 
 let loginWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -568,14 +562,10 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
       // 'active'：失焦时材质保持稳定；'followWindow' 失焦会把侧栏洗白发灰（dsh 同款）
       visualEffectState: 'active' as const,
     }),
-    ...(process.platform === 'win32' && {
-      titleBarStyle: 'hidden' as const,
-      titleBarOverlay: {
-        height: WINDOWS_TITLEBAR_HEIGHT,
-        color: isDark ? WINDOWS_OVERLAY_DARK : WINDOWS_OVERLAY_LIGHT,
-        symbolColor: isDark ? '#f9fafb' : '#0f1115',
-      },
-    }),
+    // Windows/Linux：无系统标题栏，内容直达窗口顶边（rail 通顶与 macOS 一致）；
+    // 不用 titleBarOverlay——它会在整窗顶部压出一条系统 caption 按钮条。
+    // 窗口控制（—/□/×）由壳通栏工具栏自绘（window:minimize 等 IPC）
+    ...(process.platform !== 'darwin' && { titleBarStyle: 'hidden' as const }),
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -648,6 +638,13 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
   });
   mainWindow.on('hide', persistBounds);
   mainWindow.on('close', persistBounds);
+  // 自绘窗口控制的最大化态推送：□/❐ 图标随窗口最大化/还原切换
+  mainWindow.on('maximize', () => {
+    if (!createdMainWindow.isDestroyed()) createdMainWindow.webContents.send('window:maximized-changed', true);
+  });
+  mainWindow.on('unmaximize', () => {
+    if (!createdMainWindow.isDestroyed()) createdMainWindow.webContents.send('window:maximized-changed', false);
+  });
   // macOS/Windows 惯例：托盘常驻期间关窗仅隐藏，托盘"关闭应用"才真正退出；
   // 未登录（无托盘）时保持原行为：关窗即退出
   mainWindow.on('close', (event) => {
@@ -675,13 +672,6 @@ function applyWindowTheme(): void {
     applyMacMainWindowBackdrop();
   } else {
     mainWindow?.setBackgroundColor(color);
-    if (process.platform === 'win32') {
-      mainWindow?.setTitleBarOverlay({
-        height: WINDOWS_TITLEBAR_HEIGHT,
-        color: isDark ? WINDOWS_OVERLAY_DARK : WINDOWS_OVERLAY_LIGHT,
-        symbolColor: isDark ? '#f9fafb' : '#0f1115',
-      });
-    }
   }
 }
 
@@ -1038,7 +1028,27 @@ async function copyFeedbackImage(source: unknown): Promise<FeedbackCopyResult> {
   return { ok: true };
 }
 
+/**
+ * 主窗自绘窗口控制（Windows/Linux 无系统标题栏）：
+ * 渲染层按钮只发意图，动作全部落在主进程；close 不绕过 close 拦截
+ * （托盘常驻时与系统关闭一致，隐藏到托盘而非退出）。
+ */
+function registerWindowIpcHandlers(): void {
+  const aliveWindow = (): BrowserWindow | null =>
+    mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  ipcMain.handle('window:is-maximized', () => aliveWindow()?.isMaximized() ?? false);
+  ipcMain.on('window:minimize', () => aliveWindow()?.minimize());
+  ipcMain.on('window:toggle-maximize', () => {
+    const window = aliveWindow();
+    if (!window) return;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+  });
+  ipcMain.on('window:close-main', () => aliveWindow()?.close());
+}
+
 function registerIpcHandlers(): void {
+  registerWindowIpcHandlers();
   const trustedUpdateSender = (event: Electron.IpcMainInvokeEvent) =>
     (event.sender === loginWindow?.webContents || event.sender === mainWindow?.webContents)
     && event.senderFrame === event.sender.mainFrame && isShellUrl(event.sender.getURL());

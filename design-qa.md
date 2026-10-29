@@ -151,3 +151,14 @@ final result: passed
 - `pnpm typecheck`、`pnpm build:app`、`node --check scripts/e2e-login-layout.mjs` 和 `git diff --check` 通过。隔离用户数据、模拟网络和钥匙串的 Electron 回归通过，覆盖普通/历史账号、键盘、慢请求防重、失败重试、短信验证、自动登录及取消、尺寸钳制、主题、断点、四边留白、关于本机设备码，以及各登录状态无品牌、DESKTOP、关闭按钮和设备码。
 - 原生窗口已目视检查无关闭按钮；通过 Cmd+Q 正常退出并清理测试进程。拖拽自动化未观测到窗口位移，不能据此确认原生拖拽通过，保留人工复核项。Windows/Linux及真实服务器认证未在本轮实测，未重新安装应用。
 - 视觉及隔离登录回归通过；原生拖拽待人工复核。现有验收记录保留。
+
+## Windows/Linux 去原生标题栏 · 2026-10-27 补充验收
+
+- 按用户要求，Windows 与 Linux 主窗去掉系统原生标题栏：主进程由 `titleBarStyle:'hidden' + titleBarOverlay`（顶部系统按钮条）改为仅 `titleBarStyle:'hidden'`，内容直达窗口顶边，rail 通顶与 macOS 一致；移除 `WINDOWS_TITLEBAR_HEIGHT`/overlay 颜色常量与主题切换时的 `setTitleBarOverlay`。
+- 窗口管理按钮移入通栏：内容工具栏右端自绘 —/□/×（`WindowControls` 组件，仅非 macOS 渲染），负边距吃掉工具栏右 padding 贴卡片右缘、上下顶满 38px 工具栏高，关闭 hover #e81123；删除渲染层 `.shellRailWin` 40px 让位。动作经 `window:minimize/toggle-maximize/close-main` IPC 落主进程，close 不绕过托盘拦截；`window:maximized-changed` 推动驱动 □/❐ 图标切换。
+- 设置页不渲染内容工具栏：同组件以浮层形态贴窗口右上角（高 43px 对齐 rail 顶部工具区），避免设置页无法最小化/关闭；ESC 返回后恢复通栏内嵌形态。
+- 证据：`.zcode/verify-win-controls.png`（工作区整页截图，DPR1）与 `.zcode/verify-win-controls-settings.png`（设置页）；配套 `.zcode/verify-win-controls.mjs`（playwright over CDP 9223，仅整页截图——裁剪截图在本机会把窗口搞坏）。15 项断言全部通过：三按钮存在、控制组在通栏内（y=5 h=38）且贴卡片右缘（右缘=innerWidth-5）、通栏贴窗口顶（y=5，无 40px 让位）、最大化 IPC 往返 false→true、图标 title 最大化→向下还原、设置页通栏隐藏且浮层贴右上角（y=0、右缘=innerWidth）、返回工作区恢复。
+- 视觉复核（模型读图）：窗口无独立原生标题栏，内容直达顶边；—/□/× 位于通栏最右端（Chat/菜单之后），细线扁平图标；rail 通顶；设置页浮层不与内容重叠。
+- `pnpm typecheck` 通过；`pnpm test` 61 项通过。macOS 分支未改动（红绿灯/vibrancy 链路原样）。
+- 人工复核项：拖拽移动与双击通栏最大化（`titleBarStyle:'hidden'` 的 app-region 系统行为，自动化无法模拟系统 caption 手势）；Win11 最大化按钮 hover 的系统 Snap Layouts 弹层随自绘按钮消失（与 dsh/Chrome 自绘 caption 同类取舍）。
+- Linux 与 Windows 走同一 `titleBarStyle:'hidden'` 代码路径与同一自绘控制，本机（Windows 10）实测；Linux 桌面未实测，留待 deb 构建后复核。
