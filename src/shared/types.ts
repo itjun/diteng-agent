@@ -20,6 +20,12 @@ export interface ThemeState {
   resolved: 'light' | 'dark';
 }
 
+/**
+ * 主窗原生窗口材质：Windows 11 22H2+ 默认开启系统云母（Mica），其余平台实底窗口。
+ * 登录/置顶弹窗始终实底；主窗壳据此标记 html[data-window-material] 走透明分支。
+ */
+export type WindowMaterial = 'mica' | 'none';
+
 /** userData/config.json 的持久化结构 */
 export interface AppConfig {
   /** 配置结构版本：3 = 服务器固定为构建环境，旧凭据按原服务器隔离。 */
@@ -384,6 +390,8 @@ export interface DitengApi {
   retryCorpVerification(): Promise<{ ok: boolean; message?: string }>;
   /** preload 加载时同步取得的主题快照，供 React 首帧直接使用，避免先闪系统主题 */
   initialThemeState: ThemeState;
+  /** preload 加载时同步取得的主窗原生材质快照（Win11 云母），壳据此走透明/实底分支 */
+  initialWindowMaterial: WindowMaterial;
   getConfig(): Promise<AppConfig>;
   getDeviceInfo(): Promise<DeviceInfo>;
   getPublicIp(): Promise<ApiCallResult<string>>;

@@ -327,11 +327,14 @@ export function Shell() {
     isFeedbackCapturingRef.current = true;
     // 上一次提示不能留在画面里（用户可能连续反馈）
     setFeedbackToast(null);
-    // macOS vibrancy 靠 data-platform 切透明分支：直接截图会带半透明像素，粘贴到
-    // 聊天窗口易发黑/发白。截图期间摘掉标记退化为实心底色，finally 立即恢复。
+    // macOS vibrancy / Windows 云母靠平台-材质标记切透明分支：直接截图会带半透明像素，
+    // 粘贴到聊天窗口易发黑/发白。截图期间摘掉标记退化为实心底色，finally 立即恢复。
     const root = document.documentElement;
-    const platformMarker = root.getAttribute('data-platform');
-    if (platformMarker) root.removeAttribute('data-platform');
+    const materialMarkers = ['data-platform', 'data-window-material'] as const;
+    const savedMarkers = materialMarkers
+      .map((name) => ({ name, value: root.getAttribute(name) }))
+      .filter((marker): marker is { name: (typeof materialMarkers)[number]; value: string } => marker.value !== null);
+    for (const marker of savedMarkers) root.removeAttribute(marker.name);
     try {
       await waitForPaint();
       const result = await window.diteng.captureFeedbackScreenshot();
@@ -340,7 +343,7 @@ export function Shell() {
     } catch {
       setFeedbackToast({ kind: 'fail', title: '截图失败', desc: '请稍后重试' });
     } finally {
-      if (platformMarker) root.setAttribute('data-platform', platformMarker);
+      for (const marker of savedMarkers) root.setAttribute(marker.name, marker.value);
       isFeedbackCapturingRef.current = false;
     }
   }, [feedbackDraft]);
@@ -463,13 +466,20 @@ export function Shell() {
     });
   }, [activeTabId, pageSurfaces, handlePageSurface]);
 
-  // 平台标记（纯 renderer 判定，不加 IPC）：macOS 主窗在 <html> 标 data-platform，
-  // CSS 据此走 vibrancy 半透明分支（dsh 同名约定，design-platform.css 已有配套规则）；
+  // 平台/材质标记（renderer 只判平台，云母 build 门槛由主进程判定经 preload 同步带出）：
+  // macOS 主窗标 data-platform，Windows 11 主窗标 data-window-material，
+  // CSS 据此分别走 vibrancy / 云母半透明分支（design-platform.css、Shell.module.css 已有配套规则）；
   // 登录/通知窗不挂 Shell，永不标记，保持实心底色
   useEffect(() => {
-    if (!isMacPlatform) return;
-    document.documentElement.setAttribute('data-platform', 'darwin');
-    return () => document.documentElement.removeAttribute('data-platform');
+    if (isMacPlatform) {
+      document.documentElement.setAttribute('data-platform', 'darwin');
+      return () => document.documentElement.removeAttribute('data-platform');
+    }
+    if (window.diteng.initialWindowMaterial === 'mica') {
+      document.documentElement.setAttribute('data-window-material', 'mica');
+      return () => document.documentElement.removeAttribute('data-window-material');
+    }
+    return undefined;
   }, []);
 
   // e2e 调试快照：标签状态归渲染层后的 tabsList 等价物（断言用，非业务入口）

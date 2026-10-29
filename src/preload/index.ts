@@ -8,6 +8,7 @@ import type {
   TabsOpenRequestPayload,
   ThemeState,
   UpdateState,
+  WindowMaterial,
 } from '../shared/types';
 import type { DitengApi } from '../shared/types';
 
@@ -15,6 +16,8 @@ import type { DitengApi } from '../shared/types';
 // 编译为 CJS（tsconfig module commonjs）以满足 sandbox preload 的加载要求。
 // 主题在首帧前同步取一次：固定浅/深色时不能先按系统外观绘制再跳变。
 const initialThemeState = ipcRenderer.sendSync('theme:get-sync') as ThemeState;
+// 主窗原生材质同样首帧同步取：透明/实底分支不能先画实底再跳变（Win11 云母 build 门槛只在主进程判定）
+const initialWindowMaterial = ipcRenderer.sendSync('material:get-sync') as WindowMaterial;
 
 const diteng: DitengApi = {
   getUpdateState: () => ipcRenderer.invoke('update:state'),
@@ -34,6 +37,7 @@ const diteng: DitengApi = {
   closeContextMenu: (requestId, isRestoreFocus) => ipcRenderer.send('context-menu:close', requestId, isRestoreFocus),
   runContextMenuAction: (requestId, action) => ipcRenderer.send('context-menu:action', requestId, action),
   initialThemeState,
+  initialWindowMaterial,
   tabsSetActiveGuest: (id) => ipcRenderer.send('tabs:active-guest', id),
   retryCorpVerification: () => ipcRenderer.invoke('corp-switch:retry'),
   onCorpSwitchCommitted: (listener) => {

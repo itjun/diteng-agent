@@ -18,3 +18,9 @@ body {
 html[data-platform='darwin'] body {
   background-color: transparent;
 }
+
+/* Windows 11 云母同款：Shell 挂载后标记 html[data-window-material='mica']，
+   body 转透明让 DWM 云母材质透出（主进程 backgroundMaterial:'mica' + 透明底色） */
+html[data-window-material='mica'] body {
+  background-color: transparent;
+}

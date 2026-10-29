@@ -162,3 +162,22 @@ final result: passed
 - `pnpm typecheck` 通过；`pnpm test` 61 项通过。macOS 分支未改动（红绿灯/vibrancy 链路原样）。
 - 人工复核项：拖拽移动与双击通栏最大化（`titleBarStyle:'hidden'` 的 app-region 系统行为，自动化无法模拟系统 caption 手势）；Win11 最大化按钮 hover 的系统 Snap Layouts 弹层随自绘按钮消失（与 dsh/Chrome 自绘 caption 同类取舍）。
 - Linux 与 Windows 走同一 `titleBarStyle:'hidden'` 代码路径与同一自绘控制，本机（Windows 10）实测；Linux 桌面未实测，留待 deb 构建后复核。
+
+## Windows 11 主窗云母（Mica）默认开启 · 2026-10-29 验收
+
+- 按用户要求，Win11 下外壳默认开启系统云母：主进程以 `os.release()` build ≥ 22621（Win11 22H2，`DWMWA_SYSTEMBACKDROP_TYPE` 支持门槛，Electron `backgroundMaterial` 同源）判定，主窗创建带 `backgroundMaterial:'mica'` + 全透明底色 `#00000000`（`backgroundMaterial` 替代 `transparent:true`，无透明窗性能损耗）；主题切换不再向云母主窗刷实底色。登录窗与置顶弹窗保持实底。Win10/Linux 与 macOS 分支行为不变。
+- 渲染层与 macOS vibrancy 管线同构：build 判定只在主进程，经新增 `material:get-sync` 同步 IPC 进 preload 首帧快照（`window.diteng.initialWindowMaterial`），Shell 挂载时标记 `html[data-window-material='mica']`——body/壳根转透明，外围（rail 侧栏 + 卡片四周留白）从实底改为 `color-mix` 半透明 tint 叠在云母上（浅色 60%、深色 84%；深色加厚因云母色深跟随系统主题而非应用主题，固定深色 + 系统浅色时薄 tint 会让浅色云母顶穿深色侧栏），内容卡片仍不透明。一键反馈截图期间临时摘除该标记退化为实底（与 macOS data-platform 同款处理），finally 恢复。
+- 实测环境：本机 Windows 11（build 26300，DPI 100%），dist 按 main（生产）构建；沿用 `e2e-login-layout` 的隔离方式（bootstrap 预写 config `serverBase=https://m.cdcp.site`，登录入口即生产地址，主进程 fetch 全部本地 mock 截获，不访问真实网络），自动登录进主窗。
+- 断言（`.zcode/verify-mica.mjs` + `capture-region.ps1` 屏幕实拍，均临时不入库）：主窗底色 `#00000000`、preload 快照 mica、html 标记、body/壳根 computed 透明、rail tint 浅 0.60/深 0.84、摘标记实底回退实拍差分、`setBackgroundMaterial('none')` 后 60% tint 背后恰为窗口类白色画刷（0.6·tint+0.4·白 与实测 (251,252,253) 吻合）、切回 mica 读数完全复现 (246,248,243)——云母真实挂在 DWM 上且着色取自壁纸（透 tint 解算底衬 ≈ (240,243,235)，与本机壁纸绿色调一致）。全部通过。
+- 视觉复核（模型读图）：浅/深两档整窗截图——侧栏文字与图标对比度足够，内容卡片 16px 圆角与四周留白均匀，—/□/× 自绘控制正常，无黑块/白闪/断层；云母质感为 Win11 原生的含蓄度（文件资源管理器导航窗格同级），符合平台惯例。深色主题下白色内容卡片为设计使然（卡片底色跟随网页取色，与外壳主题解耦）。
+- `pnpm typecheck` 四套通过；`pnpm test` 62 项通过。范围限制：壁纸位置差分 Δ=2（本机壁纸色调均匀，云母对位置的响应低于阈值，仅记录不作门槛）；强制深色 + 系统浅色的实拍未单独采样（84% tint 按对比度推算）；截屏会话的拖拽/resize 手势未自动化；Win10 回退与 Linux 实底路径未实测（逻辑未变）。
+
+## 登录页四周云母 · 2026-10-29 补充验收
+
+- 按用户要求，登录窗四周（卡片外围 24px 渐变留白）同样接入云母：主进程登录窗与主窗同款 `backgroundMaterial:'mica'` + 透明底色（`applyWindowTheme` 对云母窗口一律不再刷实底）；渲染层 LoginPanel 挂载时标记 `html[data-window-material='mica']`（同一 preload 快照；置顶弹窗不挂 LoginPanel，保持实底）。
+- CSS：`.page` 与顶部拖拽条的浅蓝-淡青渐变在 mica 分支下按 color-mix 转半透明（浅 60% / 深 84%，与主窗外围同档，深色加厚理由同主窗——云母色深跟随系统主题）；登录卡片（20px 圆角、白色/深蓝灰）保持实底。复用主窗已验证的 DWM 管线，未新增机制。
+- 实测（`.zcode/verify-mica-login.mjs`，bootstrap 无凭据常驻登录窗，登录入口 serverBase=m.cdcp.site，fetch 全 mock）：登录窗底色 `#00000000`、材质快照/HTML 标记、body 透明、`.page` 渐变 alpha 浅 0.60/深 0.84、卡片 `rgb(255,255,255)` 实底，全部通过。留白条屏幕差分仅作记录：实底回退 (235,244,249) 与不透明渐变理论值吻合（分支正确），mica 态 (234,244,247) 可复现——本机登录窗居中处壁纸底衬与浅色渐变明度接近，天然差分弱；DWM 材质真实性已由主窗脚本的 mica↔none 强差分证明（同一管线）。
+- 视觉复核（模型读图，浅/深整窗）：四周留白云母质感含蓄但存在（Win11 原生登录/设置页同类观感）、四边等宽、边缘干净；卡片不透明、圆角阴影正常；表单文字与按钮清晰；无黑块/白闪/断层/锯齿。
+- 范围限制：登录窗在系统浅色 + 应用强制深色时的实拍未单独采样（84% 按主窗同款对比度策略）；Win10 登录窗实底回退未实测（CSS 分支未触发即不生效，逻辑未变）；小屏滚动（400×480）下的留白条半透明未复测（仅背景色变化，布局未动）。
+
+

@@ -450,6 +450,26 @@
   background: transparent;
 }
 
+/* ============ Windows 11 云母（html[data-window-material='mica'] 由 Shell 挂载时标记） ============ */
+
+/* 与 macOS vibrancy 分支同构：壳根透明让整窗云母透出，内容卡片自己铺实底保持不透明 */
+:global(html[data-window-material='mica']) .shell {
+  background: transparent;
+}
+
+/* 外围（rail 侧栏 + 卡片四周留白）从实底改为半透明 tint 叠在云母上（Win11 导航窗格同款做法）：
+   深色档 tint 更厚——云母色深跟随系统主题而非应用主题，固定深色 + 系统浅色时，
+   过薄的 tint 会让浅色云母顶穿深色侧栏、浅色文字失去对比；浅色档贴近系统原生观感。 */
+:global(html[data-window-material='mica']) .rail,
+:global(html[data-window-material='mica']) .body {
+  background: color-mix(in srgb, var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill)) 60%, transparent);
+}
+
+:global(html[data-window-material='mica'] body[data-ds-dark-theme]) .rail,
+:global(html[data-window-material='mica'] body[data-ds-dark-theme]) .body {
+  background: color-mix(in srgb, var(--dsw-chrome-fill, var(--dsw-specific-sidebar-fill)) 84%, transparent);
+}
+
 /* 侧栏与卡片外框统一使用 sidebar-fill 实底色（与 Windows 版侧栏灰一致），macOS 不再叠加半透明 tint；
    内容卡片（网页/设置页）四角 16px 圆角、四周 5px 留白悬浮在这层外围色上。 */
 .railTabs {

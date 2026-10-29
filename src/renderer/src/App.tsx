@@ -57,6 +57,14 @@ function LoginPanel() {
   // 登录页不再提供手动切换入口，主题仍跟随 config.theme / 系统自动应用
   useThemeSetting();
 
+  // Windows 11 云母（主进程判定经 preload 同步带出）：标记后 CSS 让 .page 四周渐变转半透明、
+  // body 转透明，云母从登录卡片四周透出；卡片保持实底。主窗壳/置顶弹窗各自管理，互不影响
+  useEffect(() => {
+    if (window.diteng.initialWindowMaterial !== 'mica') return undefined;
+    document.documentElement.setAttribute('data-window-material', 'mica');
+    return () => document.documentElement.removeAttribute('data-window-material');
+  }, []);
+
   // 防重守卫：提交/发送处理中，回车与连点共用同一同步闸门
   const isBusyRef = useRef(false);
   // 自动登录只发起一次（StrictMode 双执行防重）

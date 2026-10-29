@@ -15,6 +15,7 @@ import {
   systemPreferences,
 } from 'electron';
 import { join } from 'node:path';
+import { release } from 'node:os';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { autoUpdater } from 'electron-updater';
 import { UpdateService } from './update-service';
@@ -70,10 +71,15 @@ const DEV_SERVER_URL = process.env.DITENG_AGENT_DEV_URL || 'http://127.0.0.1:517
 // 对应 --dsw-static-neutral-bluish-950 / 00，避免深色主题下窗口底色闪白
 const THEME_DARK_BACKGROUND = '#151517';
 const THEME_LIGHT_BACKGROUND = '#ffffff';
-// macOS 主窗整窗 vibrancy（dsh desktop 同款）：底色全透明（#RRGGBBAA），让 NSVisualEffectView 材质透出
-const MAC_TRANSPARENT_BACKGROUND = '#00000000';
+// 主窗整窗原生材质（macOS vibrancy / Windows 云母同款）：底色全透明（#RRGGBBAA），让系统材质透出
+const TRANSPARENT_BACKGROUND = '#00000000';
 // 主窗壳路由 hash：与登录窗共用同一入口页，仅 hash 区分（App.tsx 判定 #/main，需带斜杠）
 const MAIN_WINDOW_HASH = '/main';
+// Windows 11 22H2（build 22621）起 DWMWA_SYSTEMBACKDROP_TYPE 才支持云母（Electron backgroundMaterial 同一门槛）；
+// 更早系统保持实底窗口，渲染层经 material:get-sync 不走透明分支。云母色深跟随系统主题（非应用主题），
+// 应用固定深/浅色时由壳 CSS 的外围 tint（Shell.module.css mica 分支）向应用主题靠拢。
+const WINDOWS_MICA =
+  process.platform === 'win32' && Number.parseInt(release().split('.')[2] ?? '0', 10) >= 22621;
 
 let loginWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -468,7 +474,7 @@ function applyMacMainWindowBackdrop(): void {
     mainWindow.setBackgroundColor(macVibrancyFallbackFill());
   } else {
     mainWindow.setVibrancy('sidebar');
-    mainWindow.setBackgroundColor(MAC_TRANSPARENT_BACKGROUND);
+    mainWindow.setBackgroundColor(TRANSPARENT_BACKGROUND);
   }
 }
 
@@ -494,7 +500,10 @@ function createLoginWindow(): void {
     show: false,
     title: 'diteng agent',
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const } : { frame: false }),
-    backgroundColor: resolveIsDarkTheme(config) ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
+    // Win11 云母与主窗同款：透明底 + 整窗材质，登录页四周留白透出（卡片保持实底）；
+    // 其余平台实底色避免加载瞬间透出桌面
+    backgroundColor: WINDOWS_MICA ? TRANSPARENT_BACKGROUND : resolveIsDarkTheme(config) ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
+    ...(WINDOWS_MICA && { backgroundMaterial: 'mica' as const }),
     webPreferences: {
       // 安全基线：渲染层无 Node 能力，仅经 preload 暴露白名单 API
       contextIsolation: true,
@@ -549,9 +558,15 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     minHeight: 640,
     show: false,
     title: 'diteng agent',
-    // macOS 整窗 vibrancy 需要透明底色让材质透出；Windows 维持实心底色
+    // macOS 整窗 vibrancy / Windows 11 云母需要透明底色让材质透出；其余平台维持实心底色
     backgroundColor:
-      process.platform === 'darwin' ? MAC_TRANSPARENT_BACKGROUND : isDark ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND,
+      process.platform === 'darwin' || WINDOWS_MICA
+        ? TRANSPARENT_BACKGROUND
+        : isDark
+          ? THEME_DARK_BACKGROUND
+          : THEME_LIGHT_BACKGROUND,
+    // Windows 11：整窗云母（对齐 macOS 整窗 vibrancy 的做法），替代 transparent 窗口且无性能损耗
+    ...(WINDOWS_MICA && { backgroundMaterial: 'mica' as const }),
     // macOS：hiddenInset + 红绿灯落在 tab 条左侧，整窗 sidebar 毛玻璃（rail 由 CSS 半透明透出）；
     // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
     ...(process.platform === 'darwin' && {
@@ -666,11 +681,12 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
 function applyWindowTheme(): void {
   const isDark = resolveIsDarkTheme(getConfig());
   const color = isDark ? THEME_DARK_BACKGROUND : THEME_LIGHT_BACKGROUND;
-  loginWindow?.setBackgroundColor(color);
+  // 云母窗口（登录/主窗）保持透明底，材质由 DWM 绘制；其余平台实底色随主题刷新
+  if (!WINDOWS_MICA) loginWindow?.setBackgroundColor(color);
   if (process.platform === 'darwin') {
     // 主窗可见时保持透明（vibrancy 材质深浅跟随应用主题）；不可见期间的兜底底色随主题刷新
     applyMacMainWindowBackdrop();
-  } else {
+  } else if (!WINDOWS_MICA) {
     mainWindow?.setBackgroundColor(color);
   }
 }
@@ -1080,6 +1096,12 @@ function registerIpcHandlers(): void {
     event.returnValue = currentThemeState();
   });
   ipcMain.handle('theme:get', () => currentThemeState());
+
+  // 主窗原生材质（Windows 11 云母 / 其余平台实底）：平台 build 判定只在主进程，
+  // 渲染层首帧同步取用，据此决定是否走透明分支；会话期内不会变化，无需广播
+  ipcMain.on('material:get-sync', (event) => {
+    event.returnValue = WINDOWS_MICA ? 'mica' : 'none';
+  });
 
   ipcMain.handle('config:set', (event, patch: unknown) => {
     if (!isShellUrl(event.sender.getURL())) throw new Error('无权更改客户端配置');

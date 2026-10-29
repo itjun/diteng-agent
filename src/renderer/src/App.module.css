@@ -45,6 +45,43 @@
   -webkit-app-region: drag;
 }
 
+/* Windows 11 云母（html[data-window-material='mica'] 由 LoginPanel 挂载时标记）：
+   四周渐变底转半透明 tint 叠在云母上（浅 60% / 深 84%，与主窗外围同档——深色加厚是因
+   云母色深跟随系统主题，固定深色 + 系统浅色时薄 tint 会被浅色云母顶穿），登录卡片保持实底。 */
+:global(html[data-window-material='mica']) .page {
+  background: linear-gradient(
+    125deg,
+    color-mix(in srgb, var(--login-background-start) 60%, transparent),
+    color-mix(in srgb, var(--login-background-end) 60%, transparent)
+  );
+}
+
+:global(html[data-window-material='mica']) .page::before {
+  background: linear-gradient(
+    125deg,
+    color-mix(in srgb, var(--login-background-start) 60%, transparent),
+    color-mix(in srgb, var(--login-background-end) 60%, transparent)
+  );
+  background-size: 100vw 100vh;
+}
+
+:global(html[data-window-material='mica'] body[data-ds-dark-theme]) .page {
+  background: linear-gradient(
+    125deg,
+    color-mix(in srgb, var(--login-background-start) 84%, transparent),
+    color-mix(in srgb, var(--login-background-end) 84%, transparent)
+  );
+}
+
+:global(html[data-window-material='mica'] body[data-ds-dark-theme]) .page::before {
+  background: linear-gradient(
+    125deg,
+    color-mix(in srgb, var(--login-background-start) 84%, transparent),
+    color-mix(in srgb, var(--login-background-end) 84%, transparent)
+  );
+  background-size: 100vw 100vh;
+}
+
 .card {
   position: relative;
   display: grid;
