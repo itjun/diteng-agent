@@ -92,6 +92,8 @@ try {
   });
   await main.getByTestId('app-menu-button').waitFor();
   await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('#/main')).setSize(1200, 800));
+  const cdp = await main.context().newCDPSession(main);
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'no-preference' }] });
   let guestId;
   await assertEventually(async () => {
     guestId = await electron.evaluate(({ webContents }) => webContents.getAllWebContents().find(contents => contents.getType() === 'webview')?.id);
@@ -113,12 +115,20 @@ try {
   }
   const menuStyle = testId => main.getByTestId(testId).evaluate(menu => {
     const style = getComputedStyle(menu), row = getComputedStyle(menu.querySelector('button'));
-    return { background: style.backgroundColor, border: style.border, radius: style.borderRadius, shadow: style.boxShadow, padding: style.padding, color: style.color, rowHeight: row.minHeight, rowRadius: row.borderRadius, font: row.fontSize };
+    return { background: style.backgroundColor, blur: style.backdropFilter, border: style.border, radius: style.borderRadius, shadow: style.boxShadow, padding: style.padding, color: style.color, rowHeight: row.minHeight, rowRadius: row.borderRadius, font: row.fontSize };
   });
   await main.getByTestId('app-menu-button').click();
   const lightStyle = await menuStyle('app-menu');
+  assert.match(lightStyle.background, /\/\s*0\.65\)/);
+  assert.match(lightStyle.blur, /blur\(20px\)/);
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
+  const reducedStyle = await menuStyle('app-menu');
+  assert.doesNotMatch(reducedStyle.background, /\/\s*0\./);
+  assert.equal(reducedStyle.blur, 'none');
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'no-preference' }] });
   await main.keyboard.press('Escape');
   await rightClickGuest('#blank');
+  assert.deepEqual(await main.getByTestId('context-menu').locator(':scope > *').evaluateAll(elements => elements.map(element => element.getAttribute('data-testid') ?? element.getAttribute('role'))), ['context-menu-reload', 'separator', 'context-menu-copy', 'context-menu-select-all']);
   assert.equal(await main.getByTestId('context-menu-copy').isDisabled(), true);
   assert.equal(await main.getByTestId('context-menu-reload').isEnabled(), true);
   assert.deepEqual(await menuStyle('context-menu'), lightStyle);
@@ -140,14 +150,15 @@ try {
   assert.equal(await main.getByTestId('context-menu').isVisible(), true);
   await main.screenshot({ path: join(output, 'context-menu-light.png') });
   await main.keyboard.press('End');
-  assert.equal(await main.getByTestId('context-menu-reload').evaluate(button => button === document.activeElement), true);
-  await main.keyboard.press('ArrowDown');
   assert.equal(await main.getByTestId('context-menu-select-all').evaluate(button => button === document.activeElement), true);
+  await main.keyboard.press('ArrowDown');
+  assert.equal(await main.getByTestId('context-menu-reload').evaluate(button => button === document.activeElement), true);
   await main.keyboard.press('Escape');
   assert.equal(await main.getByTestId('context-menu').count(), 0);
   console.log('PASS 网页右键与三点菜单样式一致，禁用态、键盘循环导航与 Esc 关闭');
 
   await rightClickGuest('#input', true);
+  assert.equal(await main.getByTestId('context-menu').locator('button').first().getAttribute('data-testid'), 'context-menu-reload');
   const completedRequestId = await main.evaluate(() => window.__contextRequest.id);
   await main.getByTestId('context-menu-copy').click();
   await assertEventually(async () => await electron.evaluate(({ clipboard }) => clipboard.readText()) === '编辑测试内容');
@@ -163,6 +174,7 @@ try {
   await main.getByTestId('context-menu-select-all').click();
   await assertEventually(async () => await guestEval('document.querySelector("#input").selectionEnd - document.querySelector("#input").selectionStart') === '编辑测试内容'.length);
   await rightClickGuest('#link');
+  assert.equal(await main.getByTestId('context-menu').locator('button').first().getAttribute('data-testid'), 'context-menu-reload');
   await main.getByTestId('context-menu-copy-link').click();
   const helpUrl = await guestEval('new URL("/help", location.href).href');
   await assertEventually(async () => await electron.evaluate(({ clipboard }) => clipboard.readText()) === helpUrl);
@@ -199,6 +211,8 @@ try {
   await main.getByTestId('settings-back').click();
   await main.getByTestId('app-menu-button').click();
   const darkStyle = await menuStyle('app-menu');
+  assert.match(darkStyle.background, /\/\s*0\.75\)/);
+  assert.match(darkStyle.blur, /blur\(20px\)/);
   await main.keyboard.press('Escape');
   await rightClickGuest('#input', true);
   assert.deepEqual(await menuStyle('context-menu'), darkStyle);
@@ -212,6 +226,9 @@ try {
   const tab = main.locator('[role="tab"]').first();
   await tab.click({ button: 'right' });
   await main.getByRole('menu', { name: /标签菜单/ }).waitFor();
+  const tabStyle = await main.getByRole('menu', { name: /标签菜单/ }).evaluate(menu => ({ background: getComputedStyle(menu).backgroundColor, blur: getComputedStyle(menu).backdropFilter }));
+  assert.equal(tabStyle.background, darkStyle.background);
+  assert.equal(tabStyle.blur, darkStyle.blur);
   assert.equal(await main.getByTestId('context-menu').count(), 0);
   await main.keyboard.press('Escape');
   await rightClickGuest('#blank');

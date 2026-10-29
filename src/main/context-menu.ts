@@ -47,6 +47,9 @@ export function installContextMenu(contents: Electron.WebContents, isShellUrl: (
     event.preventDefault();
     const items: ContextMenuItem[] = [];
     const isTextSelected = params.selectionText.length > 0;
+    if (contents.getType() === 'webview') {
+      items.push({ action: 'reload', label: '刷新', isEnabled: true }, { action: 'separator' });
+    }
     if (params.linkURL) {
       items.push({ action: 'copy-link', label: '复制链接地址', isEnabled: true }, { action: 'separator' });
     }
@@ -54,9 +57,6 @@ export function installContextMenu(contents: Electron.WebContents, isShellUrl: (
     items.push({ action: 'copy', label: '复制', isEnabled: isTextSelected && params.editFlags.canCopy });
     if (params.isEditable) items.push({ action: 'paste', label: '粘贴', isEnabled: params.editFlags.canPaste });
     items.push({ action: 'select-all', label: '全选', isEnabled: true });
-    if (contents.getType() === 'webview') {
-      items.push({ action: 'separator' }, { action: 'reload', label: '刷新', isEnabled: true });
-    }
     const request: ContextMenuRequest = {
       id: ++nextRequestId, sourceId: contents.id, isGuest: contents !== owner,
       x: params.x, y: params.y, items,
