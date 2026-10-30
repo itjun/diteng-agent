@@ -123,6 +123,20 @@ test('安装入口同步防重；取消确认保持就绪，安装错误会显�
   assert.equal(f.counts().installs, 1);
   f.updater.emit('error', new Error('permission denied'));
   assert.equal(f.service.getState().status, 'error');
+  assert.equal(f.service.getState().isManual, true, '安装失败后必须显示更新提示');
+});
+
+test('macOS 安装使用更新清单中对应文件的校验值，缺少校验值时不退出', async () => {
+  const calls = [];
+  const f = fixture({ info: { ...policy(), files: [{ url: 'release-arm64.zip', sha512: 'digest' }] },
+    hooks: { installDownloaded: async (...args) => { calls.push(args); } } });
+  f.updater.downloadUpdate = async () => ['/cache/release-arm64.zip'];
+  await f.service.check(); await f.service.download(); await f.service.install();
+  assert.deepEqual(calls, [['/cache/release-arm64.zip', '0.3.0', 'digest']]);
+  const missing = fixture({ hooks: { installDownloaded: async () => { throw new Error('不应执行'); } } });
+  await missing.service.check(); await missing.service.download(); await missing.service.install();
+  assert.equal(missing.service.getState().status, 'error');
+  assert.equal(missing.service.getState().isManual, true);
 });
 
 test('自动检查开关控制启动和周期，stop 释放定时器；开发构建不联网', async () => {

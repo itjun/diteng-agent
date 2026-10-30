@@ -62,6 +62,15 @@ app.whenReady().then(() => {
 });
 globalThis.__updateInstalls = 0;
 updater.quitAndInstall = () => { globalThis.__updateInstalls++; };
+if (process.platform === 'darwin') {
+  const macInstall = require(${JSON.stringify(resolve('dist/main/mac-update-install.js'))});
+  macInstall.prepareMacUpdate = async () => {
+    globalThis.__updateInstalls++;
+    const originalQuit = app.quit;
+    app.quit = () => { app.quit = originalQuit; };
+    return () => {};
+  };
+}
 globalThis.__approveInstall = false;
 dialog.showMessageBox = async () => ({ response: globalThis.__approveInstall ? 0 : 1 });
 require(${JSON.stringify(resolve('dist/main/index.js'))});

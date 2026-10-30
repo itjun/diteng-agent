@@ -19,6 +19,7 @@ import { release } from 'node:os';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { autoUpdater } from 'electron-updater';
 import { UpdateService } from './update-service';
+import { prepareMacUpdate } from './mac-update-install';
 import { BUILD_SERVER_BASE } from './build-environment';
 import {
   clearAutoLoginCredential,
@@ -389,11 +390,21 @@ const updateService = new UpdateService({
       message: '保存工作后重启并安装更新？', detail: '应用将关闭所有页面，安装完成后重新启动。',
       buttons: ['重启并安装', '取消'], defaultId: 1, cancelId: 1, noLink: true });
     if (result.response !== 0 || corpSwitch.getActive()) return false;
-    // quitAndInstall 先关窗口后触发 before-quit，提前放行托盘关闭拦截。
-    isQuitting = true;
-    isUpdateQuitRequested = true;
+    if (process.platform !== 'darwin') {
+      // quitAndInstall 先关窗口后触发 before-quit，提前放行托盘关闭拦截。
+      isQuitting = true;
+      isUpdateQuitRequested = true;
+    }
     return true;
   },
+  ...(process.platform === 'darwin' ? { installDownloaded: async (file: string, version: string, sha512: string) => {
+    const cancelInstall = await prepareMacUpdate({ archive: file, expectedHash: sha512, version, executable: process.execPath,
+      logFile: join(app.getPath('userData'), 'update-install.log') });
+    if (corpSwitch.getActive()) { cancelInstall(); throw new Error('正在切换账套，无法安装更新'); }
+    isQuitting = true;
+    isUpdateQuitRequested = true;
+    app.quit();
+  } } : {}),
 });
 
 const trayService = new TrayService({

@@ -22,6 +22,7 @@ interface UpdateHooks {
   savePolicy(policy: UpdatePolicy): void;
   onChanged(state: UpdateState): void;
   prepareInstall(): Promise<boolean>;
+  installDownloaded?(file: string, version: string, sha512: string): Promise<void>;
   checkIntervalMs?: number;
   checkTimeoutMs?: number;
 }
@@ -33,6 +34,8 @@ export class UpdateService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private initialCheck: Promise<UpdateState> | null = null;
   private isInstalling = false;
+  private downloadedFile = '';
+  private updateFiles: Array<{ url: string; sha512: string }> = [];
 
   constructor(private readonly hooks: UpdateHooks) {
     this.state = { status: hooks.disabledReason ? 'disabled' : 'idle', currentVersion: hooks.currentVersion,
@@ -51,7 +54,7 @@ export class UpdateService {
       // 检查/下载由各自的 Promise 处理；安装错误仅由事件报告。
       if (this.isInstalling) {
         this.isInstalling = false;
-        this.change({ status: 'error', error: '更新安装失败，请重试或使用新版安装包' });
+        this.change({ status: 'error', error: '更新安装失败，请重试或使用新版安装包', isManual: true });
       }
     });
     hooks.updater.on('download-progress', info => {
@@ -101,6 +104,7 @@ export class UpdateService {
       ]);
       if (!result) throw new Error('无法读取更新源');
       const policy = parseUpdatePolicy(result.updateInfo);
+      this.updateFiles = result.updateInfo.files || [];
       // 不允许较旧的发布源清除本机已经获知的强制更新要求。
       if (!this.state.minimumVersion || !lt(policy.minimumVersion, this.state.minimumVersion)) {
         this.applyPolicy(policy);
@@ -135,6 +139,7 @@ export class UpdateService {
     try {
       const files = await this.hooks.updater.downloadUpdate();
       if (!files.length) throw new Error('没有可安装的更新文件');
+      this.downloadedFile = files[0];
       this.change({ status: 'downloaded', progress: 100 });
     } catch (error) {
       console.warn('[update] 下载失败', error);
@@ -149,10 +154,17 @@ export class UpdateService {
     try {
       if (!(await this.hooks.prepareInstall())) return this.getState();
       this.change({ status: 'installing', error: '' });
-      this.hooks.updater.quitAndInstall(false, true);
+      if (this.hooks.installDownloaded) {
+        const filename = this.downloadedFile.split(/[\\/]/).pop();
+        const file = this.updateFiles.find(item => decodeURIComponent(item.url).split('/').pop() === filename);
+        if (!file?.sha512) throw new Error('更新文件缺少校验信息');
+        await this.hooks.installDownloaded(this.downloadedFile, this.state.latestVersion, file.sha512);
+      } else {
+        this.hooks.updater.quitAndInstall(false, true);
+      }
     } catch (error) {
       console.warn('[update] 安装失败', error);
-      this.change({ status: 'error', error: '更新安装失败，请重试或使用新版安装包' });
+      this.change({ status: 'error', error: '更新安装失败，请重试或使用新版安装包', isManual: true });
     } finally { if (this.getState().status !== 'installing') this.isInstalling = false; }
     return this.getState();
   }

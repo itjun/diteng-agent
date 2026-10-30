@@ -80,15 +80,16 @@ node scripts/verify-vibrancy.mjs   # 毛玻璃透光差分（黄/蓝背景板）
 ```bash
 pnpm test                          # 包含版本状态机与发布文件校验
 pnpm build && node scripts/e2e-updates.mjs # 本地 HTTP + Electron 真实检查/下载/哈希校验；安装调用用桩隔离
+node scripts/e2e-mac-install.mjs "旧应用.app" "新版.zip" 版本号 # macOS 临时副本真实替换并启动
 pnpm dist:linux                    # Linux deb x64/arm64；dev 环境用 dist:linux:dev
 pnpm release patch --dry-run       # 预演下一版本，不改文件、不推送
 pnpm release patch                 # 检查 → 提升版本 → 原子提交与标签推送 → 三平台自动构建发布
 pnpm release 0.3.0                 # 也可指定稳定版本
 ```
 
-当前 macOS 安装包未使用 Apple 开发者证书签名，也未公证；首次打开可能受到 macOS 安全设置拦截。macOS 自动更新的安装步骤依赖系统签名校验，当前免签版本应下载 DMG 手动安装，不保证自动安装可用。Linux deb 安装更新可能请求系统管理员授权。
+当前 macOS 安装包未使用 Apple 开发者证书签名，也未公证；首次打开可能受到 macOS 安全设置拦截。包含免签更新功能的版本在确认后会校验更新包、替换应用并重新启动，应用目录须可写。旧版尚未包含该功能，首次升级须下载 DMG 手动安装。SHA-512 校验依赖更新源的真实性，不能替代 Apple 开发者签名。Linux deb 安装更新可能请求系统管理员授权。
 
-`.github/workflows/release.yml` 在 main/PR/手动运行时构建测试包，在 `v版本号` 标签时正式发布。macOS 生成 arm64/x64 DMG 与 ZIP，Windows 生成 x64 NSIS，Linux 生成 x64/arm64 deb。每个平台在原生 runner 上测试更新检查、下载和当前架构安装包启动，更新安装调用使用桩；Linux 还用 apt 安装 x64 deb。各平台更新清单、架构完整性与文件 SHA-512 全部校验成功后，才创建并公开完整 GitHub Release。测试运行不公开版本。若 CI 失败，修复后重跑失败任务；不要移动已公开的版本标签。跨架构包有构建和清单验证，实际升级替换仍需目标系统验收。
+`.github/workflows/release.yml` 在 main/PR/手动运行时构建测试包，在 `v版本号` 标签时正式发布。macOS 生成 arm64/x64 DMG 与 ZIP，Windows 生成 x64 NSIS，Linux 生成 x64/arm64 deb。每个平台在原生 runner 上测试更新检查、下载和当前架构安装包启动；macOS 还在临时目录测试真实替换与重启，Linux 用 apt 安装 x64 deb。各平台更新清单、架构完整性与文件 SHA-512 全部校验成功后，才创建并公开完整 GitHub Release。测试运行不公开版本。若 CI 失败，修复后重跑失败任务；不要移动已公开的版本标签。跨架构包有构建和清单验证，实际升级替换仍需目标系统验收。
 
 ## 结构
 

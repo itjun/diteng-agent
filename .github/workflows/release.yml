@@ -55,6 +55,15 @@ jobs:
       - name: Test updater through local HTTP and Electron
         if: runner.os != 'Linux'
         run: node scripts/e2e-updates.mjs
+      - name: Test macOS update installation and restart
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$(uname -m)" = arm64 ]; then arch=arm64; app=release/mac-arm64; else arch=x64; app=release/mac; fi
+          node scripts/e2e-mac-install.mjs "$app/diteng agent.app" "release/diteng-agent-$version-mac-$arch.zip" "$version"
+          node scripts/e2e-mac-install.mjs "$app/diteng agent.app" "release/diteng-agent-$version-mac-$arch.zip" "$version" --rollback
+          node scripts/e2e-mac-install.mjs "$app/diteng agent.app" "release/diteng-agent-$version-mac-$arch.zip" "$version" --rollback-launch
       - name: Test updater on Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a node scripts/e2e-updates.mjs
@@ -115,5 +124,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --draft --title "$GITHUB_REF_NAME" --generate-notes --notes "macOS 安装包未经 Apple 开发者签名及公证，首次打开可能受系统安全设置限制。请下载对应架构的 DMG 手动安装；自动安装更新不保证可用。"
+          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --draft --title "$GITHUB_REF_NAME" --generate-notes --notes "macOS 安装包未经 Apple 开发者签名及公证，首次打开可能受系统安全设置限制。旧版首次升级请下载对应架构的 DMG 手动安装。"
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest
