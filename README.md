@@ -35,6 +35,8 @@ pnpm dist:mac:dev   # 开发环境 mac arm64 dmg；dist:win:dev 为 Windows nsis
 
 应用采用单实例运行：重复启动时新进程立即退出，并显示、还原和聚焦已有的登录窗或主窗；主窗隐藏到托盘后再次启动也会回到原窗口。
 
+登录后由主进程携带 `sid` / `CLIENTID` 调用系统 `TAppHeartbeat.Hello`，立即续期并在每轮结束后间隔 15 秒再次发送。最小化、隐藏到托盘或关闭业务标签不影响心跳；切账套后同时维护原始登录 sid 和当前 sid，相同 sid 只发一次。请求超时为 10 秒，失败后继续按周期重试，系统唤醒后立即补发；退出登录或真正退出应用时停止并取消在途请求。断网、系统休眠期间无法续期，已被服务端撤销的会话仍需重新登录。
+
 ## 构建环境
 
 | 环境 | 固定服务器地址 |
@@ -55,6 +57,7 @@ cp scripts/e2e-secrets.example.mjs scripts/e2e-secrets.mjs   # 填入测试账�
 (pnpm exec vite &) && (pnpm exec electron . --remote-debugging-port=9223 &)
 node scripts/e2e-layout.mjs        # Dia 双栏布局/拖宽/重启/主题/反馈；E2E_MOCK=1 自动启动隔离本地 mock
 node scripts/e2e-build-environment.mjs # 当前构建的登录/短信地址锁定、设置只读与重新登录（全 mock；先 pnpm build 或 pnpm build:dev）
+node scripts/e2e-heartbeat.mjs     # 登录/托盘后台心跳、换票、断网恢复、唤醒与退出取消（临时 userData + 全网络桩；先 pnpm build）
 node scripts/e2e-single-instance.mjs # 重复启动退出、登录窗复用、并发登录防多窗、最小化/托盘恢复与退出后重启（临时 userData + 全 mock；先 pnpm build）
 node scripts/e2e-shell-core.mjs    # 高频入口、硬件信息、公网 IP 失败恢复、消息状态、开关防重、离线重新登录（临时 userData + 本地 mock；先 pnpm build）
 node scripts/e2e-desktop-coordination.mjs # 账套切换事务与跨账套紧急提醒（临时 userData + 私有 Vite + 本地 mock；先 pnpm build）

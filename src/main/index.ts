@@ -9,6 +9,7 @@ import {
   Menu,
   Notification,
   nativeTheme,
+  powerMonitor,
   safeStorage,
   screen,
   shell,
@@ -41,6 +42,7 @@ import { clearSession, getCorpList, getSession, getSessionSummary, saveCorpList,
 import { buildAiUrl, buildErpUrl, classifyUrl, isErpLogoutUrl, withSessionParams } from './url-policy';
 import { installErpMenuNewTabPatch } from './erp-menu-newtab';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
+import { HeartbeatService } from './heartbeat-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
 import { openFeedbackChatApp } from './external-apps';
@@ -302,6 +304,7 @@ const corpSwitch = new CorpSwitchCoordinator({
   },
   commit: (session, target, generation) => {
     saveSession(session);
+    heartbeatService.start(session);
     requestGate.commit(target.sourceWebContentsId, session, generation);
     pushSessionChanged();
     sendToShell('corp-switch:committed', {
@@ -339,6 +342,9 @@ function broadcastMqttState(state: MqttState): void {
     mainWindow.webContents.send('mqtt:changed', state);
   }
 }
+
+const heartbeatService = new HeartbeatService();
+const refreshHeartbeat = () => { void heartbeatService.refresh(); };
 
 const mqttService = new MqttService({
   readSession: getSession,
@@ -775,6 +781,7 @@ async function keepSession(serverBase: string, result: LoginResult, loginId: str
   // 账套名称只依赖账套列表：即使 getTokenInfo 失败也尽量补上
   session.corpName = resolveCorpName(session.corpNo, getCorpList());
   saveSession(session);
+  heartbeatService.start(session);
   corpSwitch.reset();
   importantNotifier.setEnabled(getConfig().importantPopups);
   // forceRedirect + 绝对 URL（服务端显式指定落点）优先；否则开当前账套首页表单
@@ -827,6 +834,7 @@ function performLogout(): void {
   if (!session || isLoggingOut) return;
   if (corpSwitch.getActive()) { reportSwitchError('正在核验账套切换，请稍候再退出'); return; }
   isLoggingOut = true;
+  heartbeatService.stop();
   corpSwitch.reset();
   requestGate.reset(); // 未登录（重复触发）：登录窗已存在，避免开出第二扇
   void serverApi.logout(session.serverBase, session.token).then((result) => {
@@ -1448,6 +1456,7 @@ app.whenReady().then(() => {
   requestGate.install();
   registerIpcHandlers();
   updateService.start();
+  powerMonitor.on('resume', refreshHeartbeat);
   nativeTheme.on('updated', () => {
     applyWindowTheme();
     broadcastThemeState();
@@ -1524,6 +1533,8 @@ app.on('before-quit', (event) => {
     app.relaunch();
   }
   isQuitting = true;
+  powerMonitor.removeListener('resume', refreshHeartbeat);
+  heartbeatService.stop();
   updateService.stop();
   corpSwitch.reset();
   requestGate.reset();

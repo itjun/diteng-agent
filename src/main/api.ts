@@ -279,6 +279,7 @@ async function postService(
   head: Record<string, string>,
   token: string,
   machineCode: string,
+  signal?: AbortSignal,
 ): Promise<ApiCallResult<DataSetResult>> {
   const url = new URL(`${serverBase.replace(/\/+$/, '')}/services/${path.replace(/^\/+/, '')}`);
   url.searchParams.set('format', 'json');
@@ -290,7 +291,7 @@ async function postService(
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ dataIn }).toString(),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return toFailure(response);
     const raw = (await response.json()) as DataSetResult;
@@ -300,6 +301,17 @@ async function postService(
   } catch (error) {
     return networkFailure(error);
   }
+}
+
+/** 系统心跳：只使用当前构建服务器及登录时的 sid / CLIENTID，响应中的用户信息不向外传递。 */
+export async function heartbeat(
+  serverBase: string,
+  token: string,
+  machineCode: string,
+  signal: AbortSignal,
+): Promise<ApiCallResult<null>> {
+  const result = await postService(serverBase, 'TAppHeartbeat.Hello', {}, token, machineCode, signal);
+  return result.ok ? { ok: true, data: null } : result;
 }
 
 function readStringField(row: Record<string, unknown>, key: string): string {
