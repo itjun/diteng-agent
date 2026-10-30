@@ -50,6 +50,7 @@ import { CorpSwitchCoordinator, type CorpSwitchTarget } from './corp-switch';
 import { ErpRequestGate } from './erp-request-gate';
 import { isShellEntryUrl } from './shell-origin';
 import { getDeviceInfo, getPublicIp } from './device-info';
+import { createNetworkDiagnosticsService } from './network-diagnostics';
 import { installContextMenu, isContextMenuOpen, registerContextMenuIpc } from './context-menu';
 import type {
   AppConfig,
@@ -1120,6 +1121,22 @@ function registerIpcHandlers(): void {
   ipcMain.handle('device:public-ip', (event) => {
     if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame || !isShellUrl(event.sender.getURL())) return invalid('无权读取网络信息');
     return getPublicIp();
+  });
+  // 网络检测：逐探针进度经 changed 事件推流，最近一份状态保留供页面切回时恢复
+  const networkDiagnostics = createNetworkDiagnosticsService();
+  const isDiagnosticsSender = (event: Electron.IpcMainInvokeEvent) =>
+    event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame && isShellUrl(event.sender.getURL());
+  ipcMain.handle('network-diagnostics:get', (event) => {
+    if (!isDiagnosticsSender(event)) throw new Error('无权读取网络检测状态');
+    return networkDiagnostics.getState();
+  });
+  ipcMain.handle('network-diagnostics:start', (event) => {
+    if (!isDiagnosticsSender(event)) throw new Error('无权发起网络检测');
+    const config = getConfig();
+    return networkDiagnostics.start(
+      { serverBase: config.serverBase, aiBase: resolveAiBase(config) },
+      state => mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.send('network-diagnostics:changed', state),
+    );
   });
 
   // preload 首帧同步读取；只含非敏感主题状态，数据量极小

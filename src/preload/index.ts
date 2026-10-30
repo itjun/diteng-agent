@@ -3,6 +3,7 @@ import type {
   ContextMenuRequest,
   MqttState,
   CorpSwitchCommitted,
+  NetworkDiagnosticsState,
   SessionSummary,
   ShortcutAction,
   TabsOpenRequestPayload,
@@ -61,6 +62,15 @@ const diteng: DitengApi = {
   getConfig: () => ipcRenderer.invoke('config:get'),
   getDeviceInfo: () => ipcRenderer.invoke('device:info'),
   getPublicIp: () => ipcRenderer.invoke('device:public-ip'),
+  getNetworkDiagnostics: () => ipcRenderer.invoke('network-diagnostics:get'),
+  startNetworkDiagnostics: () => ipcRenderer.invoke('network-diagnostics:start'),
+  onNetworkDiagnosticsChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: NetworkDiagnosticsState) => listener(state);
+    ipcRenderer.on('network-diagnostics:changed', handler);
+    return () => {
+      ipcRenderer.removeListener('network-diagnostics:changed', handler);
+    };
+  },
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   getThemeState: () => ipcRenderer.invoke('theme:get'),
   onThemeChanged: (listener) => {

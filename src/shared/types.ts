@@ -97,6 +97,73 @@ export interface DeviceInfo {
   appVersion: string;
 }
 
+/** 网络检测五档评级 + skipped（本地服务目标不参与检测） */
+export type NetworkDiagnosticsGrade = 'excellent' | 'good' | 'fair' | 'poor' | 'down' | 'skipped';
+
+/** 评级中文文案（主进程结论与渲染层徽章共用，统一两字便于徽章排版） */
+export const NETWORK_GRADE_LABELS: Record<NetworkDiagnosticsGrade, string> = {
+  excellent: '优秀',
+  good: '良好',
+  fair: '一般',
+  poor: '较差',
+  down: '不通',
+  skipped: '跳过',
+};
+
+/** 单个探测目标（外网基线 / 前端站点 / 后端接口 / AI 站点）的探针统计 */
+export interface NetworkDiagnosticsTargetStat {
+  key: 'internet' | 'frontend' | 'backend' | 'ai';
+  label: string;
+  /** 探针 URL（展示用；POST 体不包含在内） */
+  url: string;
+  skipped: boolean;
+  /** 计划探针数（固定）；已完成数看 completed */
+  total: number;
+  /** 已完成探针数（运行中随进度增长，结束时与 total 相等） */
+  completed: number;
+  success: number;
+  /** 成功探针的中位 TTFB；无成功探针为 null */
+  medianMs: number | null;
+  avgMs: number | null;
+  /** 成功探针延迟的标准差（抖动）；样本不足为 null */
+  jitterMs: number | null;
+  maxMs: number | null;
+  /** 仅前端目标：首个成功探针的入口文档完整下载耗时与大小 */
+  documentMs: number | null;
+  documentBytes: number | null;
+  grade: NetworkDiagnosticsGrade;
+}
+
+/** serverBase 链路分解（各段失败为 null，error 说明整体失败原因） */
+export interface NetworkDiagnosticsPhases {
+  dnsMs: number | null;
+  tcpMs: number | null;
+  /** http 协议无 TLS 段，为 null */
+  tlsMs: number | null;
+  error: string;
+}
+
+/** 网络检测整体结论：评级取前端/后端较差者，AI 与外网基线只作参考 */
+export interface NetworkDiagnosticsVerdict {
+  grade: Exclude<NetworkDiagnosticsGrade, 'skipped'>;
+  summary: string;
+  advice: string;
+}
+
+/**
+ * 网络检测状态：主进程持有最近一份，逐探针推流更新；
+ * status=done 后保留，页面切回「关于本机」时经 get 恢复展示。
+ */
+export interface NetworkDiagnosticsState {
+  status: 'idle' | 'running' | 'done';
+  startedAt: number | null;
+  completedProbes: number;
+  totalProbes: number;
+  phases: NetworkDiagnosticsPhases | null;
+  targets: NetworkDiagnosticsTargetStat[];
+  overall: NetworkDiagnosticsVerdict | null;
+}
+
 /**
  * config:set 允许更新的字段。自动登录凭据（savedLoginId/savedPassword）只由主进程账号存储写入，
  * 不在渲染层可写范围内；serverBase 由构建确定，machineCode/windowBounds 仅主进程维护。
@@ -403,6 +470,12 @@ export interface DitengApi {
   getConfig(): Promise<AppConfig>;
   getDeviceInfo(): Promise<DeviceInfo>;
   getPublicIp(): Promise<ApiCallResult<string>>;
+  /** 网络检测：取最近一次检测状态（含进行中快照与上次结果） */
+  getNetworkDiagnostics(): Promise<NetworkDiagnosticsState>;
+  /** 开始网络检测（进行中重复调用返回失败）；逐探针进度经 onNetworkDiagnosticsChanged 推流 */
+  startNetworkDiagnostics(): Promise<ApiCallResult<null>>;
+  /** 订阅网络检测状态变化，返回取消订阅函数 */
+  onNetworkDiagnosticsChanged(listener: (state: NetworkDiagnosticsState) => void): () => void;
   setConfig(patch: AppConfigPatch): Promise<AppConfig>;
   /** 当前应用主题设置与主进程解析后的实际外观 */
   getThemeState(): Promise<ThemeState>;
