@@ -86,7 +86,14 @@ async function login() {
 }
 
 try {
-  electron = await _electron.launch({ args: [bootstrap, `--user-data-dir=${userData}`], env, timeout: 25_000 });
+  const executablePath = process.env.DITENG_E2E_EXECUTABLE;
+  electron = await _electron.launch({ ...(executablePath ? { executablePath } : {}), args: [...(executablePath ? [] : [bootstrap]), `--user-data-dir=${userData}`], env, timeout: 25_000 });
+  if (executablePath) {
+    const source = readFileSync(bootstrap, 'utf8').replace(/Object.defineProperty\(app, 'isPackaged'.*\n/, '').replace(/^require\(.*dist\/main\/index.js.*\n/m, '');
+    await electron.evaluate((electron, source) => {
+      new Function('require', source)(name => name === 'electron' ? electron : process.mainModule.require(name));
+    }, source);
+  }
   await electron.firstWindow();
   assert.equal((await heartbeats()).length, 0);
   let main = await login();
@@ -97,10 +104,19 @@ try {
   assert.equal(first.method, 'POST');
   await electron.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('#/main'));
-    window.minimize(); window.close();
-    if (window.isDestroyed() || window.isVisible()) throw new Error('主窗没有隐藏到托盘');
+    window.minimize();
+
   });
   await waitFor(async () => (await heartbeats()).length >= 2);
+  assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('#/main')).isMinimized()), true);
+  console.log('PASS 安装版最小化后继续心跳');
+  const beforeHide = (await heartbeats()).length;
+  await electron.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('#/main'));
+    window.close();
+    if (window.isDestroyed() || window.isVisible()) throw new Error('主窗没有隐藏到托盘');
+  });
+  await waitFor(async () => (await heartbeats()).length > beforeHide);
   const second = (await heartbeats())[1];
   assert.ok(second.at - first.at >= 14_900);
   console.log('PASS 登录立即续期，最小化并隐藏到托盘后按真实 15 秒周期继续心跳');
