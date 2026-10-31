@@ -49,7 +49,7 @@ function UpdateAction({ state }: { state: UpdateState }) {
   return <div className={styles.rowActions}>
     {error && <span role="alert" className={styles.error}>{error}</span>}
     <button type="button" className={styles.actionButton} data-testid="update-action" disabled={isDisabled} onClick={() => void run()}>
-      {state.status === 'downloaded' ? '重启并安装' : state.status === 'available' ? '下载更新' : '检查更新'}
+      {state.status === 'downloaded' ? '重启安装' : state.status === 'available' ? '下载更新' : '检查更新'}
     </button>
   </div>;
 }
@@ -72,13 +72,13 @@ export function UpdateSettings({ config, onConfigChange }: { config: AppConfig |
       <SettingRow title="软件更新" desc={state ? updateLabel(state) : error || '读取中…'}>
         {state && <UpdateAction state={state} />}
       </SettingRow>
-      {state?.minimumVersion && <SettingRow title="最低支持版本"><span className={styles.rowValue} data-testid="update-minimum-version">{state.minimumVersion}</span></SettingRow>}
-      <SettingRow title="自动检查更新" desc="启动时及每 6 小时检查。">
-        <button type="button" role="switch" aria-label="自动检查更新" aria-checked={config?.autoCheckUpdates ?? true} className={styles.switch}
+      {state?.minimumVersion && <SettingRow title="最低版本"><span className={styles.rowValue} data-testid="update-minimum-version">{state.minimumVersion}</span></SettingRow>}
+      <SettingRow title="自动检查" desc="启动时及每 6 小时检查。">
+        <button type="button" role="switch" aria-label="自动检查" aria-checked={config?.autoCheckUpdates ?? true} className={styles.switch}
           disabled={!config || isSaving} onClick={() => void save('autoCheckUpdates', !config?.autoCheckUpdates)} />
       </SettingRow>
-      <SettingRow title="自动下载更新" desc="下载完成后由你确认重启安装。">
-        <button type="button" role="switch" aria-label="自动下载更新" aria-checked={config?.autoDownloadUpdates ?? true} className={styles.switch}
+      <SettingRow title="自动下载" desc="下载完成后由你确认重启安装。">
+        <button type="button" role="switch" aria-label="自动下载" aria-checked={config?.autoDownloadUpdates ?? true} className={styles.switch}
           disabled={!config || isSaving} onClick={() => void save('autoDownloadUpdates', !config?.autoDownloadUpdates)} />
       </SettingRow>
     </div>

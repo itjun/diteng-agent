@@ -6,15 +6,15 @@ import { useThemeSetting } from './use-theme';
 import styles from './AppearanceSettings.module.css';
 
 const THEME_OPTIONS = [
-  { value: 'system', label: '跟随系统', desc: '随系统自动切换', Icon: DesktopIcon },
-  { value: 'light', label: '浅色', desc: '明亮清晰', Icon: SunIcon },
-  { value: 'dark', label: '深色', desc: '柔和专注', Icon: MoonIcon },
+  { value: 'system', label: '跟随系统', desc: '自动切换', Icon: DesktopIcon },
+  { value: 'light', label: '浅色模式', desc: '明亮清晰', Icon: SunIcon },
+  { value: 'dark', label: '深色模式', desc: '柔和专注', Icon: MoonIcon },
 ] as const;
 
 const WINDOW_STYLE_OPTIONS = [
-  { value: 'auto', label: '自动', desc: '跟随系统效果', Icon: DesktopIcon },
-  { value: 'classic', label: '经典', desc: '不透明背景', Icon: LayersIcon },
-  { value: 'translucent', label: '半透明', desc: '使用系统材质', Icon: OpacityIcon },
+  { value: 'auto', label: '自动模式', desc: '跟随系统', Icon: DesktopIcon },
+  { value: 'classic', label: '经典模式', desc: '实色背景', Icon: LayersIcon },
+  { value: 'translucent', label: '透明模式', desc: '系统材质', Icon: OpacityIcon },
 ] as const;
 
 /** 配色缩略预览使用真实文本布局，颜色与实际侧栏、内容卡片一致。 */
@@ -77,7 +77,7 @@ export function AppearanceSettings({ config, onConfigChange }: {
       <section className={styles.section} aria-labelledby="appearance-mode-title">
         <div className={styles.sectionHead}>
           <h3 id="appearance-mode-title">显示模式</h3>
-          <span>{themeSetting === 'system' ? `当前为${resolvedTheme === 'dark' ? '深色' : '浅色'}` : selectedTheme.label}</span>
+          <span>{themeSetting === 'system' ? `当前${resolvedTheme === 'dark' ? '深色' : '浅色'}` : selectedTheme.label}</span>
         </div>
         <div className={styles.themeGrid} role="radiogroup" aria-label="主题">
           {THEME_OPTIONS.map(({ value, label, desc, Icon }) => (
@@ -94,7 +94,7 @@ export function AppearanceSettings({ config, onConfigChange }: {
       <section className={styles.section} aria-labelledby="appearance-window-style-title">
         <div className={styles.sectionHead}>
           <h3 id="appearance-window-style-title">窗口材质</h3>
-          <span>不支持时使用实色，遵循系统透明度设置</span>
+          <span>实色回退</span>
         </div>
         <div className={styles.themeGrid} role="radiogroup" aria-label="窗口材质">
           {WINDOW_STYLE_OPTIONS.map(({ value, label, desc, Icon }) => (
@@ -111,7 +111,7 @@ export function AppearanceSettings({ config, onConfigChange }: {
       <section className={styles.section} aria-labelledby="appearance-color-title">
         <div className={styles.sectionHead}>
           <h3 id="appearance-color-title">外观配色 <span className={styles.count}>{CHROME_COLOR_OPTIONS.length}</span></h3>
-          <span>应用于侧栏、菜单与内置页面</span>
+          <span>全局外观</span>
         </div>
         <div className={styles.paletteGrid} role="radiogroup" aria-label="外围颜色">
           {CHROME_COLOR_OPTIONS.map((option) => (
@@ -120,15 +120,15 @@ export function AppearanceSettings({ config, onConfigChange }: {
               <PalettePreview light={option.light} dark={option.dark} isDark={resolvedTheme === 'dark'} />
               <span className={styles.paletteMeta}>
                 <strong>{option.label}</strong>
-                {color === option.value && <span className={styles.inUse}><CheckIcon aria-hidden="true" />使用中</span>}
+                {color === option.value && <span className={styles.inUse}><CheckIcon aria-hidden="true" />正在使用</span>}
               </span>
             </label>
           ))}
         </div>
       </section>
       <div className={styles.footer} role="status">
-        <span>{config ? `${selectedTheme.label} / ${WINDOW_STYLE_OPTIONS.find((option) => option.value === windowStyle)?.label} / ${selectedPalette.label}` : '正在读取外观…'}</span>
-        <span>{isSaving ? '正在保存…' : '选择后立即生效'}</span>
+        <span>{config ? `${selectedTheme.label} / ${WINDOW_STYLE_OPTIONS.find((option) => option.value === windowStyle)?.label} / ${selectedPalette.label}` : '正在读取…'}</span>
+        <span>{isSaving ? '正在保存…' : '即时生效'}</span>
       </div>
       {saveError && <p className={styles.error} role="alert">{saveError}</p>}
     </div>

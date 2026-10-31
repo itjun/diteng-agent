@@ -61,8 +61,8 @@ export function NotificationSettings({ state, stateError, onMessages }: {
     finally { isTestingRef.current = false; setIsTesting(false); }
   }
 
-  const unreadLabel = state && state.unread >= 0 ? `${state.unread} 条未读` : '未读数待同步';
-  const syncLabel = state?.unreadUpdatedAt ? `上次同步 ${new Date(state.unreadUpdatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '尚未成功同步';
+  const unreadLabel = state && state.unread >= 0 ? `${state.unread} 条未读` : '等待同步';
+  const syncLabel = state?.unreadUpdatedAt ? `上次同步 ${new Date(state.unreadUpdatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '尚未同步';
   return <div className={styles.notificationSettings} aria-label="通知设置">
     <section className={styles.section} aria-label="消息接收">
       <h3 className={styles.sectionTitle}>消息接收</h3>
@@ -71,7 +71,7 @@ export function NotificationSettings({ state, stateError, onMessages }: {
           <div className={styles.rowActions}><span className={styles.rowValue} data-testid="notification-unread">{unreadLabel}</span><button type="button" className={styles.actionButton} onClick={onMessages}>查看消息</button></div>
         </SettingRow>
         <SettingRow title="实时接收" desc={stateError || messageConnectionLabel(state)}>
-          <span className={state?.connected ? styles.statusConnected : styles.statusWaiting} data-testid="notification-connection">{state ? state.connected ? '已连接' : '未连接' : '读取中'}</span>
+          <span className={state?.connected ? styles.statusConnected : styles.statusWaiting} data-testid="notification-connection">{state ? state.connected ? '连接正常' : '连接断开' : '正在读取'}</span>
         </SettingRow>
         <SettingRow title="未读同步" desc={`${state?.unreadError ? '最近同步失败 · ' : ''}${syncLabel}`}>
           <button type="button" className={styles.actionButton} data-testid="refresh-messages" disabled={isRefreshing} onClick={() => void refresh()}>{isRefreshing ? '正在同步…' : '立即同步'}</button>
@@ -84,8 +84,8 @@ export function NotificationSettings({ state, stateError, onMessages }: {
         <SettingRow title="系统通知" desc="收到新消息时请求系统通知，实际显示受系统权限与专注模式影响。">
           <button type="button" role="switch" aria-label="系统通知" aria-checked={config?.systemNotifications ?? false} className={styles.switch} disabled={!config || isSaving} onClick={() => void save('systemNotifications', !config?.systemNotifications)} />
         </SettingRow>
-        <SettingRow title="紧急消息置顶提醒" desc="紧急消息依次保留，直到关闭提醒或打开消息。关闭提醒不会标为已读。">
-          <button type="button" role="switch" aria-label="紧急消息置顶提醒" aria-checked={config?.importantPopups ?? false} className={styles.switch} disabled={!config || isSaving} onClick={() => void save('importantPopups', !config?.importantPopups)} />
+        <SettingRow title="紧急置顶" desc="紧急消息依次保留，直到关闭提醒或打开消息。关闭提醒不会标为已读。">
+          <button type="button" role="switch" aria-label="紧急置顶" aria-checked={config?.importantPopups ?? false} className={styles.switch} disabled={!config || isSaving} onClick={() => void save('importantPopups', !config?.importantPopups)} />
         </SettingRow>
       </div>
       <p className={styles.sectionNote}>仅影响本客户端。旧终端的提醒设置独立生效。</p>
@@ -93,7 +93,7 @@ export function NotificationSettings({ state, stateError, onMessages }: {
     <section className={styles.section} aria-label="通知测试">
       <h3 className={styles.sectionTitle}>通知测试</h3>
       <div className={styles.rowGroup}>
-        <SettingRow title="发送本机测试通知" desc={state?.systemNotificationSupported === false ? '当前系统不支持桌面通知。' : '不创建业务消息，也不会改变未读数量。'}>
+        <SettingRow title="本机测试" desc={state?.systemNotificationSupported === false ? '当前系统不支持桌面通知。' : '不创建业务消息，也不会改变未读数量。'}>
           <button type="button" className={styles.actionButton} data-testid="test-notification" disabled={isTesting || !state?.systemNotificationSupported} onClick={() => void testNotification()}>{isTesting ? '正在发送…' : '测试通知'}</button>
         </SettingRow>
       </div>
