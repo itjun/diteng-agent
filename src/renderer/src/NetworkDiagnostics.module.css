@@ -1,0 +1,73 @@
+/* 设置页「网络检测」分类内容：纵向排操作行与检测卡片，滚动与列宽由设置页 mainInner 提供 */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+.actions svg { width: 16px; height: 16px; }
+.actions button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.wrap button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.wrap button:disabled { opacity: 0.45; cursor: default; }
+.error { color: var(--dsw-alias-state-error-primary); font-size: 13px; margin: 0; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+/* 网络检测卡片：外网基线 / 前端 / 后端 / AI 并发探测的进度与结论 */
+.diag {
+  margin: 0;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.diagHeader { display: flex; align-items: center; gap: 12px; }
+.diagProgress { flex: 1; min-width: 0; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.diagStart {
+  display: inline-flex; align-items: center; border: 0; border-radius: 8px; padding: 6px 12px;
+  font: inherit; font-size: 12px; color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2); cursor: pointer;
+}
+.diagStart:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.diagStart:disabled { opacity: 0.45; cursor: default; }
+.diagVerdict { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.diagPhases { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); }
+.diagTargets { list-style: none; display: grid; gap: 6px; margin: 12px 0 0; padding: 0; }
+.diagTarget {
+  display: grid; grid-template-columns: minmax(88px, auto) minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  padding: 8px 10px; border-radius: 6px; background: var(--dsw-alias-bg-layer-2); font-size: 12px; line-height: 18px;
+}
+.diagName { font-weight: 500; }
+.diagName small { display: block; font-weight: 400; font-size: 11px; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
+.diagStats { color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.diagBadge {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 2px 10px;
+  border-radius: 999px; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.diagBadge[data-grade='excellent'], .diagBadge[data-grade='good'] {
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);
+}
+.diagBadge[data-grade='fair'] {
+  color: var(--dsw-alias-state-warn-label);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 16%, transparent);
+}
+.diagBadge[data-grade='poor'], .diagBadge[data-grade='down'] {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+}

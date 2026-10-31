@@ -544,16 +544,6 @@
 .shortcuts > button { gap: 6px; padding-inline: 6px; }
 .shortcuts .unreadBadge { position: static; flex: none; }
 
-.railFooter {
-  flex: none;
-  padding: 8px 8px 12px;
-}
-
-.railFooter > button {
-  width: 100%;
-  justify-content: flex-start;
-}
-
 .railTab,
 .railTabActive {
   display: flex;

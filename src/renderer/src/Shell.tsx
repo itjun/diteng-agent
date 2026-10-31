@@ -45,7 +45,6 @@ import type { PageSurface } from './page-surface';
 import styles from './Shell.module.css';
 import { shareablePageUrl, tabLabel } from './shell-presentation';
 import { messageConnectionLabel, useMessageState } from './use-message-state';
-import { DeviceInfo } from './DeviceInfo';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows/Linux 无系统标题栏，窗口控制由通栏自绘 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
@@ -124,7 +123,7 @@ function shortcutOfUrl(url: string): 'messages' | 'ai' | null {
  * Dia 式两栏布局：左侧顶部放高频入口，下方放标签；右侧顶部放导航与统一应用菜单。
  * 壳内另有「设置页」视图：标签侧栏切换为设置导航，内容区替换为设置项（webview 隐藏不销毁），
  * ESC/返回切回标签视图。
- * 消息与 AI 复用现有 Web 页面；信息页展示本机硬件和网络，切换时保留 Web 实例。
+ * 消息与 AI 复用现有 Web 页面；本机硬件与网络信息归入设置页「关于本机」分类。
  */
 export function Shell() {
   useThemeSetting();
@@ -135,7 +134,6 @@ export function Shell() {
   const [isReloggingIn, setIsReloggingIn] = useState(false);
   const isReloggingInRef = useRef(false);
   const openingPagesRef = useRef(new Set<string>());
-  const [activeModule, setActiveModule] = useState<'workspace' | 'info'>('workspace');
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   // 0=未自定义；旧版手动保存的宽度继续尊重，双击恢复紧凑默认宽度。
@@ -169,7 +167,7 @@ export function Shell() {
   const activeTabIdRef = useRef('');
   activeTabIdRef.current = activeTabId;
   const isWebVisibleRef = useRef(true);
-  isWebVisibleRef.current = activeModule === 'workspace' && !isSettingsOpen;
+  isWebVisibleRef.current = !isSettingsOpen;
   // 防重不落到 state：截图只有百毫秒级，处理中再点直接忽略，也避免禁用态被截进画面
   const isFeedbackCapturingRef = useRef(false);
 
@@ -198,14 +196,12 @@ export function Shell() {
 
   const activateTab = useCallback((id: string) => {
     setIsSettingsOpen(false);
-    setActiveModule('workspace');
     setActiveTabId(id);
   }, []);
 
   /** 工作区新标签直接打开 Web 首页，不承载本地消息或 AI 功能。 */
   const createNewTab = useCallback(() => {
     setIsSettingsOpen(false);
-    setActiveModule('workspace');
     void resolveAndOpen({ home: true }).then((result) => {
       if (!result.ok) setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: result.message });
     }).catch(() => setFeedbackToast({ kind: 'fail', title: '无法打开页面', desc: '请稍后重试' }));
@@ -272,7 +268,6 @@ export function Shell() {
     if (openingPagesRef.current.has(page)) return;
     openingPagesRef.current.add(page);
     setIsSettingsOpen(false);
-    setActiveModule('workspace');
     try {
       const result = await window.diteng.tabsResolve(page === 'ai' ? { ai: true } : { page });
       if (!result.ok) {
@@ -300,7 +295,11 @@ export function Shell() {
   const openAccounts = useCallback(() => { void openFixedPage('accounts'); }, [openFixedPage]);
   const openChat = useCallback(() => { void openFixedPage('ai'); }, [openFixedPage]);
   const openMessages = useCallback(() => { void openFixedPage('messages'); }, [openFixedPage]);
-  const openDeviceInfo = useCallback(() => { setActiveModule('info'); setIsSettingsOpen(false); }, []);
+  /** 关于本机与版本更新已合并为设置页「关于应用」分类：菜单项直达该分类。 */
+  const openAboutApp = useCallback(() => {
+    setIsSettingsOpen(true);
+    setSettingsCategory('about');
+  }, []);
 
   const relogin = useCallback(async () => {
     if (isReloggingInRef.current) return;
@@ -407,7 +406,6 @@ export function Shell() {
       if (entry) openTab(entry.url, entry.corpNo);
     });
     const unsubscribeOpen = window.diteng.onTabsOpenRequest(({ url }) => {
-      setActiveModule('workspace');
       setIsSettingsOpen(false);
       void resolveAndOpen({ url });
     });
@@ -446,7 +444,7 @@ export function Shell() {
   useEffect(() => {
     setNavigationState(navigationStateOf(webviewRefs.current.get(activeTabId)));
     try { window.diteng.tabsSetActiveGuest(isWebVisibleRef.current ? webviewRefs.current.get(activeTabId)?.getWebContentsId() ?? null : null); } catch { window.diteng.tabsSetActiveGuest(null); }
-  }, [activeTabId, activeModule, isSettingsOpen]);
+  }, [activeTabId, isSettingsOpen]);
 
   // 页面底色只保留仍存在的标签（关标签 / 切账套只保留当前标签）
   useEffect(() => {
@@ -517,7 +515,6 @@ export function Shell() {
       else if (action === 'new-tab') createNewTab();
       else if (action === 'close-tab') {
         if (isSettingsOpen) closeSettings();
-        else if (activeModule !== 'workspace') setActiveModule('workspace');
         else closeTab(activeTabIdRef.current);
       }
       else if (action === 'next-tab' || action === 'previous-tab') {
@@ -528,7 +525,7 @@ export function Shell() {
       }
     });
     return unsubscribe;
-  }, [openSettings, closeSettings, toggleRail, createNewTab, closeTab, activateTab, tabs, isSettingsOpen, activeModule]);
+  }, [openSettings, closeSettings, toggleRail, createNewTab, closeTab, activateTab, tabs, isSettingsOpen]);
 
   // ===== 侧栏宽度拖拽：拖拽期间盖全窗透明盾牌（z-index 高于一切，含 webview），
   // 否则指针移入 webview 区域后事件被路由进 guest 进程，宿主页收不到 move/up（真实拖拽同样会卡住）；
@@ -592,16 +589,11 @@ export function Shell() {
 
   const messageLabel = messageError || `${messageState?.unreadError ? '未读数同步失败，' : ''}${messageConnectionLabel(messageState)}`;
   const isMessageWarning = Boolean(messageError || messageState?.unreadError || (messageState && !messageState.connected));
-  const isWorkspaceVisible = !isSettingsOpen && activeModule === 'workspace';
+  const isWorkspaceVisible = !isSettingsOpen;
   const isSidebarVisible = isSettingsOpen || !isRailCollapsed;
   const unreadCount = messageState?.unread ?? -1;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const activeShortcut = isWorkspaceVisible && activeTab ? shortcutOfUrl(activeTab.url) : null;
-
-  function returnToWorkspace() {
-    setIsSettingsOpen(false);
-    setActiveModule('workspace');
-  }
 
   // 内容卡片/地址栏底色跟随当前标签的网页顶部底色；没有采样结果（新建标签页、加载中）时
   // 不写 --card-surface，回落到应用主题的卡片底色。tone 决定工具条文字/图标走深色还是浅色档。
@@ -674,11 +666,6 @@ export function Shell() {
                     />
                   ))}
                 </div>
-                <div className={styles.railFooter} data-testid="sidebar-footer">
-                  <button type="button" className={styles.sidebarButton} data-testid="open-device-info" title="本机信息" aria-pressed={activeModule === 'info'} onClick={openDeviceInfo}>
-                    <DesktopIcon /><span>关于本机</span>
-                  </button>
-                </div>
               </>
             )}
           </aside>
@@ -700,15 +687,15 @@ export function Shell() {
                 isRailCollapsed={isRailCollapsed}
                 onToggleRail={toggleRail}
                 tabs={tabs}
-                activeTabId={isWorkspaceVisible ? activeTabId : ''}
+                activeTabId={activeTabId}
                 onActivateTab={activateTab}
-                url={isWorkspaceVisible ? activeTab?.url ?? '' : ''}
-                pageTitle={isWorkspaceVisible ? activeTab?.title ?? '' : '本机信息'}
-                canGoBack={!isWorkspaceVisible || Boolean(activeTab) && navigationState.canGoBack}
-                canGoForward={isWorkspaceVisible && Boolean(activeTab) && navigationState.canGoForward}
-                isLoading={isWorkspaceVisible && Boolean(activeTab?.isLoading)}
-                hasActiveTab={isWorkspaceVisible && Boolean(activeTab)}
-                onBack={isWorkspaceVisible ? navigateBack : returnToWorkspace}
+                url={activeTab?.url ?? ''}
+                pageTitle={activeTab?.title ?? ''}
+                canGoBack={Boolean(activeTab) && navigationState.canGoBack}
+                canGoForward={Boolean(activeTab) && navigationState.canGoForward}
+                isLoading={Boolean(activeTab?.isLoading)}
+                hasActiveTab={Boolean(activeTab)}
+                onBack={navigateBack}
                 onForward={navigateForward}
                 onReload={reloadActiveTab}
                 onNewTab={createNewTab}
@@ -716,11 +703,10 @@ export function Shell() {
                 onFeedback={() => void captureFeedback()}
                 onMessages={openMessages}
                 onChat={openChat}
-                onDeviceInfo={openDeviceInfo}
+                onDeviceInfo={openAboutApp}
                 isModuleDisabled={!session}
                 isMessagesActive={activeShortcut === 'messages'}
                 isChatActive={activeShortcut === 'ai'}
-                isInfoActive={activeModule === 'info'}
                 unreadCount={unreadCount}
                 messageLabel={messageLabel}
                 isMessageWarning={isMessageWarning}
@@ -741,7 +727,6 @@ export function Shell() {
               ))}
 
             </div>
-            {!isSettingsOpen && activeModule === 'info' && <DeviceInfo />}
           </div>
 
           {/* 设置页不渲染内容工具栏：窗口控制改浮层形态贴窗口右上角，避免设置页无法最小化/关闭 */}
@@ -1133,7 +1118,6 @@ function ContentToolbar({
   isModuleDisabled,
   isMessagesActive,
   isChatActive,
-  isInfoActive,
   unreadCount,
   messageLabel,
   isMessageWarning,
@@ -1161,7 +1145,6 @@ function ContentToolbar({
   isModuleDisabled: boolean;
   isMessagesActive: boolean;
   isChatActive: boolean;
-  isInfoActive: boolean;
   unreadCount: number;
   messageLabel: string;
   isMessageWarning: boolean;
@@ -1312,8 +1295,8 @@ function ContentToolbar({
           <button type="button" role="menuitemcheckbox" aria-checked={isChatActive} data-testid="menu-open-ai" disabled={isModuleDisabled} onClick={() => runMenuAction(onChat)}>
             <ChatIcon /><span>AI 助手</span>{isChatActive && <CheckIcon />}
           </button>
-          <button type="button" role="menuitemcheckbox" aria-checked={isInfoActive} data-testid="menu-open-device-info" onClick={() => runMenuAction(onDeviceInfo)}>
-            <DesktopIcon /><span>本机信息</span>{isInfoActive && <CheckIcon />}
+          <button type="button" role="menuitem" data-testid="menu-open-about-app" onClick={() => runMenuAction(onDeviceInfo)}>
+            <DesktopIcon /><span>关于应用</span>
           </button>
           <div role="separator" />
           <button type="button" role="menuitem" data-testid="open-settings" onClick={() => runMenuAction(onSettings)}>
