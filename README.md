@@ -94,6 +94,15 @@ pnpm release 0.3.0                 # 也可指定稳定版本
 
 `.github/workflows/release.yml` 在 main/PR/手动运行时构建测试包，在 `v版本号` 标签时正式发布。macOS 生成 arm64/x64 DMG 与 ZIP，Windows 生成 x64 NSIS，Linux 生成 x64/arm64 deb。每个平台在原生 runner 上测试更新检查、下载和当前架构安装包启动；macOS 还在临时目录测试真实替换与重启，Linux 用 apt 安装 x64 deb。各平台更新清单、架构完整性与文件 SHA-512 全部校验成功后，才创建并公开完整 GitHub Release。测试运行不公开版本。若 CI 失败，修复后重跑失败任务；不要移动已公开的版本标签。跨架构包有构建和清单验证，实际升级替换仍需目标系统验收。
 
+## Windows 安装器皮肤
+
+Windows NSIS 安装器不使用 electron-builder 默认向导，而是品牌化自绘界面（米白底 #FAF8F1 + 帝擎绿 #1C803E，参考 PixPin 风格）：原生标题栏经 DWM 着色、自绘欢迎/完成页、安装步骤清单 + 绿色进度条，卸载器同款。
+
+- `build/installer.nsh`：NSIS 皮肤脚本，electron-builder 默认自动引入（`nsis.include` 缺省路径），不需要替换整个安装脚本；静默模式（/S，自动更新用）不执行任何 UI 代码。
+- `scripts/make-installer-art.ps1`：GDI+ 生成全部页面底图到 `build/installer/*.bmp`（PowerShell，无 node 依赖；烘焙版本号与品牌标志）。
+- `pnpm make:installer-art` 重新生成底图；`dist:win` 已自动前置调用，CI Windows 任务同样先生成再构建。
+- 版本号烘焙在底图中：`scripts/validate-release.mjs` 在 Windows 上校验 `build/installer/art-version.txt` 与 package.json 一致，防止改版本后忘记再生成。
+
 ## 结构
 
 - `src/main/` 主进程：窗口/标签 URL 策略/会话（safeStorage 存密文）/MQTT/托盘/打包配置/启动微信与企业微信

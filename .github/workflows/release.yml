@@ -45,6 +45,10 @@ jobs:
       - run: python3 scripts/test-macos-build.py
         if: runner.os != 'Windows'
       - run: pnpm build
+      - name: Generate installer artwork (Windows NSIS skin)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-installer-art.ps1
       - name: Build platform installers
         shell: bash
         env:

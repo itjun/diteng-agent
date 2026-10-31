@@ -38,6 +38,10 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # 自定义安装器皮肤：build/installer.nsh 由 electron-builder 默认自动引入；
+  # 底图来自 scripts/make-installer-art.ps1（版本号烘焙，发布前必须重新生成）
+  language: 2052
+  uninstallerSidebar: build/installer/un-sidebar.bmp
 linux:
   target:
     - target: deb
