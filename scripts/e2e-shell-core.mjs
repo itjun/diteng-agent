@@ -100,7 +100,8 @@ try {
   await main.getByTestId('unread-badge').waitFor();
   assert.equal(await main.getByTestId('unread-badge').innerText(), '7');
   assert.equal(await main.getByTestId('user-chip').count(), 0);
-  assert.equal(await main.getByTestId('sidebar-footer').getByTestId('open-device-info').isVisible(), true);
+  // 「关于本机」已并入设置页「关于应用」分类：主侧栏不再保留独立入口
+  assert.equal(await main.getByTestId('open-device-info').count(), 0);
   assert.equal(await main.getByTestId('app-menu-button').isVisible(), true);
   assert.equal(await main.getByTestId('switch-account').count(), 0);
   assert.equal(await main.getByTestId('new-tab').count(), 0);
@@ -172,8 +173,10 @@ try {
     await electron.evaluate(async ({ webContents }, id) => {
       await webContents.fromId(id).executeJavaScript('document.querySelector("input").value = "保留聊天草稿"');
     }, opened.id);
-    await main.getByTestId('open-device-info').click();
+    await openMenuItem('menu-open-about-app');
     await main.getByTestId('device-info').waitFor();
+    // 设置页内 rail 是设置导航，返回工作区后再点固定入口
+    await main.getByTestId('settings-back').click();
     await main.getByTestId(entry).click();
     await waitFor(async () => await main.getByTestId(entry).getAttribute('aria-pressed') === 'true');
     assert.equal((await guests()).length, count + 1);
@@ -206,11 +209,11 @@ try {
         networks: [{ name: 'en0', mac: '02:00:00:00:00:01', addresses: [{ address: '192.0.2.10', family: 'IPv4', netmask: '255.255.255.0' }] }], dnsServers: ['192.0.2.1'], appVersion: '0.2.4' };
     });
   });
-  await main.getByTestId('open-device-info').click();
+  await openMenuItem('menu-open-about-app');
   await waitFor(() => main.getByTestId('device-refresh').isEnabled());
   assert.equal(await main.getByTestId('device-client-id').innerText(), 'local-test-device');
   assert.equal(await main.getByTestId('device-public-ip').innerText(), '203.0.113.12');
-  await main.getByRole('button', { name: '复制CLIENTID', exact: true }).click();
+  await main.getByRole('button', { name: '复制设备码（CLIENTID）', exact: true }).click();
   await waitFor(async () => await main.evaluate(() => window.__copiedPageUrl) === 'local-test-device');
   await main.getByTestId('device-copy-all').click();
   await waitFor(async () => /硬件码（UUID）/.test(await main.evaluate(() => window.__copiedPageUrl)));
@@ -243,15 +246,16 @@ try {
       await main.evaluate(theme => window.diteng.setConfig({ theme }), theme);
       await main.waitForFunction(theme => document.body.hasAttribute('data-ds-dark-theme') === (theme === 'dark'), theme);
       assert.equal(await main.getByTestId('device-info').evaluate(element => element.scrollWidth > element.clientWidth), false);
-      const buttons = await main.getByTestId('sidebar-shortcuts').locator('button').all();
-      const boxes = await Promise.all(buttons.map(button => button.boundingBox()));
-      assert.equal(boxes.length, 2);
-      assert.ok(boxes.every((box, index) => box && (index === 0 || box.x >= boxes[index - 1].x + boxes[index - 1].width)));
       await main.screenshot({ path: join(output, `08-info-${width}-${theme}.png`) });
     }
   }
-  await main.getByTestId('nav-back').click();
+  await main.getByTestId('settings-back').click();
   assert.deepEqual(await guests(), infoGuestSnapshot);
+  // 返回工作区后顶部固定入口（消息/AI）仍并排且不重叠
+  const shortcutButtons = await main.getByTestId('sidebar-shortcuts').locator('button').all();
+  const shortcutBoxes = await Promise.all(shortcutButtons.map(button => button.boundingBox()));
+  assert.equal(shortcutBoxes.length, 2);
+  assert.ok(shortcutBoxes.every((box, index) => box && (index === 0 || box.x >= shortcutBoxes[index - 1].x + shortcutBoxes[index - 1].width)));
   await main.evaluate(() => window.diteng.setConfig({ theme: 'light' }));
   console.log('PASS 本机硬件采集、IPC 权限、信息复制和刷新防重、公网 IP 异常/超时恢复、深浅色与窄窗');
 
@@ -316,9 +320,9 @@ try {
   await main.getByTestId('app-menu-button').click();
   assert.equal(await main.getByTestId('menu-open-messages').isVisible(), true);
   assert.equal(await main.getByTestId('menu-open-ai').isVisible(), true);
-  await main.getByTestId('menu-open-device-info').click();
+  await main.getByTestId('menu-open-about-app').click();
   await main.getByTestId('device-info').waitFor();
-  await main.getByTestId('nav-back').click();
+  await main.getByTestId('settings-back').click();
   await main.getByTestId('app-menu-button').click();
   assert.equal(await main.getByTestId('open-settings').isVisible(), true);
   await main.screenshot({ path: join(output, '05-compact-menu.png') });

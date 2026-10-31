@@ -213,7 +213,9 @@ try {
   await shot(login, 'success');
   await main.getByTestId('shell-rail').waitFor();
   await electron.evaluate(() => { globalThis.__holdLoginClose = false; globalThis.__releaseLogin(); });
-  await main.getByTestId('open-device-info').click();
+  // 版本更新与本机信息合并为设置页「关于应用」分类：经功能菜单直达
+  await main.getByTestId('app-menu-button').click();
+  await main.getByTestId('menu-open-about-app').click();
   await main.getByTestId('device-client-id').waitFor();
   assert.equal(await main.getByTestId('device-client-id').textContent(), 'layout-device');
   assert.equal(await main.getByText('设备码（CLIENTID）', { exact: true }).count(), 1);
