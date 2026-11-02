@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
 import type { AppConfig, AppConfigPatch, ChromeColor, ThemeSetting, WindowBounds } from '../shared/types';
 import { CHROME_COLOR_OPTIONS } from '../shared/appearance';
 import { BUILD_SERVER_BASE } from './build-environment';
+import { getDeviceCode } from './device-code';
 
 /** 配置结构版本：3 = 服务器由构建决定，跨环境清除自动登录兼容凭据。 */
 const CONFIG_VERSION = 3;
@@ -205,12 +205,14 @@ function writeToDisk(config: StoredAppConfig): void {
   writeFileSync(configFile(), JSON.stringify(config, null, 2), 'utf8');
 }
 
-/** 读取配置；首次调用时补齐并持久化 machineCode */
+/** 读取配置；首次调用时按地藤终端服务同款算法重算并持久化 machineCode */
 export function getConfig(): StoredAppConfig {
   if (currentConfig) return currentConfig;
   const config = readFromDisk();
-  if (!config.machineCode) {
-    config.machineCode = randomUUID();
+  // 每次启动重算（算法确定性 → 结果稳定，同时完成旧 UUID 到新编码的迁移）；采集失败时沿用已存值
+  const machineCode = getDeviceCode(config.machineCode);
+  if (machineCode !== config.machineCode) {
+    config.machineCode = machineCode;
     writeToDisk(config);
   }
   currentConfig = config;

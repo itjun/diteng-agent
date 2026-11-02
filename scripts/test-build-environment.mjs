@@ -25,6 +25,8 @@ function fixture(t, environment, stored) {
     modules.set(path, module);
     const localRequire = (id) => {
       if (id === 'electron') return { app: { getPath: () => directory } };
+      // 设备编码采集会调 PowerShell 并写 HWASOFT 盐文件，测试环境用确定值代替
+      if (id === './device-code') return { getDeviceCode: () => '0706057603030104' };
       if (id.startsWith('.')) return load(resolve(dirname(path), id + '.ts'));
       return require(id);
     };
@@ -49,13 +51,15 @@ for (const [environment, serverBase] of Object.entries(servers)) {
     assert.equal(disk().theme, 'dark');
   });
 
-  test(`${environment} 同环境升级保留自动登录与设备信息`, (t) => {
+  test(`${environment} 同环境升级保留自动登录，设备编码按设备算法重算`, (t) => {
     const stored = { configVersion: 2, serverBase: serverBase + '/', savedLoginId: 'same-account', savedPassword: 'test-cipher', machineCode: 'existing-device', autoLogin: true };
     const { config, accounts, disk } = fixture(t, environment, stored);
     const result = config().getConfig();
     assert.equal(result.savedLoginId, stored.savedLoginId);
     assert.equal(result.savedPassword, stored.savedPassword);
-    assert.equal(result.machineCode, stored.machineCode);
+    // machineCode 不再沿用旧值：每次启动重算（旧 UUID 迁移到设备算法编码），并立即落盘
+    assert.equal(result.machineCode, '0706057603030104');
+    assert.equal(disk().machineCode, '0706057603030104');
     assert.equal(accounts().listSavedAccounts()[0].serverBase, serverBase);
     assert.equal(disk().configVersion, 3);
   });

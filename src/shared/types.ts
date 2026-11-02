@@ -38,7 +38,10 @@ export interface AppConfig {
   readonly serverBase: string;
   /** AI 对话站地址；空串表示未手动设置，按 serverBase 推导（cdcp.site → https://ai.cdcp.site，否则 http://127.0.0.1:3060） */
   aiBase: string;
-  /** 设备机器码，首次启动生成后终身持久化，渲染层不可修改 */
+  /**
+   * 设备机器码（16 位大写 hex）：Windows 对齐地藤终端服务算法（卷序列号 + HWASOFT 盐，每次启动重算），
+   * macOS/Linux 取硬件 UUID 哈希；采集失败沿用已存值。渲染层不可修改。
+   */
   machineCode: string;
   /**
    * 自动登录兼容凭据：最近一次登录且勾选「记住密码」时写入的登录 ID；
