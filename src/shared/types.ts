@@ -43,6 +43,8 @@ export interface AppConfig {
    * macOS/Linux 取硬件 UUID 哈希；采集失败沿用已存值。渲染层不可修改。
    */
   machineCode: string;
+  /** 终端注册（SvrTerminalGuest.register）下发的终端号；空串 = 尚未注册。仅主进程写入 */
+  terminalId: string;
   /**
    * 自动登录兼容凭据：最近一次登录且勾选「记住密码」时写入的登录 ID；
    * 未勾选或退出登录后可能为空。历史账号列表由主进程单独维护，不下发渲染层。

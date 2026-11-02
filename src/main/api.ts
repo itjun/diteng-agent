@@ -314,6 +314,48 @@ export async function heartbeat(
   return result.ok ? { ok: true, data: null } : result;
 }
 
+/** 终端注册（SvrTerminalGuest.register）返回的设备心跳通道凭证 */
+export interface TerminalRegistration {
+  terminalId: string;
+  mqttHost: string;
+  mqttPort: number;
+  mqttUsername: string;
+  mqttPassword: string;
+}
+
+/**
+ * 设备注册（SvrTerminalGuest.register，对齐 diteng-terminal 登录后的注册）：
+ * 服务端按 machine_code 去重复用/新建 terminal_id，并下发 MQTT 心跳通道的地址与凭证。
+ * GUEST 门面仍要求有效会话（userCode 为空会被拒），只能在登录成功后调用。
+ */
+export async function registerTerminal(
+  serverBase: string,
+  token: string,
+  machineCode: string,
+  info: { computer: string; operatingSystem: string; version: string },
+): Promise<ApiCallResult<TerminalRegistration>> {
+  const result = await postService(serverBase, 'SvrTerminalGuest.register', {
+    computer: info.computer,
+    machine_code: machineCode,
+    operating_system: info.operatingSystem,
+    version: info.version,
+  }, token, machineCode);
+  if (!result.ok) return result;
+  const head = readDataSetHead(result.data);
+  const mqttPort = Number(readStringField(head, 'mqtt_port'));
+  const registration: TerminalRegistration = {
+    terminalId: readStringField(head, 'terminal_id'),
+    mqttHost: readStringField(head, 'mqtt_site'),
+    mqttPort,
+    mqttUsername: readStringField(head, 'mqtt_username'),
+    mqttPassword: readStringField(head, 'mqtt_password'),
+  };
+  if (!registration.terminalId || !registration.mqttHost || !Number.isFinite(mqttPort) || mqttPort <= 0) {
+    return { ok: false, code: 0, message: '终端注册返回缺少 terminal_id 或 MQTT 凭证' };
+  }
+  return { ok: true, data: registration };
+}
+
 function readStringField(row: Record<string, unknown>, key: string): string {
   const value = row[key];
   return typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);

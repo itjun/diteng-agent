@@ -47,7 +47,7 @@ function configFile(): string {
 
 function createDefault(): StoredAppConfig {
   // aiBase 空串 = 未手动设置，读取时经 resolveAiBase 按 serverBase 推导
-  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', savedLoginId: '', savedPassword: '', theme: 'system', windowStyle: 'auto', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, autoCheckUpdates: true, autoDownloadUpdates: true, savedAccounts: [] };
+  return { configVersion: CONFIG_VERSION, serverBase: BUILD_SERVER_BASE, aiBase: '', machineCode: '', terminalId: '', savedLoginId: '', savedPassword: '', theme: 'system', windowStyle: 'auto', chromeColor: 'auto', windowBounds: null, railWidth: 0, rememberPassword: true, autoLogin: true, systemNotifications: true, importantPopups: true, autoCheckUpdates: true, autoDownloadUpdates: true, savedAccounts: [] };
 }
 
 /** 窗口大小记录归一：正整数且在合理区间（宽/高各 200~20000），否则视为未记录 */
@@ -161,6 +161,9 @@ function normalize(input: Partial<StoredAppConfig> | null): StoredAppConfig {
         ? input.aiBase.trim().replace(/\/+$/, '')
         : '',
     machineCode: typeof input?.machineCode === 'string' ? input.machineCode : '',
+    terminalId: typeof (input as { terminalId?: unknown } | undefined)?.terminalId === 'string'
+      ? (input as { terminalId: string }).terminalId
+      : '',
     savedLoginId: isSameServer ? savedLoginId : '',
     savedPassword: isSameServer ? savedPassword : '',
     theme,
@@ -217,6 +220,14 @@ export function getConfig(): StoredAppConfig {
   }
   currentConfig = config;
   return config;
+}
+
+/** 主进程写入终端注册下发的终端号（设备注册成功后调用；渲染层无写入口） */
+export function saveTerminalId(terminalId: string): void {
+  const config = getConfig();
+  if (!terminalId || config.terminalId === terminalId) return;
+  config.terminalId = terminalId;
+  writeToDisk(config);
 }
 
 /** 部分字段更新并立即落盘；machineCode 不在可更新范围内，由设备身份唯一决定 */

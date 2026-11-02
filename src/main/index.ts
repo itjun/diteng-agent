@@ -43,6 +43,7 @@ import { buildAiUrl, buildErpUrl, classifyUrl, isErpLogoutUrl, withSessionParams
 import { installErpMenuNewTabPatch } from './erp-menu-newtab';
 import { MqttService, toPlainExcerpt, type UnreadMessagePayload } from './mqtt-service';
 import { HeartbeatService } from './heartbeat-service';
+import { TerminalService } from './terminal-service';
 import { ImportantNotifier } from './important-notifier';
 import { TrayService } from './tray-service';
 import { openFeedbackChatApp } from './external-apps';
@@ -306,6 +307,8 @@ const corpSwitch = new CorpSwitchCoordinator({
   commit: (session, target, generation) => {
     saveSession(session);
     heartbeatService.start(session);
+    // 换票后子账号可能变化：重新注册刷新终端分享绑定（broker 未变时复用心跳连接）
+    terminalService.start(session);
     requestGate.commit(target.sourceWebContentsId, session, generation);
     pushSessionChanged();
     sendToShell('corp-switch:committed', {
@@ -345,7 +348,12 @@ function broadcastMqttState(state: MqttState): void {
 }
 
 const heartbeatService = new HeartbeatService();
-const refreshHeartbeat = () => { void heartbeatService.refresh(); };
+const terminalService = new TerminalService();
+// 系统唤醒后立即补发会话心跳与终端 MQTT 心跳（MQTT 自动重连成功本身也会补发 Online）
+const refreshHeartbeat = () => {
+  void heartbeatService.refresh();
+  terminalService.refresh();
+};
 
 const mqttService = new MqttService({
   readSession: getSession,
@@ -783,6 +791,8 @@ async function keepSession(serverBase: string, result: LoginResult, loginId: str
   session.corpName = resolveCorpName(session.corpNo, getCorpList());
   saveSession(session);
   heartbeatService.start(session);
+  // 设备级注册 + MQTT 心跳（对齐地藤终端服务；注册失败由服务自行重试，不阻断登录）
+  terminalService.start(session);
   corpSwitch.reset();
   importantNotifier.setEnabled(getConfig().importantPopups);
   // forceRedirect + 绝对 URL（服务端显式指定落点）优先；否则开当前账套首页表单
@@ -836,6 +846,7 @@ function performLogout(): void {
   if (corpSwitch.getActive()) { reportSwitchError('正在核验账套切换，请稍候再退出'); return; }
   isLoggingOut = true;
   heartbeatService.stop();
+  void terminalService.stop('logout');
   corpSwitch.reset();
   requestGate.reset(); // 未登录（重复触发）：登录窗已存在，避免开出第二扇
   void serverApi.logout(session.serverBase, session.token).then((result) => {
@@ -1552,6 +1563,8 @@ app.on('before-quit', (event) => {
   isQuitting = true;
   powerMonitor.removeListener('resume', refreshHeartbeat);
   heartbeatService.stop();
+  // 发出 status=0 下线报文后再断开（内部 2 秒超时，不长时间阻塞退出）
+  void terminalService.stop('quit');
   updateService.stop();
   corpSwitch.reset();
   requestGate.reset();
