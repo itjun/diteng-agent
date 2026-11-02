@@ -775,8 +775,10 @@ async function keepSession(serverBase: string, result: LoginResult, loginId: str
     session.userId = info.data.userId || result.userId;
     session.userName = info.data.userName || info.data.userCode;
     session.userCode = info.data.userCode;
-    // 账套号以 token 绑定账套为准（与登录响应 startPage 同源，异常时也能保证 URL 与 token 一致）
-    if (info.data.corpNo) {
+    // 账套号以 token 绑定账套为准（与登录响应 startPage 同源，异常时也能保证 URL 与 token 一致）；
+    // 000000 是「未绑定/账套选择页」占位号（如设备码变更后服务端尚未绑定新设备），不是真实账套，
+    // 不得覆盖登录落点——否则主窗以 000000 打开首页，ERP 跳回真实账套时会被跨账套门卫拦下弹切换确认框
+    if (info.data.corpNo && info.data.corpNo !== '000000') {
       if (result.corpNo && info.data.corpNo !== result.corpNo) {
         console.warn(
           `[auth] 登录落点账套 ${result.corpNo} 与 token 绑定账套 ${info.data.corpNo} 不一致，按 token 绑定账套处理`,
@@ -952,7 +954,9 @@ async function resolveTokenSessionPatch(
     console.warn(`[auth] getTokenInfo 查询失败（token=${token.slice(0, 8)}…）：${info.message}`);
     return null;
   }
-  const corpNo = info.data.corpNo || fallbackCorpNo || session.corpNo;
+  // 000000 是「未绑定/账套选择页」占位号而非真实账套，不能覆盖已有会话账套（同 keepSession）
+  const boundCorpNo = info.data.corpNo !== '000000' ? info.data.corpNo : '';
+  const corpNo = boundCorpNo || fallbackCorpNo || session.corpNo;
   return {
     corpNo,
     corpName: resolveCorpName(corpNo, corpList),
