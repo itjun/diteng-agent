@@ -178,14 +178,18 @@ export type AppConfigPatch = Partial<
 >;
 
 /**
- * 历史登录账号摘要（登录页下拉展示与管理用）。
- * 密码密文只存主进程 config.json，这里仅下发「是否已记住密码」，需要密码时按账号单独解密。
+ * 登录账号摘要（登录页下拉与设置页账号管理共用）。
+ * 密码密文只存主进程 config.json，列表仅下发脱敏预览，完整密码只允许登录窗按需读取。
  */
 export interface SavedAccountSummary {
   loginId: string;
   serverBase: string;
   /** 该账号是否已记住密码（主进程持密文，可解密） */
   hasPassword: boolean;
+  /** 主进程脱敏后的密码；未保存或暂时无法解密时为 null */
+  maskedPassword: string | null;
+  /** 与当前实际登录会话匹配，不依赖自动登录偏好 */
+  isCurrent: boolean;
   /** 最近一次成功登录时间（epoch ms）；0 表示旧版配置迁移而来（原时间未知） */
   lastLoginAt: number;
 }
@@ -498,15 +502,15 @@ export interface DitengApi {
    * 返回 ApiFailure，渲染层转普通登录表单。
    */
   autoLogin(): Promise<ApiCallResult<LoginResult>>;
-  /** 当前构建环境的历史登录账号摘要（最近登录在前；不含密码密文） */
+  /** 当前环境的登录账号摘要（使用中账号置顶，其余按最近登录排序；仅含脱敏密码） */
   listSavedAccounts(): Promise<SavedAccountSummary[]>;
   /**
    * 取某条历史账号已记住的密码（选择历史账号时按需解密，未保存密码/解密失败返回 ApiFailure）。
    */
   getSavedAccountPassword(key: SavedAccountKey): Promise<ApiCallResult<string>>;
-  /** 删除一条历史账号（连同已记住的密码），返回删除后的摘要列表 */
+  /** 弹窗确认后删除历史账号及保存的密码；使用中账号不可删除，取消时返回原列表 */
   removeSavedAccount(key: SavedAccountKey): Promise<ApiCallResult<SavedAccountSummary[]>>;
-  /** 清空当前环境的历史账号（连同已记住的密码与自动登录凭据），返回空列表 */
+  /** 仅登录窗可弹窗确认清空当前环境的账号和凭据；取消时返回原列表 */
   clearSavedAccounts(): Promise<ApiCallResult<SavedAccountSummary[]>>;
   /**
    * 关闭登录窗（自绘 × 按钮用；登录窗是唯一窗口时应用随之退出）。

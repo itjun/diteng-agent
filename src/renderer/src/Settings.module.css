@@ -226,62 +226,6 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* ============ 账号页顶部大卡片 ============ */
-
-.profileCard {
-  box-sizing: border-box;
-  margin-top: 0;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-md);
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.profileMain {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 18px;
-}
-
-/* 圆形头像：品牌蓝底 + 首字符 */
-.profileAvatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--dsw-alias-state-business-primary);
-  color: #fff;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.profileMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.profileName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 15px;
-  line-height: 20px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
-.profileCode {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-secondary);
-}
-
 /* ============ 控件 ============ */
 
 /* 占位禁用按钮（检查更新） */

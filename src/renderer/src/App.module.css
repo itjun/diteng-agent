@@ -339,7 +339,7 @@ body[data-ds-dark-theme] .historyList {
   cursor: pointer;
 }
 
-.historyRemove:hover {
+.historyRemove:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
   color: var(--dsw-alias-state-error-primary);
 }
@@ -358,8 +358,7 @@ body[data-ds-dark-theme] .historyList {
   color: var(--dsw-alias-label-caption);
 }
 
-.historyClear,
-.historyClearConfirm {
+.historyClear {
   padding: 2px 4px;
   border: none;
   border-radius: var(--dsw-radius-xs);
@@ -369,19 +368,15 @@ body[data-ds-dark-theme] .historyList {
   cursor: pointer;
 }
 
-.historyClear:hover,
-.historyClearConfirm:hover {
+.historyClear:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
   color: var(--dsw-alias-label-primary);
 }
 
-/* 清空是破坏性操作：确认态用错误色提示 */
-.historyClearConfirm {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.historyClearConfirm:hover {
-  color: var(--dsw-alias-state-error-primary);
+.historyRemove:disabled,
+.historyClear:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .codeRow {

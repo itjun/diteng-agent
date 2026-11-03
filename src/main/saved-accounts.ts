@@ -1,4 +1,6 @@
+import { safeStorage } from 'electron';
 import type { SavedAccountKey, SavedAccountSummary } from '../shared/types';
+import { getSession } from './session-store';
 import {
   getConfig,
   persistSavedAccounts,
@@ -14,12 +16,32 @@ function normalizeServerBase(serverBase: string): string {
 /** 历史账号摘要（不含密码密文，供 renderer 列表展示与管理） */
 export function listSavedAccounts(): SavedAccountSummary[] {
   const config = getConfig();
-  return config.savedAccounts.filter((account) => account.serverBase === config.serverBase).map((account) => ({
-    loginId: account.loginId,
-    serverBase: account.serverBase,
-    hasPassword: Boolean(account.passwordCipher),
-    lastLoginAt: account.lastLoginAt,
-  }));
+  const session = getSession();
+  const accounts = config.savedAccounts.filter((account) => account.serverBase === config.serverBase);
+  // 历史记录落盘失败也要展示实际登录账号；旧数据没有时间时保持未知。
+  if (session?.loginId && session.serverBase === config.serverBase && !accounts.some((account) => account.loginId === session.loginId)) {
+    accounts.push({ loginId: session.loginId, serverBase: session.serverBase, passwordCipher: '', lastLoginAt: 0 });
+  }
+  return accounts.map((account) => {
+    let maskedPassword: string | null = null;
+    if (account.passwordCipher && safeStorage.isEncryptionAvailable()) {
+      try {
+        const characters = Array.from(safeStorage.decryptString(Buffer.from(account.passwordCipher, 'base64')));
+        // 短密码全部隐藏，其他密码只保留首尾各一个字符，不暴露原始长度。
+        if (characters.length > 0) maskedPassword = characters.length > 4 ? `${characters[0]}••••••${characters[characters.length - 1]}` : '••••••';
+      } catch {
+        // 系统钥匙串不可用或旧密文损坏时，保留记录并显示密码暂不可用。
+      }
+    }
+    return {
+      loginId: account.loginId,
+      serverBase: account.serverBase,
+      hasPassword: Boolean(account.passwordCipher),
+      maskedPassword,
+      isCurrent: session?.loginId === account.loginId && session.serverBase === account.serverBase,
+      lastLoginAt: account.lastLoginAt,
+    };
+  }).sort((left, right) => Number(right.isCurrent) - Number(left.isCurrent) || right.lastLoginAt - left.lastLoginAt);
 }
 
 /** 按「账号 + 服务器」定位一条历史记录；未找到返回 null */
@@ -101,6 +123,8 @@ export function removeSavedAccount(loginId: string, serverBase: string): boolean
   const trimmedLoginId = loginId.trim();
   const normalizedServerBase = normalizeServerBase(serverBase);
   const config = getConfig();
+  const session = getSession();
+  if (session?.loginId === trimmedLoginId && session.serverBase === normalizedServerBase) throw new Error('不能删除正在使用的账号');
   if (normalizedServerBase !== config.serverBase) return false;
   const next = config.savedAccounts.filter(
     (account) => !(account.loginId === trimmedLoginId && account.serverBase === normalizedServerBase),
@@ -115,5 +139,6 @@ export function removeSavedAccount(loginId: string, serverBase: string): boolean
 /** 清空当前环境的历史账号与自动登录凭据，保留其他环境的历史。 */
 export function clearSavedAccounts(): void {
   const config = getConfig();
+  if (getSession()) throw new Error('登录期间不能清空账号记录');
   persistSavedAccounts(config.savedAccounts.filter((account) => account.serverBase !== config.serverBase), { savedLoginId: '', savedPassword: '' });
 }

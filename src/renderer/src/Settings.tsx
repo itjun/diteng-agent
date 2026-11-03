@@ -8,6 +8,7 @@ import { NetworkDiagnostics } from './NetworkDiagnostics';
 import { NotificationSettings } from './NotificationSettings';
 import { SettingRow } from './SettingRow';
 import { UpdateSettings } from './UpdateSettings';
+import { SavedAccountSettings } from './SavedAccountSettings';
 
 /** 设置分类：key 同时用于 data-testid=settings-nav-{key} */
 export type SettingsCategoryKey = 'account' | 'appearance' | 'connection' | 'notifications' | 'about';
@@ -121,32 +122,10 @@ function SettingRows({ rows }: { rows: SettingRowDef[] }) {
   );
 }
 
-/** 登录用户与账套独立展示，不把企业名称当成用户身份。 */
-function ProfileCard({ session }: { session: SessionSummary | null }) {
-  const name = session?.userName || session?.loginId || '登录用户';
-  return (
-    <div className={styles.profileCard}>
-      <div className={styles.profileMain}>
-        <span className={styles.profileAvatar} aria-hidden="true">
-          {name.charAt(0).toUpperCase()}
-        </span>
-        <div className={styles.profileMeta}>
-          <div className={styles.profileName} data-testid="settings-user-name">
-            {name || '—'}
-          </div>
-          <div className={styles.profileCode} data-testid="settings-login-id">
-            登录账号 · {session?.loginId || '暂未获取'}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * 设置内容区（壳内视图，替换 webview 区域；左侧 rail 由 SettingsRail 复用）：
  * 分类大标题 + 副标题 + 行式设置项居中展示。
- * 登录身份与当前账套分别展示；会话恢复不依赖内嵌网页。
+ * 本机登录账号与当前账套分别展示；会话恢复不依赖内嵌网页。
  */
 export function SettingsPage({
   session,
@@ -210,10 +189,7 @@ export function SettingsPage({
             {configError && <p className={styles.error} role="alert">{configError}</p>}
             <SettingRows rows={rowsByCategory[activeCategory]} />
             {activeCategory === 'account' && <>
-              <section className={styles.section} aria-label="登录身份">
-                <h3 className={styles.sectionTitle}>登录身份</h3>
-                <ProfileCard session={session} />
-              </section>
+              <SavedAccountSettings session={session} onRelogin={onRelogin} isReloggingIn={isReloggingIn} />
               <section className={styles.section} aria-label="当前账套">
                 <h3 className={styles.sectionTitle}>当前账套</h3>
                 <div className={styles.rowGroup}>
@@ -223,14 +199,6 @@ export function SettingsPage({
                   <SettingRow title="账套账号"><span className={styles.rowValue} data-testid="settings-user-code">{session?.userCode || '—'}</span></SettingRow>
                 </div>
                 <p className={styles.sectionNote}>切换前请保存表单。切换成功后，只保留新账套页面，其余标签将关闭。</p>
-              </section>
-              <section className={styles.section} aria-label="登录管理">
-                <h3 className={styles.sectionTitle}>登录管理</h3>
-                <div className={styles.rowGroup}>
-                  <SettingRow title="重新登录" desc="更换账号，或在网页无法打开时恢复登录。">
-                    <button type="button" className={styles.actionButton} data-testid="settings-relogin" disabled={isReloggingIn} onClick={onRelogin}>{isReloggingIn ? '正在处理…' : '重新登录'}</button>
-                  </SettingRow>
-                </div>
               </section>
             </>}
             {activeCategory === 'appearance' && <AppearanceSettings config={config} onConfigChange={setConfig} />}

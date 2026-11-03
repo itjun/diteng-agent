@@ -99,6 +99,7 @@ let isRestartRequested = false;
 let isFeedbackEditorActive = false;
 let isLoggingOut = false;
 let isConfirmingRelogin = false;
+let isManagingSavedAccounts = false;
 let testNotification: Notification | null = null;
 
 /** 壳页面入口加载：dev 走 vite dev server，打包后加载本地 index.html；hash 区分页面角色 */
@@ -1272,8 +1273,11 @@ function registerIpcHandlers(): void {
     return result;
   });
 
-  // 历史账号：登录页下拉展示、选择时按需解密密码、逐条删除、清空
-  ipcMain.handle('auth:list-saved-accounts', () => listSavedAccounts());
+  // 历史账号：登录页下拉与设置页表格展示、选择时按需解密密码、确认后删除或清空
+  ipcMain.handle('auth:list-saved-accounts', (event) => {
+    if ((event.sender !== loginWindow?.webContents && event.sender !== mainWindow?.webContents) || !isShellUrl(event.sender.getURL())) throw new Error('无权读取登录账号');
+    return listSavedAccounts();
+  });
 
   ipcMain.handle('auth:get-saved-account-password', (event, request: unknown) => {
     // 明文密码只允许登录窗读取，避免主窗/置顶弹窗的本地页面顺手解任意历史密码
@@ -1293,27 +1297,58 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('auth:remove-saved-account', (_event, request: unknown) => {
+  ipcMain.handle('auth:remove-saved-account', async (event, request: unknown) => {
+    const owner = event.sender === mainWindow?.webContents ? mainWindow : event.sender === loginWindow?.webContents ? loginWindow : null;
+    if (!owner || !isShellUrl(event.sender.getURL())) return invalid('无权管理登录账号');
+    if (isManagingSavedAccounts) return invalid('正在处理账号记录，请稍候');
     const key = readSavedAccountKey(request);
     if (!key.loginId || !key.serverBase) return invalid('账号和服务器地址不能为空');
+    const account = findSavedAccount(key);
+    if (!account) return invalid('历史账号不存在或已被删除');
+    const isCurrentAccount = () => {
+      const session = getSession();
+      return session?.loginId === account.loginId && session.serverBase === account.serverBase;
+    };
+    if (isCurrentAccount()) return invalid('不能删除正在使用的账号');
+    isManagingSavedAccounts = true;
     try {
+      const confirmation = await dialog.showMessageBox(owner, {
+        type: 'warning', title: '删除登录账号', message: `删除账号“${account.loginId}”？`,
+        detail: '将删除此客户端保存的登录记录和密码，不影响实际账号。下次使用时需重新输入登录信息。',
+        buttons: ['取消', '删除'], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      if (confirmation.response !== 1) return { ok: true as const, data: listSavedAccounts() };
+      if (owner.isDestroyed()) return invalid('窗口已关闭，请重试');
+      if (isCurrentAccount()) return invalid('不能删除正在使用的账号');
       // 删除与自动登录凭据清理在同一次落盘内完成
       if (!removeSavedAccount(key.loginId, key.serverBase)) return invalid('历史账号不存在或已被删除');
     } catch (error) {
-      console.warn('[auth] 删除历史账号落盘失败：', error);
-      return invalid('保存历史账号失败，请重试');
-    }
+      console.warn('[auth] 删除历史账号失败：', error);
+      return invalid('删除登录记录失败，请重试');
+    } finally { isManagingSavedAccounts = false; }
     return { ok: true as const, data: listSavedAccounts() };
   });
 
-  ipcMain.handle('auth:clear-saved-accounts', () => {
+  ipcMain.handle('auth:clear-saved-accounts', async (event) => {
+    const owner = loginWindow;
+    if (!owner || event.sender !== owner.webContents || !isShellUrl(event.sender.getURL())) return invalid('仅登录窗可清空账号记录');
+    if (getSession()) return invalid('登录期间不能清空账号记录');
+    if (isManagingSavedAccounts) return invalid('正在处理账号记录，请稍候');
+    isManagingSavedAccounts = true;
     try {
+      const confirmation = await dialog.showMessageBox(owner, {
+        type: 'warning', title: '清空登录账号', message: '清空此客户端保存的登录账号？',
+        detail: '将删除全部登录记录和保存的密码，不影响实际账号。',
+        buttons: ['取消', '清空'], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      if (confirmation.response !== 1) return { ok: true as const, data: listSavedAccounts() };
+      if (owner.isDestroyed() || getSession()) return invalid('登录状态已变化，请重试');
       // 历史账号与自动登录凭据在同一次落盘内清空
       clearSavedAccounts();
     } catch (error) {
-      console.warn('[auth] 清空历史账号落盘失败：', error);
-      return invalid('保存历史账号失败，请重试');
-    }
+      console.warn('[auth] 清空历史账号失败：', error);
+      return invalid('清空登录记录失败，请重试');
+    } finally { isManagingSavedAccounts = false; }
     return { ok: true as const, data: listSavedAccounts() };
   });
 

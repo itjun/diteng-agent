@@ -144,7 +144,7 @@ try {
   console.log('PASS 三点菜单、键盘导航与焦点恢复、点击网页区域收起、复制安全链接、新标签与截图反馈');
   await openMenuItem('open-settings');
   await main.getByTestId('settings-nav-account').click();
-  assert.match(await main.getByTestId('settings-login-id').innerText(), /test-login/);
+  assert.match(await main.getByTestId('settings-saved-accounts').locator('tr[data-current]').innerText(), /test-login/);
   assert.equal(await main.getByTestId('settings-user-code').innerText(), '10000102');
   assert.equal((await main.evaluate(() => window.diteng.getSession())).loginId, 'test-login');
   await main.screenshot({ path: join(output, '01-account.png') });

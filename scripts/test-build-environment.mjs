@@ -16,6 +16,7 @@ function fixture(t, environment, stored) {
   if (environment !== undefined) writeFileSync(join(directory, 'build-environment.json'), JSON.stringify({ environment }));
   if (stored) writeFileSync(join(directory, 'config.json'), JSON.stringify(stored));
   const modules = new Map();
+  const storage = { isEncryptionAvailable: () => false, decryptString: () => { throw new Error('测试密文不可用'); } };
   function load(path) {
     if (modules.has(path)) return modules.get(path).exports;
     const output = ts.transpileModule(readFileSync(path, 'utf8'), {
@@ -24,7 +25,7 @@ function fixture(t, environment, stored) {
     const module = { exports: {} };
     modules.set(path, module);
     const localRequire = (id) => {
-      if (id === 'electron') return { app: { getPath: () => directory } };
+      if (id === 'electron') return { app: { getPath: () => directory }, safeStorage: storage };
       // 设备编码采集会调 PowerShell 并写 HWASOFT 盐文件，测试环境用确定值代替
       if (id === './device-code') return { getDeviceCode: () => '0706057603030104' };
       if (id.startsWith('.')) return load(resolve(dirname(path), id + '.ts'));
@@ -36,9 +37,62 @@ function fixture(t, environment, stored) {
   return {
     config: () => load(resolve('src/main/config.ts')),
     accounts: () => load(resolve('src/main/saved-accounts.ts')),
+    session: () => load(resolve('src/main/session-store.ts')),
+    storage,
     disk: () => JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')),
   };
 }
+
+test('账号表格只返回脱敏密码，短密码和不可解密密码不泄露内容', (t) => {
+  const { accounts, config, storage } = fixture(t, 'main');
+  const values = ['sample-password', '1234', 'x', '', '损坏'];
+  config().persistSavedAccounts(values.map((value, index) => ({ loginId: `account-${index}`, serverBase: servers.main, passwordCipher: value ? Buffer.from(value).toString('base64') : '', lastLoginAt: index })));
+  storage.isEncryptionAvailable = () => true;
+  storage.decryptString = value => { const result = value.toString(); if (result === '损坏') throw new Error('invalid cipher'); return result; };
+  const summaries = accounts().listSavedAccounts();
+  assert.equal(summaries.find(account => account.loginId === 'account-0').maskedPassword, 's••••••d');
+  assert.equal(summaries.find(account => account.loginId === 'account-1').maskedPassword, '••••••');
+  assert.equal(summaries.find(account => account.loginId === 'account-2').maskedPassword, '••••••');
+  assert.equal(summaries.find(account => account.loginId === 'account-3').hasPassword, false);
+  assert.equal(summaries.find(account => account.loginId === 'account-4').maskedPassword, null);
+  assert.ok(summaries.every(account => !('passwordCipher' in account)));
+  assert.ok(!JSON.stringify(summaries).includes(values[0]));
+  storage.isEncryptionAvailable = () => false;
+  assert.ok(accounts().listSavedAccounts().every(account => account.maskedPassword === null));
+});
+
+test('实际使用中的账号置顶，不能删除或清空，其他账号可独立删除', (t) => {
+  const { accounts, config, session, disk } = fixture(t, 'main');
+  config().persistSavedAccounts([
+    { loginId: 'active', serverBase: servers.main, passwordCipher: '', lastLoginAt: 10 },
+    { loginId: 'recent', serverBase: servers.main, passwordCipher: '', lastLoginAt: 20 },
+  ], { savedLoginId: 'recent', savedPassword: 'cipher' });
+  session().saveSession({ loginId: 'active', serverBase: servers.main });
+  assert.equal(accounts().listSavedAccounts()[0].loginId, 'active');
+  assert.equal(accounts().listSavedAccounts()[0].isCurrent, true);
+  assert.throws(() => accounts().removeSavedAccount(' active ', servers.main + '/'), /不能删除/);
+  assert.throws(() => accounts().clearSavedAccounts(), /不能清空/);
+  assert.equal(disk().savedAccounts.length, 2);
+  assert.equal(accounts().removeSavedAccount('recent', servers.main), true);
+  assert.equal(disk().savedLoginId, '');
+  session().clearSession();
+  assert.equal(accounts().removeSavedAccount('active', servers.main), true);
+});
+
+test('登录与自动登录刷新时间并落盘，旧记录和未落盘当前账号不伪造时间', (t) => {
+  const { accounts, config, session, disk } = fixture(t, 'main');
+  session().saveSession({ loginId: 'missing', serverBase: servers.main });
+  assert.equal(accounts().listSavedAccounts()[0].lastLoginAt, 0);
+  assert.equal(accounts().listSavedAccounts()[0].isCurrent, true);
+  session().clearSession();
+  config().persistSavedAccounts([{ loginId: 'old', serverBase: servers.main, passwordCipher: '', lastLoginAt: 0 }]);
+  assert.equal(accounts().listSavedAccounts()[0].lastLoginAt, 0);
+  const before = Date.now();
+  accounts().recordSavedAccountLogin('manual', servers.main, 'cipher');
+  assert.ok(disk().savedAccounts.find(account => account.loginId === 'manual').lastLoginAt >= before);
+  accounts().touchSavedAccount('old', servers.main);
+  assert.ok(disk().savedAccounts.find(account => account.loginId === 'old').lastLoginAt >= before);
+});
 
 for (const [environment, serverBase] of Object.entries(servers)) {
   test(`${environment} 固定地址，忽略运行时配置更新`, (t) => {

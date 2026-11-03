@@ -52,8 +52,7 @@ function LoginPanel() {
   // 历史登录账号（最近登录在前）：账号输入框右侧出口，支持选择、删除、清空
   const [savedAccounts, setSavedAccounts] = useState<SavedAccountSummary[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  // 清空是破坏性操作：底部按钮先点一次进入确认态，再点一次才真正清空
-  const [isClearHistoryConfirming, setIsClearHistoryConfirming] = useState(false);
+  const [isHistoryBusy, setIsHistoryBusy] = useState(false);
   // 登录页不再提供手动切换入口，主题仍跟随 config.theme / 系统自动应用
   useThemeSetting();
 
@@ -81,8 +80,6 @@ function LoginPanel() {
   const isPasswordPendingRef = useRef(false);
   // 历史账号删除/清空的防重守卫：连点与确认态共用同一同步闸门，避免重复发起写操作
   const isHistoryBusyRef = useRef(false);
-  // 「清空」确认态起始时间：防止把一次物理双击当成两次独立确认
-  const clearConfirmAtRef = useRef(0);
 
   /** 密码回填态同时写 ref 与 state：提交闸门读 ref，按钮禁用读 state */
   function updatePasswordPending(isPending: boolean) {
@@ -168,10 +165,9 @@ function LoginPanel() {
     })();
   }, []);
 
-  // 历史账号下拉：点击账号区域以外关闭；关闭时重置「清空」确认态，避免下次打开误清空
+  // 历史账号下拉：点击账号区域以外关闭，删除确认统一由主进程弹窗。
   useEffect(() => {
     if (!isHistoryOpen) {
-      setIsClearHistoryConfirming(false);
       return;
     }
     function handleMouseDown(event: MouseEvent) {
@@ -235,6 +231,7 @@ function LoginPanel() {
   async function handleRemoveSavedAccount(account: SavedAccountSummary) {
     if (isHistoryBusyRef.current) return;
     isHistoryBusyRef.current = true;
+    setIsHistoryBusy(true);
     try {
       const result = await window.diteng.removeSavedAccount({
         loginId: account.loginId,
@@ -245,23 +242,19 @@ function LoginPanel() {
         return;
       }
       setSavedAccounts(result.data);
-      setIsClearHistoryConfirming(false);
       if (result.data.length === 0) setIsHistoryOpen(false);
+    } catch {
+      setErrorMsg('无法更新登录记录，请重试');
     } finally {
       isHistoryBusyRef.current = false;
+      setIsHistoryBusy(false);
     }
   }
 
   async function handleClearSavedAccounts() {
     if (isHistoryBusyRef.current) return;
-    if (!isClearHistoryConfirming) {
-      clearConfirmAtRef.current = Date.now();
-      setIsClearHistoryConfirming(true);
-      return;
-    }
-    // 防止一次物理双击被当成「进入确认 + 确认清空」两次点击：确认态保持一小段时间才接受第二次确认
-    if (Date.now() - clearConfirmAtRef.current < 800) return;
     isHistoryBusyRef.current = true;
+    setIsHistoryBusy(true);
     try {
       const result = await window.diteng.clearSavedAccounts();
       if (!result.ok) {
@@ -269,10 +262,12 @@ function LoginPanel() {
         return;
       }
       setSavedAccounts(result.data);
-      setIsClearHistoryConfirming(false);
-      setIsHistoryOpen(false);
+      if (result.data.length === 0) setIsHistoryOpen(false);
+    } catch {
+      setErrorMsg('无法更新登录记录，请重试');
     } finally {
       isHistoryBusyRef.current = false;
+      setIsHistoryBusy(false);
     }
   }
 
@@ -439,7 +434,6 @@ function LoginPanel() {
                     aria-label="历史登录账号"
                     aria-expanded={isHistoryOpen}
                     onClick={() => {
-                      setIsClearHistoryConfirming(false);
                       setIsHistoryOpen((open) => !open);
                     }}
                   >
@@ -467,6 +461,7 @@ function LoginPanel() {
                         type="button"
                         className={styles.historyRemove}
                         data-testid="account-history-remove"
+                        disabled={isHistoryBusy}
                         title="删除该历史账号"
                         aria-label={`删除历史账号 ${account.loginId}`}
                         onClick={() => void handleRemoveSavedAccount(account)}
@@ -481,11 +476,12 @@ function LoginPanel() {
                     <span className={styles.historyCount}>{savedAccounts.length} 个历史账号</span>
                     <button
                       type="button"
-                      className={isClearHistoryConfirming ? styles.historyClearConfirm : styles.historyClear}
+                      className={styles.historyClear}
                       data-testid="account-history-clear"
+                      disabled={isHistoryBusy}
                       onClick={() => void handleClearSavedAccounts()}
                     >
-                      {isClearHistoryConfirming ? '确认清空？' : '清空'}
+                      {isHistoryBusy ? '处理中…' : '清空'}
                     </button>
                   </li>
                 </ul>

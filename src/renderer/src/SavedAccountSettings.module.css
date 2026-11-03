@@ -1,0 +1,19 @@
+.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tableFrame { overflow-x: auto; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); }
+.table { width: 100%; min-width: 580px; border-collapse: collapse; text-align: left; font-size: 13px; line-height: 20px; }
+.table th { padding: 11px 16px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.table td { padding: 14px 16px; border-top: 0.5px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-primary); }
+.table tbody tr[data-current] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 4%, var(--dsw-alias-bg-layer-1)); }
+.accountIdentity { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.loginId { font-weight: 500; overflow-wrap: anywhere; }
+.currentBadge { flex: none; padding: 1px 7px; border-radius: 5px; color: var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent); font-size: 11px; line-height: 18px; font-weight: 500; }
+.table .password { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: 1px; white-space: nowrap; }
+.table .lastUsed { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
+.table .muted { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.table .actionCell { width: 60px; text-align: right; }
+.deleteButton { min-height: 32px; padding: 0 8px; margin-right: -8px; border: none; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-state-error-primary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.deleteButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.deleteButton:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
+.table .empty { padding: 32px 16px; text-align: center; color: var(--dsw-alias-label-secondary); }
+.errorRow { display: flex; align-items: center; gap: 12px; }
+.errorRow p { flex: 1; }
