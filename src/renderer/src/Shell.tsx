@@ -48,6 +48,8 @@ import { messageConnectionLabel, useMessageState } from './use-message-state';
 
 /** 平台判定：macOS 红绿灯落在 rail 顶部工具栏内；Windows/Linux 无系统标题栏，窗口控制由通栏自绘 */
 const isMacPlatform = /Macintosh/.test(navigator.userAgent);
+/** Linux：rail 空白区兼作窗口拖拽区（html[data-platform='linux'] CSS 分支） */
+const isLinuxPlatform = !isMacPlatform && /Linux/.test(navigator.userAgent);
 /** 剪贴板粘贴快捷键文案：反馈成功提示里引导用户到聊天窗口粘贴 */
 const PASTE_SHORTCUT = isMacPlatform ? '⌘V' : 'Ctrl+V';
 const DEFAULT_RAIL_WIDTH = 224;
@@ -246,6 +248,14 @@ export function Shell() {
     if (isSettingsOpen) return;
     setIsRailCollapsed((collapsed) => !collapsed);
   }, [isSettingsOpen]);
+
+  // 侧栏（左侧）空白区域的右键不弹原生菜单（复制/全选在此无意义，Linux 无边框下观感
+  // 尤其突兀）：页面侧 preventDefault 后 Chromium 不再走原生菜单路径；标签行有自己的
+  // 标签菜单（rail-tabs 内放行，由 RailTab 自行处理）
+  const handleRailContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('[data-testid="rail-tabs"]')) return;
+    event.preventDefault();
+  }, []);
 
   const navigateBack = useCallback(() => {
     const webview = webviewRefs.current.get(activeTabIdRef.current);
@@ -469,6 +479,7 @@ export function Shell() {
   useEffect(() => {
     const root = document.documentElement;
     if (isMacPlatform) root.setAttribute('data-platform', 'darwin');
+    else if (isLinuxPlatform) root.setAttribute('data-platform', 'linux');
     const applyStyle = (state: WindowStyleState) => {
       root.setAttribute('data-window-style', state.setting);
       if (state.material === 'none') root.removeAttribute('data-window-material');
@@ -619,7 +630,8 @@ export function Shell() {
       )}
       <div className={styles.workspace}>
         <aside className={styles.rail} data-testid="tabstrip" data-collapsed={!isSidebarVisible}
-          style={{ width: railWidth, display: isSidebarVisible ? undefined : 'none' }}>
+          style={{ width: railWidth, display: isSidebarVisible ? undefined : 'none' }}
+          onContextMenu={handleRailContextMenu}>
             <div className={styles.sidebarToolbar} data-testid="sidebar-toolbar" aria-hidden="true" />
             {/* 宽度拖拽手柄：贴 rail 右缘，命中区 7px；双击复位默认 224 */}
             {isSidebarVisible && <div

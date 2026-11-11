@@ -516,6 +516,16 @@ export interface DitengApi {
    * 关闭登录窗（自绘 × 按钮用；登录窗是唯一窗口时应用随之退出）。
    */
   closeLoginWindow(): Promise<void>;
+  /** 主窗自绘窗口按钮（Windows/Linux 无系统标题栏）：最小化 */
+  windowMinimize(): void;
+  /** 主窗自绘窗口按钮：切换最大化/还原 */
+  windowToggleMaximize(): void;
+  /** 主窗自绘窗口按钮：关闭（沿用原生 close 语义，托盘常驻时仅隐藏） */
+  windowClose(): void;
+  /** 主窗当前是否最大化（自绘按钮初始图标用） */
+  windowIsMaximized(): Promise<boolean>;
+  /** 订阅主窗最大化状态变化，返回取消订阅函数 */
+  onWindowMaximizedChanged(listener: (maximized: boolean) => void): () => void;
   /**
    * 退出登录：主进程调 UserServer/logout 使 token 失效（失败不阻塞），
    * 清会话、断 MQTT、销毁托盘后关主窗回登录窗。主窗随即销毁，返回值不保证送达。
@@ -562,14 +572,4 @@ export interface DitengApi {
   setFeedbackEditorActive(isActive: boolean): void;
   /** 订阅应用快捷键动作（⌘/Ctrl+B 侧栏、⌘/Ctrl+, 设置、编辑器撤销/重做/取消），返回取消订阅函数 */
   onShortcut(listener: (action: ShortcutAction) => void): () => void;
-  /** 主窗自绘窗口控制（Windows/Linux 无系统标题栏）：最小化主窗 */
-  windowMinimize(): void;
-  /** 主窗自绘窗口控制：最大化/向下还原切换 */
-  windowToggleMaximize(): void;
-  /** 主窗自绘窗口控制：关闭主窗（托盘常驻时与系统关闭一致，隐藏到托盘） */
-  windowClose(): void;
-  /** 主窗当前是否最大化（自绘 □/❐ 图标态） */
-  windowIsMaximized(): Promise<boolean>;
-  /** 订阅主窗最大化状态变化（最大化/还原时推送），返回取消订阅函数 */
-  onWindowMaximizedChanged(listener: (maximized: boolean) => void): () => void;
 }

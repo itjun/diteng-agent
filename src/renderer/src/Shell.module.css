@@ -277,6 +277,21 @@
   position: relative;
 }
 
+/* Linux 自绘窗口操作按钮（通栏最右端）：命中区沿用 32px 工具栏按钮；
+   关闭按钮 hover 走警示红（各平台窗口惯例） */
+.windowControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+/* 与 .toolbarButton:hover:not(:disabled) 同优先级，靠源码顺序在后取胜 */
+.toolbarButton.windowControlClose:hover {
+  background: #e81123;
+  color: #fff;
+}
+
 .appMenuButton[aria-expanded='true'] {
   z-index: 351;
   background: var(--dsw-alias-interactive-bg-active);
@@ -392,6 +407,19 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+
+/* Linux 无边框主窗：没有系统标题条与 overlay，侧栏空白区域兼作拖拽区
+   （顶部通栏工具栏本就是 drag，此处把可拖范围扩展到 rail 其余空白）。
+   交互元素一律还原为 no-drag，避免点按被拖拽手势吞掉。 */
+:global(html[data-platform='linux']) .rail {
+  -webkit-app-region: drag;
+}
+
+:global(html[data-platform='linux']) .rail button,
+:global(html[data-platform='linux']) .rail .railResizeHandle,
+:global(html[data-platform='linux']) .rail .tabMenu {
+  -webkit-app-region: no-drag;
 }
 
 .rail {

@@ -90,6 +90,16 @@ const diteng: DitengApi = {
   clearSavedAccounts: () => ipcRenderer.invoke('auth:clear-saved-accounts'),
   // 登录窗自绘 × 按钮用；关闭后 window-all-closed 退出应用
   closeLoginWindow: () => ipcRenderer.invoke('app:close-login'),
+  // 主窗自绘窗口按钮（Linux 无边框）：close 沿用原生 close 语义（托盘常驻时仅隐藏）
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window:get-maximized'),
+  onWindowMaximizedChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => listener(maximized);
+    ipcRenderer.on('window:maximized-changed', handler);
+    return () => ipcRenderer.removeListener('window:maximized-changed', handler);
+  },
   // 退出登录：主窗随即销毁，回包不保证送达，调用方无需等待结果
   logout: () => ipcRenderer.invoke('auth:logout'),
   relogin: () => ipcRenderer.invoke('auth:relogin'),
@@ -121,18 +131,6 @@ const diteng: DitengApi = {
     ipcRenderer.on('session:changed', handler);
     return () => {
       ipcRenderer.removeListener('session:changed', handler);
-    };
-  },
-  // 主窗自绘窗口控制（Windows/Linux 无系统标题栏）；close 不绕过主进程的托盘拦截
-  windowMinimize: () => ipcRenderer.send('window:minimize'),
-  windowToggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
-  windowClose: () => ipcRenderer.send('window:close-main'),
-  windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
-  onWindowMaximizedChanged: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => listener(maximized);
-    ipcRenderer.on('window:maximized-changed', handler);
-    return () => {
-      ipcRenderer.removeListener('window:maximized-changed', handler);
     };
   },
   onShortcut: (listener) => {

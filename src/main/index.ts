@@ -17,7 +17,7 @@ import {
 } from 'electron';
 import { join } from 'node:path';
 import { release } from 'node:os';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { autoUpdater } from 'electron-updater';
 import { UpdateService } from './update-service';
 import { prepareMacUpdate } from './mac-update-install';
@@ -86,6 +86,9 @@ const MAIN_WINDOW_HASH = '/main';
 // 应用固定深/浅色时由壳 CSS 的外围 tint（Shell.module.css mica 分支）向应用主题靠拢。
 const WINDOWS_MICA =
   process.platform === 'win32' && Number.parseInt(release().split('.')[2] ?? '0', 10) >= 22621;
+// Linux 窗口图标：免安装目录运行没有 .desktop 注册，任务栏/面板按窗口 icon 展示；
+// macOS/Windows 由打包资源（icns/exe 图标）提供，不重复设置
+const LINUX_WINDOW_ICON = process.platform === 'linux' ? join(__dirname, '../../assets/icon.png') : undefined;
 
 let loginWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -534,6 +537,7 @@ function createLoginWindow(): void {
     fullscreenable: false,
     show: false,
     title: 'diteng agent',
+    ...(LINUX_WINDOW_ICON && { icon: LINUX_WINDOW_ICON }),
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const } : { frame: false }),
     // Win11 云母与主窗同款：透明底 + 整窗材质，登录页四周留白透出（卡片保持实底）；
     // 其余平台实底色避免加载瞬间透出桌面
@@ -593,6 +597,7 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     minHeight: 640,
     show: false,
     title: 'diteng agent',
+    ...(LINUX_WINDOW_ICON && { icon: LINUX_WINDOW_ICON }),
     // macOS 整窗 vibrancy / Windows 11 云母需要透明底色让材质透出；其余平台维持实心底色
     backgroundColor:
       currentWindowStyle().material !== 'none'
@@ -603,7 +608,8 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     // Windows 11：整窗云母（对齐 macOS 整窗 vibrancy 的做法），替代 transparent 窗口且无性能损耗
     ...(WINDOWS_MICA && { backgroundMaterial: currentWindowStyle().material === 'mica' ? 'mica' as const : 'none' as const }),
     // macOS：hiddenInset + 红绿灯落在 tab 条左侧，整窗 sidebar 毛玻璃（rail 由 CSS 半透明透出）；
-    // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）
+    // Windows：系统 overlay 与 tab 条同高（参考 dsh desktop）；
+    // Linux：无边框 + 壳层通栏自绘窗口按钮（见 Shell WindowControls）
     ...(process.platform === 'darwin' && {
       titleBarStyle: 'hiddenInset' as const,
       // 红绿灯位于标签侧栏顶部；收起侧栏时，内容工具栏预留同一位置。
@@ -670,6 +676,14 @@ function createMainWindow(session: SessionInfo, entryUrl: string): void {
     mainWindow.on('hide', applyMacMainWindowBackdrop);
     mainWindow.on('restore', applyMacMainWindowBackdrop);
     mainWindow.on('show', applyMacMainWindowBackdrop);
+  }
+  // Linux 自绘窗口按钮（通栏）的图标状态：最大化/还原切换时即时推给壳层
+  if (process.platform === 'linux') {
+    const sendMaximized = (maximized: boolean) => {
+      if (!createdMainWindow.isDestroyed()) createdMainWindow.webContents.send('window:maximized-changed', maximized);
+    };
+    mainWindow.on('maximize', () => sendMaximized(true));
+    mainWindow.on('unmaximize', () => sendMaximized(false));
   }
   // 窗口大小记忆：resize 防抖落盘（500ms），隐藏/关闭/退出前兜底再存一次
   let saveBoundsTimer: NodeJS.Timeout | null = null;
@@ -1092,27 +1106,7 @@ async function copyFeedbackImage(source: unknown): Promise<FeedbackCopyResult> {
   return { ok: true };
 }
 
-/**
- * 主窗自绘窗口控制（Windows/Linux 无系统标题栏）：
- * 渲染层按钮只发意图，动作全部落在主进程；close 不绕过 close 拦截
- * （托盘常驻时与系统关闭一致，隐藏到托盘而非退出）。
- */
-function registerWindowIpcHandlers(): void {
-  const aliveWindow = (): BrowserWindow | null =>
-    mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  ipcMain.handle('window:is-maximized', () => aliveWindow()?.isMaximized() ?? false);
-  ipcMain.on('window:minimize', () => aliveWindow()?.minimize());
-  ipcMain.on('window:toggle-maximize', () => {
-    const window = aliveWindow();
-    if (!window) return;
-    if (window.isMaximized()) window.unmaximize();
-    else window.maximize();
-  });
-  ipcMain.on('window:close-main', () => aliveWindow()?.close());
-}
-
 function registerIpcHandlers(): void {
-  registerWindowIpcHandlers();
   const trustedUpdateSender = (event: Electron.IpcMainInvokeEvent) =>
     (event.sender === loginWindow?.webContents || event.sender === mainWindow?.webContents)
     && event.senderFrame === event.sender.mainFrame && isShellUrl(event.sender.getURL());
@@ -1232,6 +1226,29 @@ function registerIpcHandlers(): void {
     if (event.sender !== loginWindow?.webContents) return;
     loginWindow?.close();
   });
+
+  // Linux 无边框主窗自绘窗口按钮：仅主窗壳可调用；close 沿用原生语义（托盘常驻时隐藏）
+  const isMainWindowSender = (event: Electron.IpcMainInvokeEvent): boolean =>
+    Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents);
+  ipcMain.handle('window:minimize', (event) => {
+    if (isMainWindowSender(event)) mainWindow?.minimize();
+  });
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    if (!isMainWindowSender(event)) return false;
+    const window = mainWindow;
+    if (!window) return false;
+    if (window.isMaximized()) {
+      window.unmaximize();
+      return false;
+    }
+    window.maximize();
+    return true;
+  });
+  ipcMain.handle('window:close', (event) => {
+    if (isMainWindowSender(event)) mainWindow?.close();
+  });
+  ipcMain.handle('window:get-maximized', (event) =>
+    isMainWindowSender(event) && Boolean(mainWindow?.isMaximized()));
 
   // 自动登录：config 保存的账号 + safeStorage 密文密码走 SvrUserLogin.getToken，成功复用 keepSession 开窗
   ipcMain.handle('auth:auto-login', async (event) => {
@@ -1511,8 +1528,43 @@ function registerTabsIpcHandlers(): void {
   });
 }
 
+/**
+ * Linux 免安装运行自注册桌面入口与图标：GNOME/KDE 的任务栏/面板按窗口 app-id（WM_CLASS，
+ * Electron 取 package.json name = diteng-agent）匹配同名 .desktop 取 Icon= 展示；没有匹配时
+ * 显示通用占位图标。deb 安装版自带系统级 .desktop，存在即跳过，避免 ~/.local 条目覆盖安装版。
+ */
+function installLinuxDesktopEntry(): void {
+  if (process.platform !== 'linux') return;
+  try {
+    const hasSystemEntry = ['/usr/share/applications/diteng-agent.desktop', '/usr/share/applications/diteng agent.desktop']
+      .some((path) => existsSync(path));
+    if (hasSystemEntry) return;
+    const dataHome = join(app.getPath('home'), '.local/share');
+    // 图标装进 hicolor 主题（512 提供各尺寸缩放源），Exec 指向当前可执行文件，免安装目录挪位后下次启动自动修正
+    const iconDir = join(dataHome, 'icons/hicolor/512x512/apps');
+    mkdirSync(iconDir, { recursive: true });
+    copyFileSync(join(__dirname, '../../assets/icon.png'), join(iconDir, 'diteng-agent.png'));
+    const desktopDir = join(dataHome, 'applications');
+    mkdirSync(desktopDir, { recursive: true });
+    writeFileSync(join(desktopDir, 'diteng-agent.desktop'), [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=diteng agent',
+      `Exec=${process.execPath}`,
+      'Icon=diteng-agent',
+      'Terminal=false',
+      'Categories=Office;',
+      'StartupWMClass=diteng-agent',
+      'Comment=帝擎 ERP 桌面客户端',
+      '',
+    ].join('\n'));
+  } catch (error) {
+    console.warn('[desktop] 注册桌面入口失败：', error);
+  }
+}
+
 app.whenReady().then(() => {
-  // 去掉 Electron 默认应用菜单（macOS 顶部会显示 Electron/File/Edit/View/Window，
+  // 去掉 Electron 默认应用菜单（macOS 顶部会显示 Electron/File/Edit/View，
   // Windows/Linux 是窗口内菜单条），业务壳用不到这些入口。
   // macOS 用空菜单模板而不是 null：null 在 macOS 上会残留上一次的原生菜单栏，
   // 空模板才会真正清空；清空菜单会连带带走 ⌘C/⌘V/⌘Z 等系统快捷键，
@@ -1520,6 +1572,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([]) : null);
   // 必须在创建任何窗口前同步应用主题，首帧的 vibrancy 才不会先取系统外观。
   applyNativeTheme(getConfig());
+  installLinuxDesktopEntry();
   requestGate.install();
   registerIpcHandlers();
   updateService.start();
