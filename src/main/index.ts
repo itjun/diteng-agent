@@ -17,7 +17,7 @@ import {
 } from 'electron';
 import { join } from 'node:path';
 import { release } from 'node:os';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { autoUpdater } from 'electron-updater';
 import { UpdateService } from './update-service';
 import { prepareMacUpdate } from './mac-update-install';
@@ -50,6 +50,7 @@ import { openFeedbackChatApp } from './external-apps';
 import { CorpSwitchCoordinator, type CorpSwitchTarget } from './corp-switch';
 import { ErpRequestGate } from './erp-request-gate';
 import { isShellEntryUrl } from './shell-origin';
+import { resolveXdgDataHome, resolveXdgSystemApplicationDirs, syncLinuxDesktopEntry } from './linux-desktop-entry';
 import { getDeviceInfo, getPublicIp } from './device-info';
 import { createNetworkDiagnosticsService } from './network-diagnostics';
 import { installContextMenu, isContextMenuOpen, registerContextMenuIpc } from './context-menu';
@@ -1529,35 +1530,26 @@ function registerTabsIpcHandlers(): void {
 }
 
 /**
- * Linux 免安装运行自注册桌面入口与图标：GNOME/KDE 的任务栏/面板按窗口 app-id（WM_CLASS，
- * Electron 取 package.json name = diteng-agent）匹配同名 .desktop 取 Icon= 展示；没有匹配时
- * 显示通用占位图标。deb 安装版自带系统级 .desktop，存在即跳过，避免 ~/.local 条目覆盖安装版。
+ * Linux 免安装运行自注册桌面入口与图标：任务栏按 app-id（package.json name = diteng-agent）
+ * 匹配同名 .desktop。已打包才注册；开发运行不写用户菜单。
+ * 系统目录已有安装版条目时，删掉本程序写出的用户级条目（用户改过的同名文件保留），
+ * 否则 XDG 会让用户级条目继续指向旧的免安装路径。
  */
 function installLinuxDesktopEntry(): void {
-  if (process.platform !== 'linux') return;
   try {
-    const hasSystemEntry = ['/usr/share/applications/diteng-agent.desktop', '/usr/share/applications/diteng agent.desktop']
-      .some((path) => existsSync(path));
-    if (hasSystemEntry) return;
-    const dataHome = join(app.getPath('home'), '.local/share');
-    // 图标装进 hicolor 主题（512 提供各尺寸缩放源），Exec 指向当前可执行文件，免安装目录挪位后下次启动自动修正
-    const iconDir = join(dataHome, 'icons/hicolor/512x512/apps');
-    mkdirSync(iconDir, { recursive: true });
-    copyFileSync(join(__dirname, '../../assets/icon.png'), join(iconDir, 'diteng-agent.png'));
-    const desktopDir = join(dataHome, 'applications');
-    mkdirSync(desktopDir, { recursive: true });
-    writeFileSync(join(desktopDir, 'diteng-agent.desktop'), [
-      '[Desktop Entry]',
-      'Type=Application',
-      'Name=diteng agent',
-      `Exec=${process.execPath}`,
-      'Icon=diteng-agent',
-      'Terminal=false',
-      'Categories=Office;',
-      'StartupWMClass=diteng-agent',
-      'Comment=帝擎 ERP 桌面客户端',
-      '',
-    ].join('\n'));
+    const result = syncLinuxDesktopEntry({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+      iconSource: join(__dirname, '../../assets/icon.png'),
+      dataHome: resolveXdgDataHome(process.env.XDG_DATA_HOME, app.getPath('home')),
+      systemApplicationDirs: resolveXdgSystemApplicationDirs(process.env.XDG_DATA_DIRS),
+    });
+    if (result.action === 'skipped-unsafe-exec') {
+      console.warn('[desktop] 可执行文件路径无法安全写入桌面条目，已跳过');
+    } else if (result.action === 'skipped-protected-location') {
+      console.warn('[desktop] 用户数据目录与系统应用目录重叠，已跳过桌面条目变更');
+    }
   } catch (error) {
     console.warn('[desktop] 注册桌面入口失败：', error);
   }
