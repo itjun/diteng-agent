@@ -2,7 +2,7 @@
   "name": "diteng-agent",
   "private": true,
   "version": "0.2.8",
-  "description": "帝擎 ERP Electron 桌面壳客户端",
+  "description": "diteng-erp Electron 桌面壳客户端",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "node scripts/configure-build.mjs dev && concurrently -k -n vite,electron -c cyan,green \"vite\" \"wait-on http-get://127.0.0.1:5173 && tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && electron .\"",
